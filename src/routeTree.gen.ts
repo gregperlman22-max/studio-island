@@ -17,6 +17,9 @@ import { Route as AuthenticatedStudioIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedStudioIslandRouteImport } from './routes/_authenticated/studio/island'
 import { Route as AuthenticatedStudioActivitiesRouteImport } from './routes/_authenticated/studio/activities'
+import { Route as AuthenticatedStudioResidentsIndexRouteImport } from './routes/_authenticated/studio/residents/index'
+import { Route as AuthenticatedStudioResidentsNewRouteImport } from './routes/_authenticated/studio/residents/new'
+import { Route as AuthenticatedStudioResidentsIdRouteImport } from './routes/_authenticated/studio/residents/$id'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -60,6 +63,24 @@ const AuthenticatedStudioActivitiesRoute =
     path: '/studio/activities',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedStudioResidentsIndexRoute =
+  AuthenticatedStudioResidentsIndexRouteImport.update({
+    id: '/studio/residents/',
+    path: '/studio/residents/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedStudioResidentsNewRoute =
+  AuthenticatedStudioResidentsNewRouteImport.update({
+    id: '/studio/residents/new',
+    path: '/studio/residents/new',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedStudioResidentsIdRoute =
+  AuthenticatedStudioResidentsIdRouteImport.update({
+    id: '/studio/residents/$id',
+    path: '/studio/residents/$id',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -69,6 +90,9 @@ export interface FileRoutesByFullPath {
   '/studio/island': typeof AuthenticatedStudioIslandRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/studio/': typeof AuthenticatedStudioIndexRoute
+  '/studio/residents/$id': typeof AuthenticatedStudioResidentsIdRoute
+  '/studio/residents/new': typeof AuthenticatedStudioResidentsNewRoute
+  '/studio/residents/': typeof AuthenticatedStudioResidentsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -78,6 +102,9 @@ export interface FileRoutesByTo {
   '/studio/island': typeof AuthenticatedStudioIslandRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/studio': typeof AuthenticatedStudioIndexRoute
+  '/studio/residents/$id': typeof AuthenticatedStudioResidentsIdRoute
+  '/studio/residents/new': typeof AuthenticatedStudioResidentsNewRoute
+  '/studio/residents': typeof AuthenticatedStudioResidentsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -89,6 +116,9 @@ export interface FileRoutesById {
   '/_authenticated/studio/island': typeof AuthenticatedStudioIslandRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/studio/': typeof AuthenticatedStudioIndexRoute
+  '/_authenticated/studio/residents/$id': typeof AuthenticatedStudioResidentsIdRoute
+  '/_authenticated/studio/residents/new': typeof AuthenticatedStudioResidentsNewRoute
+  '/_authenticated/studio/residents/': typeof AuthenticatedStudioResidentsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -100,6 +130,9 @@ export interface FileRouteTypes {
     | '/studio/island'
     | '/admin/'
     | '/studio/'
+    | '/studio/residents/$id'
+    | '/studio/residents/new'
+    | '/studio/residents/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -109,6 +142,9 @@ export interface FileRouteTypes {
     | '/studio/island'
     | '/admin'
     | '/studio'
+    | '/studio/residents/$id'
+    | '/studio/residents/new'
+    | '/studio/residents'
   id:
     | '__root__'
     | '/'
@@ -119,6 +155,9 @@ export interface FileRouteTypes {
     | '/_authenticated/studio/island'
     | '/_authenticated/admin/'
     | '/_authenticated/studio/'
+    | '/_authenticated/studio/residents/$id'
+    | '/_authenticated/studio/residents/new'
+    | '/_authenticated/studio/residents/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -186,6 +225,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedStudioActivitiesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/studio/residents/': {
+      id: '/_authenticated/studio/residents/'
+      path: '/studio/residents'
+      fullPath: '/studio/residents/'
+      preLoaderRoute: typeof AuthenticatedStudioResidentsIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/studio/residents/new': {
+      id: '/_authenticated/studio/residents/new'
+      path: '/studio/residents/new'
+      fullPath: '/studio/residents/new'
+      preLoaderRoute: typeof AuthenticatedStudioResidentsNewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/studio/residents/$id': {
+      id: '/_authenticated/studio/residents/$id'
+      path: '/studio/residents/$id'
+      fullPath: '/studio/residents/$id'
+      preLoaderRoute: typeof AuthenticatedStudioResidentsIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -194,6 +254,9 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedStudioIslandRoute: typeof AuthenticatedStudioIslandRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedStudioIndexRoute: typeof AuthenticatedStudioIndexRoute
+  AuthenticatedStudioResidentsIdRoute: typeof AuthenticatedStudioResidentsIdRoute
+  AuthenticatedStudioResidentsNewRoute: typeof AuthenticatedStudioResidentsNewRoute
+  AuthenticatedStudioResidentsIndexRoute: typeof AuthenticatedStudioResidentsIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -201,6 +264,10 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedStudioIslandRoute: AuthenticatedStudioIslandRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedStudioIndexRoute: AuthenticatedStudioIndexRoute,
+  AuthenticatedStudioResidentsIdRoute: AuthenticatedStudioResidentsIdRoute,
+  AuthenticatedStudioResidentsNewRoute: AuthenticatedStudioResidentsNewRoute,
+  AuthenticatedStudioResidentsIndexRoute:
+    AuthenticatedStudioResidentsIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =
