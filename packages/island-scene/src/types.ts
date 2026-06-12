@@ -1,0 +1,244 @@
+/**
+ * island-scene — public contract
+ * ------------------------------------------------------------------
+ * The IslandScene component is purely presentational. It contains
+ * NO Supabase client, NO network calls, NO persistence, NO auth.
+ * All world data arrives via props; all user actions exit via
+ * callbacks. The host app owns all data. Do not violate this.
+ *
+ * Every field in this file is part of the public API. Treat changes
+ * as breaking until version 1.0.0.
+ */
+
+// ──────────────────────────────────────────────────────────────────
+// Theme packs (pure data, swappable at runtime)
+// ──────────────────────────────────────────────────────────────────
+
+export type ThemePackKey = "sprout" | "explorer" | "drift";
+
+/** Semantic color tokens consumed by every renderer in the scene. */
+export interface ThemePalette {
+  /** Sky/horizon top */
+  skyTop: string;
+  /** Sky/horizon bottom */
+  skyBottom: string;
+  /** Ocean / surrounding water */
+  water: string;
+  /** Water highlight / shimmer */
+  waterShimmer: string;
+  /** Primary land/grass tone */
+  land: string;
+  /** Secondary land tone (paths, sand) */
+  landAlt: string;
+  /** Foliage primary */
+  foliage: string;
+  /** Foliage secondary (shadow side) */
+  foliageShadow: string;
+  /** Accent for interactive affordances (zone hover ring, glow) */
+  accent: string;
+  /** Ink color for text labels rendered inside the scene */
+  ink: string;
+}
+
+/** Identifier the TextureProvider uses to look up an atlas. */
+export type TilesetKey = string;
+/** Identifier the AudioProvider uses to look up an ambient loop + SFX bank. */
+export type AudioKey = string;
+
+/** Companion register — affects idle animation feel and ambient particle choice. */
+export type ThemeRegister = "sprout" | "explorer" | "drift";
+
+export interface ThemePackConfig {
+  key: ThemePackKey;
+  displayName: string;
+  palette: ThemePalette;
+  tilesetKey: TilesetKey;
+  audioKey: AudioKey;
+  register: ThemeRegister;
+  /** Per-zone visual metadata (skin name, decoration hints). Keyed by ZoneKey. */
+  zoneSkins: Partial<Record<ZoneKey, ZoneSkin>>;
+}
+
+export interface ZoneSkin {
+  skinName: string;
+  /** Optional override palette tokens for this zone within the pack. */
+  paletteOverrides?: Partial<ThemePalette>;
+  /** Hints for decorative props the renderer may scatter. */
+  decorationHints?: string[];
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Zones
+// ──────────────────────────────────────────────────────────────────
+
+/** The fixed set of six zones present in every island, every theme pack. */
+export type ZoneKey =
+  | "calm_cove"
+  | "build_beach"
+  | "campfire"
+  | "worry_hollow"
+  | "garden"
+  | "field_guide_meadow";
+
+/** Coarse grid coordinates in island-space (not pixels). */
+export interface GridPosition {
+  x: number;
+  y: number;
+}
+
+/** Width/height of a zone footprint in grid cells. */
+export interface GridFootprint {
+  w: number;
+  h: number;
+}
+
+export interface ZoneInstance {
+  key: ZoneKey;
+  /** Human-facing label (host controls localization / non-reader mode). */
+  displayName: string;
+  /** Theme-pack skin name surfaced for tooltips. */
+  skinName: string;
+  gridPosition: GridPosition;
+  footprint: GridFootprint;
+  /** When false, zone is rendered locked (dimmed + lock affordance) and onZoneTap still fires. */
+  unlocked: boolean;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Layout (mirrors islands.layout_config jsonb in the host DB)
+// ──────────────────────────────────────────────────────────────────
+
+export interface LayoutConfig {
+  /** Coarse grid size of the entire walkable island. */
+  grid: { w: number; h: number };
+  /** Island silhouette as a list of grid cells that are land (vs water). */
+  landCells: GridPosition[];
+  /** Decoration placements the renderer should honor (trees, rocks, etc.). */
+  decorations?: DecorationPlacement[];
+  /**
+   * Reserved anchor for the future "picture frame" — a designated point
+   * where the host may visually dock a floating telehealth video window.
+   * Phase 1 reserves it; the renderer simply marks the spot.
+   */
+  pictureFrameAnchor?: GridPosition;
+  /** Avatar spawn point when no position is supplied. */
+  spawnPoint: GridPosition;
+}
+
+export interface DecorationPlacement {
+  id: string;
+  /** TextureProvider key (programmatic shape id in Milestone 1). */
+  kind: string;
+  position: GridPosition;
+  /** Optional rotation in degrees for cosmetic variety. */
+  rotation?: number;
+  /** Optional scale multiplier (1 = default). */
+  scale?: number;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Avatars
+// ──────────────────────────────────────────────────────────────────
+
+/**
+ * Layered 2D sprite system. The compositor stacks layers in this order:
+ *   body → outfit → hair → accessory → displayColor tint.
+ * Keys are validated against the TextureProvider's registered ids.
+ */
+export interface AvatarConfig {
+  bodyTone: "warm-light" | "warm-mid" | "warm-deep" | "cool-light" | "cool-mid" | "cool-deep";
+  hairStyle: "tuft" | "braid" | "swoop";
+  hairColor: string;
+  outfitKey: "stripes" | "overalls" | "tunic" | "raincoat";
+  accessoryKey: "none" | "satchel" | "headband" | "scarf";
+  /** Display color used for the name tag and selection ring. */
+  displayColor: string;
+}
+
+/**
+ * Avatars is an ARRAY from day one. Phase 1 passes a single local avatar,
+ * but the renderer must already smoothly interpolate N avatars toward
+ * updated positions — no networking, just prop-driven motion.
+ */
+export interface AvatarInstance {
+  id: string;
+  config: AvatarConfig;
+  /** Current logical position in grid coordinates. */
+  position: GridPosition;
+  /** True for the avatar the local user controls. Only one is expected. */
+  isLocal: boolean;
+  /** Optional label shown above the avatar (e.g. "Maple Ranger"). */
+  label?: string;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Mode + callbacks
+// ──────────────────────────────────────────────────────────────────
+
+export type SceneMode = "studio" | "play" | "session";
+
+export interface IslandSceneCallbacks {
+  /** Fires after the local avatar has walked to the zone's entrance. */
+  onZoneTap?: (zoneKey: ZoneKey) => void;
+  /** Fires when the user interacts with a non-zone object (decoration, anchor, etc.). */
+  onObjectInteract?: (objectId: string, zoneKey: ZoneKey | null) => void;
+  /** Fires on arrival at the destination tile (host may broadcast later). */
+  onAvatarMove?: (avatarId: string, position: GridPosition) => void;
+  /** Fires once after all assets are preloaded and the first frame is rendered. */
+  onReady?: () => void;
+  /** Fires for any non-recoverable runtime error inside the renderer. */
+  onError?: (err: Error) => void;
+  /** Optional progress hook during initial preload (0..1). */
+  onLoadProgress?: (progress: number) => void;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Imperative handle (exposed via React.forwardRef)
+// ──────────────────────────────────────────────────────────────────
+
+/**
+ * Imperative controls the host can call. Intentionally tiny.
+ *
+ * Audio ducking exists here because the host will lower scene volume
+ * during telehealth sessions; everything else stays declarative via props.
+ */
+export interface IslandSceneHandle {
+  /** Multiplier in [0..1] applied on top of audioEnabled. */
+  setVolume: (volume: number) => void;
+  /** Smoothly duck (true) or restore (false) the ambient bed. */
+  duck: (ducked: boolean) => void;
+  /** Force the local avatar to walk to a grid cell programmatically. */
+  walkLocalAvatarTo: (position: GridPosition) => void;
+  /** Resize hint for the host when the container size changes outside React's notice. */
+  resize: () => void;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Top-level component props
+// ──────────────────────────────────────────────────────────────────
+
+export interface IslandSceneProps extends IslandSceneCallbacks {
+  themePack: ThemePackConfig;
+  zones: ZoneInstance[];
+  layout: LayoutConfig;
+  /** Array from day one even though Phase 1 typically passes one. */
+  avatars: AvatarInstance[];
+  mode: SceneMode;
+  audioEnabled: boolean;
+  /**
+   * Reduced motion. When omitted, the renderer reads
+   * window.matchMedia('(prefers-reduced-motion: reduce)').
+   */
+  reducedMotion?: boolean;
+  /** Optional non-reader mode — hides text labels, keeps icons. */
+  hideTextLabels?: boolean;
+  /**
+   * Feature flags. Off by default; enable as later phases land.
+   * - fireflyOverlay: render the firefly pointer primitive.
+   */
+  flags?: {
+    fireflyOverlay?: boolean;
+  };
+  /** Optional className applied to the wrapper div. */
+  className?: string;
+}
