@@ -42,6 +42,6 @@ export async function logEvent(input: {
     event_type: input.event_type,
     zone_key: input.zone_key ?? null,
     activity_id: input.activity_id ?? null,
-    payload: input.payload ?? {},
+    payload: (input.payload ?? {}) as never,
   });
 }
