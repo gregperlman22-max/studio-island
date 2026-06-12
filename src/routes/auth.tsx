@@ -32,12 +32,15 @@ function AuthPage() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
 
+  const [error, setError] = useState<string | null>(null);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
       if (isSignup) {
-        const { error } = await supabase.auth.signUp({
+        const { data, error: signUpErr } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -45,16 +48,22 @@ function AuthPage() {
             emailRedirectTo: window.location.origin + "/studio",
           },
         });
-        if (error) throw error;
+        if (signUpErr) throw signUpErr;
+        if (!data.session) {
+          const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+          if (signInErr) throw signInErr;
+        }
         toast.success("Account created. Welcome to Engage Island.");
         navigate({ to: "/studio" });
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInErr) throw signInErr;
         navigate({ to: "/studio" });
       }
     } catch (err: any) {
-      toast.error(err.message ?? "Something went wrong");
+      const msg = err?.message ?? "Something went wrong";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -126,6 +135,11 @@ function AuthPage() {
                 autoComplete={isSignup ? "new-password" : "current-password"}
               />
             </div>
+            {error && (
+              <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </p>
+            )}
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Please wait…" : isSignup ? "Create account" : "Sign in"}
             </Button>
