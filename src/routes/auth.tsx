@@ -135,6 +135,11 @@ function AuthPage() {
                 autoComplete={isSignup ? "new-password" : "current-password"}
               />
             </div>
+            {error && (
+              <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </p>
+            )}
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Please wait…" : isSignup ? "Create account" : "Sign in"}
             </Button>
