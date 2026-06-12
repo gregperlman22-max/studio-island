@@ -66,28 +66,34 @@ export type Database = {
           activity_id: string
           assigned_by_profile_id: string
           created_at: string
+          frequency: string
           frequency_note: string | null
           id: string
           resident_id: string
           status: Database["public"]["Enums"]["assignment_status"]
+          updated_at: string
         }
         Insert: {
           activity_id: string
           assigned_by_profile_id: string
           created_at?: string
+          frequency?: string
           frequency_note?: string | null
           id?: string
           resident_id: string
           status?: Database["public"]["Enums"]["assignment_status"]
+          updated_at?: string
         }
         Update: {
           activity_id?: string
           assigned_by_profile_id?: string
           created_at?: string
+          frequency?: string
           frequency_note?: string | null
           id?: string
           resident_id?: string
           status?: Database["public"]["Enums"]["assignment_status"]
+          updated_at?: string
         }
         Relationships: [
           {
@@ -163,6 +169,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      interest_options: {
+        Row: {
+          emoji_or_icon_key: string
+          id: string
+          key: string
+          label: string
+          sort_order: number
+        }
+        Insert: {
+          emoji_or_icon_key: string
+          id?: string
+          key: string
+          label: string
+          sort_order?: number
+        }
+        Update: {
+          emoji_or_icon_key?: string
+          id?: string
+          key?: string
+          label?: string
+          sort_order?: number
+        }
+        Relationships: []
       }
       islands: {
         Row: {
