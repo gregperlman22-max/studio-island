@@ -26,6 +26,34 @@ function StudioHome() {
     },
   });
 
+  const residentsCount = useQuery({
+    queryKey: ["residents-count-active", profile?.id],
+    enabled: !!profile?.id,
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("residents")
+        .select("id", { count: "exact", head: true })
+        .eq("created_by_profile_id", profile!.id)
+        .eq("status", "active");
+      if (error) throw error;
+      return count ?? 0;
+    },
+  });
+
+  const openAssignments = useQuery({
+    queryKey: ["open-assignments-count", profile?.id],
+    enabled: !!profile?.id,
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("assignments")
+        .select("id", { count: "exact", head: true })
+        .eq("assigned_by_profile_id", profile!.id)
+        .eq("status", "assigned");
+      if (error) throw error;
+      return count ?? 0;
+    },
+  });
+
   const greeting = greet(profile?.full_name ?? "there");
 
   return (
@@ -50,14 +78,16 @@ function StudioHome() {
           hint={island ? "Open Island Studio to keep shaping it." : "Start with a theme."}
         />
         <Card
-          title="Active activities"
-          value={String(island?.enabled_activity_ids?.length ?? 0)}
-          hint="Toggle activities per zone in Island Studio."
+          title="Active residents"
+          value={String(residentsCount.data ?? 0)}
+          hint="Tap to manage residents."
+          to="/studio/residents"
         />
         <Card
-          title="Practice role"
-          value={profile?.role === "admin" ? "Admin + Therapist" : "Therapist"}
-          hint={profile?.approved ? "Approved" : "Pending approval"}
+          title="Open assignments"
+          value={String(openAssignments.data ?? 0)}
+          hint="Assigned and not yet completed."
+          to="/studio/residents"
         />
       </section>
 
