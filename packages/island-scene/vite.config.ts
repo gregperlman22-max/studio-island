@@ -3,12 +3,19 @@ import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
 import dts from "vite-plugin-dts";
 
-// Dual-purpose config:
-// - `vite` / `vite dev`  -> serves the demo harness from /demo
-// - `vite build`         -> builds the library from src/index.ts
-const isLibBuild = process.env.BUILD_TARGET === "lib" || process.argv.includes("build");
+// Three modes, selected by env:
+//   vite / vite dev             -> serves the demo harness from /demo
+//   BUILD_TARGET=lib vite build -> builds the library from src/index.ts -> dist/
+//   vite build (default)        -> builds the demo harness as a static site
+//                                  -> dist-demo/ (deployed to GitHub Pages)
+const isLibBuild = process.env.BUILD_TARGET === "lib";
+
+// GitHub Pages serves a project site under /<repo>/. The Pages workflow sets
+// DEMO_BASE; local demo builds default to root.
+const demoBase = process.env.DEMO_BASE ?? "/";
 
 export default defineConfig({
+  base: isLibBuild ? "/" : demoBase,
   plugins: [
     react(),
     ...(isLibBuild ? [dts({ include: ["src"], rollupTypes: false })] : []),
@@ -32,5 +39,10 @@ export default defineConfig({
         sourcemap: true,
         emptyOutDir: true,
       }
-    : undefined,
+    : {
+        // Static demo build for visual review / GitHub Pages.
+        outDir: "dist-demo",
+        emptyOutDir: true,
+        sourcemap: true,
+      },
 });

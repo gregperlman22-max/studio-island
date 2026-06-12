@@ -207,6 +207,17 @@ Opens a controls panel + live scene preview with theme/mode/audio
 toggles and an event log. The harness mounts the same component the
 host app does — keep it green at every milestone.
 
+### Static preview (GitHub Pages)
+
+Each milestone is reviewable as a browsable URL. The harness builds as a
+static site and deploys via `.github/workflows/pages.yml` on every push
+that touches this package:
+
+```bash
+DEMO_BASE=/studio-island/ npm run build:demo   # -> dist-demo/ (served under /studio-island/)
+npm run build:demo                             # -> dist-demo/ at root base for local preview
+```
+
 ---
 
 ## Build & publish

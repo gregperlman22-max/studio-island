@@ -141,16 +141,42 @@ export interface DecorationPlacement {
 // ──────────────────────────────────────────────────────────────────
 
 /**
+ * Renderable avatar option sets — the single source of truth shared by the
+ * layer compositor (what it can draw) and the host's avatar editor (what it
+ * may offer). The package OWNS this set: the host enumerates these arrays to
+ * build its picker UI, and cannot author an option the compositor can't draw.
+ * Grow the starter set here as new layers ship; the derived union types and
+ * the host editor stay in sync automatically.
+ */
+export const BODY_TONES = [
+  "warm-light",
+  "warm-mid",
+  "warm-deep",
+  "cool-light",
+  "cool-mid",
+  "cool-deep",
+] as const;
+export const HAIR_STYLES = ["tuft", "braid", "swoop"] as const;
+export const OUTFIT_KEYS = ["stripes", "overalls", "tunic", "raincoat"] as const;
+export const ACCESSORY_KEYS = ["none", "satchel", "headband", "scarf"] as const;
+
+export type BodyTone = (typeof BODY_TONES)[number];
+export type HairStyle = (typeof HAIR_STYLES)[number];
+export type OutfitKey = (typeof OUTFIT_KEYS)[number];
+export type AccessoryKey = (typeof ACCESSORY_KEYS)[number];
+
+/**
  * Layered 2D sprite system. The compositor stacks layers in this order:
  *   body → outfit → hair → accessory → displayColor tint.
  * Keys are validated against the TextureProvider's registered ids.
  */
 export interface AvatarConfig {
-  bodyTone: "warm-light" | "warm-mid" | "warm-deep" | "cool-light" | "cool-mid" | "cool-deep";
-  hairStyle: "tuft" | "braid" | "swoop";
+  bodyTone: BodyTone;
+  hairStyle: HairStyle;
+  /** Free-form hex; tints the hair layer. */
   hairColor: string;
-  outfitKey: "stripes" | "overalls" | "tunic" | "raincoat";
-  accessoryKey: "none" | "satchel" | "headband" | "scarf";
+  outfitKey: OutfitKey;
+  accessoryKey: AccessoryKey;
   /** Display color used for the name tag and selection ring. */
   displayColor: string;
 }
