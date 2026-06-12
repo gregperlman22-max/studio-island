@@ -22,6 +22,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const navItems: Array<{ to: string; label: string; show: boolean }> = [
     { to: "/studio", label: "Dashboard", show: true },
     { to: "/studio/island", label: "Island Studio", show: true },
+    { to: "/studio/residents", label: "Residents", show: true },
     { to: "/studio/activities", label: "Activity Library", show: true },
     { to: "/admin", label: "Admin", show: profile?.role === "admin" },
   ];

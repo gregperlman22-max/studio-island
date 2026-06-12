@@ -26,6 +26,34 @@ function StudioHome() {
     },
   });
 
+  const residentsCount = useQuery({
+    queryKey: ["residents-count-active", profile?.id],
+    enabled: !!profile?.id,
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("residents")
+        .select("id", { count: "exact", head: true })
+        .eq("created_by_profile_id", profile!.id)
+        .eq("status", "active");
+      if (error) throw error;
+      return count ?? 0;
+    },
+  });
+
+  const openAssignments = useQuery({
+    queryKey: ["open-assignments-count", profile?.id],
+    enabled: !!profile?.id,
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("assignments")
+        .select("id", { count: "exact", head: true })
+        .eq("assigned_by_profile_id", profile!.id)
+        .eq("status", "assigned");
+      if (error) throw error;
+      return count ?? 0;
+    },
+  });
+
   const greeting = greet(profile?.full_name ?? "there");
 
   return (
@@ -50,14 +78,16 @@ function StudioHome() {
           hint={island ? "Open Island Studio to keep shaping it." : "Start with a theme."}
         />
         <Card
-          title="Active activities"
-          value={String(island?.enabled_activity_ids?.length ?? 0)}
-          hint="Toggle activities per zone in Island Studio."
+          title="Active residents"
+          value={String(residentsCount.data ?? 0)}
+          hint="Tap to manage residents."
+          to="/studio/residents"
         />
         <Card
-          title="Practice role"
-          value={profile?.role === "admin" ? "Admin + Therapist" : "Therapist"}
-          hint={profile?.approved ? "Approved" : "Pending approval"}
+          title="Open assignments"
+          value={String(openAssignments.data ?? 0)}
+          hint="Assigned and not yet completed."
+          to="/studio/residents"
         />
       </section>
 
@@ -98,9 +128,9 @@ function StudioHome() {
   );
 }
 
-function Card({ title, value, hint }: { title: string; value: string; hint: string }) {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-6">
+function Card({ title, value, hint, to }: { title: string; value: string; hint: string; to?: string }) {
+  const inner = (
+    <div className="rounded-2xl border border-border bg-card p-6 transition hover:border-primary/40">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {title}
       </p>
@@ -108,6 +138,7 @@ function Card({ title, value, hint }: { title: string; value: string; hint: stri
       <p className="mt-1 text-sm text-muted-foreground">{hint}</p>
     </div>
   );
+  return to ? <Link to={to as "/studio/residents"}>{inner}</Link> : inner;
 }
 
 function greet(name: string) {
