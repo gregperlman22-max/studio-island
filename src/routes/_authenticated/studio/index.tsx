@@ -138,7 +138,7 @@ function Card({ title, value, hint, to }: { title: string; value: string; hint: 
       <p className="mt-1 text-sm text-muted-foreground">{hint}</p>
     </div>
   );
-  return to ? <Link to={to}>{inner}</Link> : inner;
+  return to ? <Link to={to as "/studio/residents"}>{inner}</Link> : inner;
 }
 
 function greet(name: string) {
