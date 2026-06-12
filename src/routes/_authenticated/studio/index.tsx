@@ -128,9 +128,9 @@ function StudioHome() {
   );
 }
 
-function Card({ title, value, hint }: { title: string; value: string; hint: string }) {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-6">
+function Card({ title, value, hint, to }: { title: string; value: string; hint: string; to?: string }) {
+  const inner = (
+    <div className="rounded-2xl border border-border bg-card p-6 transition hover:border-primary/40">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {title}
       </p>
@@ -138,6 +138,7 @@ function Card({ title, value, hint }: { title: string; value: string; hint: stri
       <p className="mt-1 text-sm text-muted-foreground">{hint}</p>
     </div>
   );
+  return to ? <Link to={to}>{inner}</Link> : inner;
 }
 
 function greet(name: string) {
