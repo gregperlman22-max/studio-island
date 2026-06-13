@@ -104,6 +104,7 @@ export class SceneRenderer {
       return;
     }
 
+    this.app.canvas.style.display = "block";
     this.opts.container.appendChild(this.app.canvas);
     this.app.stage.addChild(this.backdrop, this.world);
     this.backdrop.addChild(this.sky, this.shimmer);
@@ -158,7 +159,7 @@ export class SceneRenderer {
     if (!this.inited || this.destroyed) return;
     this.app.resize();
     this.drawBackdrop();
-    this.centerCamera();
+    this.fitCamera();
   }
 
   // ── Build ───────────────────────────────────────────────────────
@@ -169,9 +170,10 @@ export class SceneRenderer {
     this.entities.removeChildren().forEach((c) => c.destroy({ children: true }));
     this.buildZones();
     this.buildDecorations();
-    this.buildPictureFrameAnchor();
+    // layout.pictureFrameAnchor is an invisible reserved coordinate only —
+    // nothing is rendered for it (a future phase docks a video window there).
     this.buildAvatars();
-    this.centerCamera();
+    this.fitCamera();
   }
 
   private drawBackdrop(): void {
@@ -195,11 +197,18 @@ export class SceneRenderer {
 
   private drawTerrain(): void {
     const { palette } = this.theme;
-    const land = hexNum(palette.land);
-    const landDip = shade(palette.land, -0.08);
     const cliff = shade(palette.land, -0.4);
     const cliffShade = shade(palette.land, -0.55);
     const edge = shade(palette.foliage, -0.1);
+
+    // Unified grassy land with gentle, low-frequency variation — soft and
+    // organic, never an alternating tile pattern. Amplitude is tiny (±~3%).
+    const landTone = (gx: number, gy: number) => {
+      const n =
+        Math.sin(gx * 0.55 + gy * 0.32) * 0.5 +
+        Math.sin((gx + gy) * 0.22) * 0.5;
+      return shade(palette.land, n * 0.03);
+    };
 
     const lookup = new Set(
       this.layout.landCells.map((c) => `${c.x},${c.y}`),
@@ -234,9 +243,8 @@ export class SceneRenderer {
           x, y + TILE_H + CLIFF,
         ])
         .fill(cliff);
-      // Top face (subtle checker for texture).
-      const checker = (c.x + c.y) % 2 === 0 ? land : landDip;
-      this.terrain.poly(diamondPoly(c.x, c.y)).fill(checker);
+      // Top face: unified land tone with soft organic variation.
+      this.terrain.poly(diamondPoly(c.x, c.y)).fill(landTone(c.x, c.y));
     }
 
     // Soft outline pass along the coast for a storybook edge.
@@ -359,40 +367,6 @@ export class SceneRenderer {
     }
   }
 
-  private buildPictureFrameAnchor(): void {
-    const anchor = this.layout.pictureFrameAnchor;
-    if (!anchor) return;
-    const { palette } = this.theme;
-    const c = tileCenter(anchor.x, anchor.y);
-    const marker = new Container();
-    marker.position.set(c.x, c.y);
-    marker.zIndex = depth(anchor.x, anchor.y) + 0.15;
-
-    const g = new Graphics();
-    // A dashed-ish reserved frame floating just above the tile.
-    g.roundRect(-26, -52, 52, 38, 5).stroke({ width: 2, color: hexNum(palette.accent), alpha: 0.85 });
-    g.roundRect(-26, -52, 52, 38, 5).fill({ color: hexNum(palette.accent), alpha: 0.08 });
-    g.moveTo(0, -14).lineTo(0, -2).stroke({ width: 2, color: hexNum(palette.accent), alpha: 0.6 });
-    g.ellipse(0, 0, 10, 5).fill({ color: 0x000000, alpha: 0.15 });
-    marker.addChild(g);
-
-    if (!this.opts.hideTextLabels) {
-      const label = new Text({
-        text: "frame",
-        style: { fontFamily: "system-ui, sans-serif", fontSize: 10, fill: hexNum(palette.ink) },
-      });
-      label.anchor.set(0.5, 0.5);
-      label.position.set(0, -33);
-      label.alpha = 0.7;
-      marker.addChild(label);
-    }
-
-    g.eventMode = "static";
-    g.cursor = "pointer";
-    g.on("pointertap", () => this.opts.onObjectInteract?.("picture-frame-anchor", null));
-    this.entities.addChild(marker);
-  }
-
   private buildAvatars(): void {
     for (const a of this.avatars) {
       const c = tileCenter(a.position.x, a.position.y);
@@ -425,7 +399,12 @@ export class SceneRenderer {
     }
   }
 
-  private centerCamera(): void {
+  /**
+   * Scale + center the world so the whole island fits inside the viewport
+   * with margin — never scrolls off-screen, never overflows the canvas.
+   * (Pinch/scroll zoom on top of this is a later milestone.)
+   */
+  private fitCamera(): void {
     const cells = this.layout.landCells;
     if (cells.length === 0) return;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -436,12 +415,27 @@ export class SceneRenderer {
       minY = Math.min(minY, y);
       maxY = Math.max(maxY, y + TILE_H + CLIFF);
     }
+    // Headroom above the top tile for zone/avatar labels that overhang it.
+    minY -= 56;
+
+    const bboxW = Math.max(1, maxX - minX);
+    const bboxH = Math.max(1, maxY - minY);
+    const sw = this.app.screen.width;
+    const sh = this.app.screen.height;
+    const margin = 40;
+
+    // Fit to whichever axis is tighter; cap so it never balloons on big screens.
+    const scale = Math.min(
+      (sw - margin * 2) / bboxW,
+      (sh - margin * 2) / bboxH,
+      1.4,
+    );
+    const s = scale > 0 && Number.isFinite(scale) ? scale : 1;
+    this.world.scale.set(s);
+
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
-    this.world.position.set(
-      this.app.screen.width / 2 - cx,
-      this.app.screen.height / 2 - cy,
-    );
+    this.world.position.set(sw / 2 - cx * s, sh / 2 - cy * s);
   }
 
   // ── Idle motion ─────────────────────────────────────────────────
