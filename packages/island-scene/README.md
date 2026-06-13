@@ -3,11 +3,12 @@
 A 2.5D tap-to-move island world renderer for **Engage Island**. Pure
 presentational React + PixiJS component. The host app owns all data.
 
-> **Status:** Milestone 2 — PixiJS renderer drawing terrain from `layout`,
-> the six zones placed + interactive, decorations, the reserved
-> picture-frame anchor, and live theme-pack palette swapping. Avatars
-> render as position markers; the layered compositor and tap-to-move land
-> in Milestone 3. The harness builds to a static site for visual review.
+> **Status:** Milestone 3 — layered avatar compositor (body → outfit → hair
+> → accessory → display-color ring), tap-to-move with A\* pathfinding, walk +
+> idle animation, and y-sorted depth, on top of the Milestone 2 terrain /
+> zones / live theme swapping. Tap the island to walk; tap a zone to walk to
+> its entrance, then `onZoneTap` fires. The harness builds to a static site
+> for visual review.
 
 ---
 
@@ -237,7 +238,7 @@ types (`dist/index.d.ts`). React and ReactDOM are peer deps.
 
 1. ✅ Scaffold + contract + demo harness.
 2. ✅ Terrain + zones rendered from `layout`, theme-pack palette swap live.
-3. Avatar compositor, tap-to-move with A*, camera follow, y-sort.
+3. ✅ Avatar compositor, tap-to-move with A*, walk/idle animation, y-sort.
 4. Zone interaction + polish (hover, idle, ambient audio, reduced-motion, preloader).
 5. Multi-avatar interpolation + firefly overlay primitive (flag-gated).
 6. Clean npm build, this README finalized, `v0.1.0`.

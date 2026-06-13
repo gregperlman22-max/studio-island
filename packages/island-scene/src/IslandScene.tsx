@@ -75,6 +75,7 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
         onLoadProgress: (p) => cbRef.current.onLoadProgress?.(p),
         onZoneTap: (k) => cbRef.current.onZoneTap?.(k),
         onObjectInteract: (id, z) => cbRef.current.onObjectInteract?.(id, z),
+        onAvatarMove: (id, p) => cbRef.current.onAvatarMove?.(id, p),
       });
       rendererRef.current = renderer;
 

@@ -20,6 +20,19 @@ export function tileCenter(gx: number, gy: number): { x: number; y: number } {
   return { x: top.x, y: top.y + TILE_H / 2 };
 }
 
+/**
+ * Inverse of tileCenter: world-space point -> nearest grid cell. Caller should
+ * convert the pointer's global position into world-local space first (e.g.
+ * via Pixi `container.toLocal`) so camera scale/offset are accounted for.
+ */
+export function screenToTile(wx: number, wy: number): { x: number; y: number } {
+  const hw = TILE_W / 2;
+  const hh = TILE_H / 2;
+  const a = wx / hw; // gx - gy
+  const b = (wy - hh) / hh; // gx + gy
+  return { x: Math.round((b + a) / 2), y: Math.round((b - a) / 2) };
+}
+
 /** Center of a footprint region (zone), in world pixels. */
 export function footprintCenter(
   pos: GridPosition,
