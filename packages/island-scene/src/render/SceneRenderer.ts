@@ -30,10 +30,15 @@ import {
 } from "./iso";
 import { ProgrammaticTextureProvider } from "./TextureProvider";
 import { buildAvatarSprite, type AvatarSprite } from "./avatar";
+import { buildZoneScene } from "./zones";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 
 /** Walk speed in grid tiles per second. */
 const WALK_SPEED = 4.5;
+/** Avatar art scale — chunky + readable relative to the tiles. */
+const AVATAR_SCALE = 1.6;
+/** Pointer travel (px) beyond which a press becomes a pan, not a tap. */
+const DRAG_THRESHOLD = 7;
 
 interface AvatarView {
   id: string;
@@ -74,18 +79,17 @@ export interface RendererOptions extends RendererCallbacks {
  * Owns the PixiJS scene graph for one IslandScene. Plain TS (no React) so the
  * React wrapper stays a thin lifecycle/prop bridge.
  *
- * Milestone 3 scope: layered avatar compositor, tap-to-move with A*
- * pathfinding, walk + idle animation, and y-sorted depth against zones and
- * decorations. Camera keeps the whole island framed (per the fit-to-viewport
- * requirement); active follow becomes meaningful once pinch/scroll zoom lands.
+ * A large, explorable island: the camera shows a region at a comfortable
+ * zoom, eases to follow the local avatar, and can be dragged to pan (clamped
+ * to the island). Layered avatar compositor, A* tap-to-move, characterful
+ * per-zone art, and y-sorted depth.
  */
 export class SceneRenderer {
   private app = new Application();
-  /** Screen-space backdrop (sky → sea gradient + shimmer) + tap surface. */
+  /** Screen-space backdrop (sky → sea gradient + shimmer). */
   private backdrop = new Container();
   private sky = new Graphics();
   private shimmer = new Graphics();
-  private tapSurface = new Container();
   /** Camera-panned world. */
   private world = new Container();
   private terrain = new Graphics();
@@ -101,8 +105,26 @@ export class SceneRenderer {
   /** Static (rebuilt) entities — zones + decorations. Avatars persist. */
   private staticEntities: Container[] = [];
   private avatarViews = new Map<string, AvatarView>();
+  private zoneScenes = new Map<ZoneKey, { setHover: (h: boolean) => void }>();
+  private hoveredZone: ZoneKey | null = null;
   private localId: string | null = null;
   private grid: WalkGrid = { walkable: () => false };
+
+  // ── Camera (zoom + eased follow + drag pan, clamped to world) ──
+  private camScale = 1;
+  private camX = 0;
+  private camY = 0;
+  private followEnabled = true;
+  private cameraInit = false;
+  private worldBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+
+  // Pointer drag state.
+  private pointerDown = false;
+  private pointerMoved = false;
+  private downX = 0;
+  private downY = 0;
+  private lastX = 0;
+  private lastY = 0;
 
   private inited = false;
   private destroyed = false;
@@ -143,15 +165,19 @@ export class SceneRenderer {
     this.app.canvas.style.display = "block";
     this.opts.container.appendChild(this.app.canvas);
     this.app.stage.addChild(this.backdrop, this.world);
-    this.backdrop.addChild(this.sky, this.shimmer, this.tapSurface);
+    this.backdrop.addChild(this.sky, this.shimmer);
     this.world.addChild(this.terrain, this.entities);
     this.entities.sortableChildren = true;
 
-    // Full-canvas tap surface (behind the world visually) so taps on water or
-    // empty terrain still resolve to a grid cell. Zone/decoration taps sit on
-    // top and stop propagation.
-    this.tapSurface.eventMode = "static";
-    this.tapSurface.on("pointertap", this.handleTap);
+    // Unified pointer handling on the stage: press + release without travel is
+    // a tap (walk / zone / object); press + drag pans the camera. Zones and
+    // decorations are non-interactive — everything is hit-tested here so drag
+    // and tap never conflict.
+    this.app.stage.eventMode = "static";
+    this.app.stage.on("pointerdown", this.onPointerDown);
+    this.app.stage.on("pointermove", this.onPointerMove);
+    this.app.stage.on("pointerup", this.onPointerUp);
+    this.app.stage.on("pointerupoutside", this.onPointerUp);
 
     this.opts.onLoadProgress?.(0.2);
     this.textures = new ProgrammaticTextureProvider(this.app.renderer);
@@ -205,6 +231,7 @@ export class SceneRenderer {
       ? position
       : nearestWalkable(this.grid, position);
     if (goal) {
+      this.followEnabled = true;
       this.walkView(view, goal, () =>
         this.opts.onAvatarMove?.(view.id, { x: goal.x, y: goal.y }),
       );
@@ -215,7 +242,9 @@ export class SceneRenderer {
     if (!this.inited || this.destroyed) return;
     this.app.resize();
     this.drawBackdrop();
-    this.fitCamera();
+    this.updateCamScale();
+    this.clampCamera();
+    this.applyCamera();
   }
 
   // ── Build ───────────────────────────────────────────────────────
@@ -224,16 +253,18 @@ export class SceneRenderer {
     this.drawBackdrop();
     this.drawTerrain();
     this.buildGrid();
+    this.computeWorldBounds();
     // Tear down only the static props; avatar views persist across theme/zone
     // changes so in-progress walks aren't interrupted.
     for (const e of this.staticEntities) e.destroy({ children: true });
     this.staticEntities = [];
+    this.zoneScenes.clear();
     this.buildZones();
     this.buildDecorations();
     // layout.pictureFrameAnchor is an invisible reserved coordinate only —
     // nothing is rendered for it (a future phase docks a video window there).
     this.reconcileAvatars();
-    this.fitCamera();
+    this.setupCamera();
   }
 
   /** Walkable = land, minus decoration cells and zone footprints (obstacles). */
@@ -260,8 +291,8 @@ export class SceneRenderer {
     const w = this.app.screen.width;
     const h = this.app.screen.height;
 
-    // Keep the tap surface covering the whole canvas.
-    this.tapSurface.hitArea = new Rectangle(0, 0, w, h);
+    // Stage hit area covers the whole canvas so empty taps/pans register.
+    this.app.stage.hitArea = new Rectangle(0, 0, w, h);
 
     // Fake a vertical gradient (sky → sea) with stacked bands — robust across
     // Pixi minor versions without depending on the gradient-fill API shape.
@@ -283,19 +314,35 @@ export class SceneRenderer {
     const cliffShade = shade(palette.land, -0.55);
     const edge = shade(palette.foliage, -0.1);
 
-    // Unified grassy land with gentle, low-frequency variation — soft and
-    // organic, never an alternating tile pattern. Amplitude is tiny (±~3%).
+    // Lush, varied grass: blend the land tone toward foliage/lighter grass
+    // with a couple of overlaid frequencies so greens read rich, not flat.
+    const lighter = shade(palette.land, 0.14);
+    const deeper = lerpHex(palette.land, palette.foliage, 0.4);
     const landTone = (gx: number, gy: number) => {
       const n =
-        Math.sin(gx * 0.55 + gy * 0.32) * 0.5 +
-        Math.sin((gx + gy) * 0.22) * 0.5;
-      return shade(palette.land, n * 0.03);
+        Math.sin(gx * 0.45 + gy * 0.28) * 0.5 +
+        Math.sin((gx - gy) * 0.6 + 2.0) * 0.3 +
+        Math.sin((gx + gy) * 0.17) * 0.2; // ~[-1,1]
+      const t = (n + 1) / 2;
+      // Bias toward the base land color, occasionally lighter/deeper patches.
+      if (t > 0.72) return deeper;
+      if (t < 0.26) return lighter;
+      return shade(palette.land, (t - 0.5) * 0.12);
     };
+
+    // Deterministic per-tile hash for scattering flowers/clover.
+    const hash = (x: number, y: number) => {
+      const h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const flowerCols = [hexNum(palette.accent), 0xfff0a0, 0xffffff, 0xb98aff];
 
     const lookup = new Set(
       this.layout.landCells.map((c) => `${c.x},${c.y}`),
     );
     const isLand = (x: number, y: number) => lookup.has(`${x},${y}`);
+    const interior = (x: number, y: number) =>
+      isLand(x, y) && isLand(x + 1, y) && isLand(x, y + 1) && isLand(x - 1, y) && isLand(x, y - 1);
 
     this.terrain.clear();
 
@@ -306,9 +353,7 @@ export class SceneRenderer {
 
     for (const c of cells) {
       const { x, y } = tileToScreen(c.x, c.y);
-      // Cliff skirt under both front-facing edges. Drawn for every tile;
-      // back-to-front order means interior skirts are covered by the tiles in
-      // front, leaving a solid raised plateau with thickness at the coast.
+      // Cliff skirt under both front-facing edges (covered inland, thick coast).
       this.terrain
         .poly([
           x - TILE_W / 2, y + TILE_H / 2,
@@ -325,107 +370,57 @@ export class SceneRenderer {
           x, y + TILE_H + CLIFF,
         ])
         .fill(cliff);
-      // Top face: unified land tone with soft organic variation.
       this.terrain.poly(diamondPoly(c.x, c.y)).fill(landTone(c.x, c.y));
     }
 
-    // Soft outline pass along the coast for a storybook edge.
+    // Coast outline for a storybook edge.
     for (const c of cells) {
       if (!isLand(c.x - 1, c.y) || !isLand(c.x, c.y - 1)) {
         this.terrain
           .poly(diamondPoly(c.x, c.y))
-          .stroke({ width: 1, color: edge, alpha: 0.25 });
+          .stroke({ width: 1, color: edge, alpha: 0.22 });
+      }
+    }
+
+    // Scatter flower clusters + clover specks on open interior tiles.
+    for (const c of cells) {
+      if (!interior(c.x, c.y)) continue;
+      const r = hash(c.x, c.y);
+      const ctr = tileCenter(c.x, c.y);
+      if (r < 0.12) {
+        // small flower cluster
+        const col = flowerCols[Math.floor(hash(c.y, c.x) * flowerCols.length) % flowerCols.length];
+        for (let k = 0; k < 3; k++) {
+          const fx = ctr.x + (hash(c.x + k, c.y) - 0.5) * 16;
+          const fy = ctr.y + (hash(c.x, c.y + k) - 0.5) * 8;
+          this.terrain.circle(fx, fy, 1.7).fill(col);
+          this.terrain.circle(fx, fy, 0.7).fill(0xfff0a0);
+        }
+      } else if (r < 0.34) {
+        // clover/grass specks
+        for (let k = 0; k < 3; k++) {
+          const fx = ctr.x + (hash(c.x + k * 2, c.y) - 0.5) * 18;
+          const fy = ctr.y + (hash(c.x, c.y + k * 2) - 0.5) * 9;
+          this.terrain.circle(fx, fy, 1.3).fill({ color: hexNum(deeper), alpha: 0.6 });
+        }
       }
     }
   }
 
   private buildZones(): void {
-    const { palette } = this.theme;
-    for (let i = 0; i < this.zones.length; i++) {
-      const z = this.zones[i];
-      const skin = this.theme.zoneSkins[z.key];
-      const overrides = skin?.paletteOverrides;
-      const pad = new Container();
+    for (const z of this.zones) {
+      const scene = buildZoneScene(z, this.theme, this.opts.hideTextLabels);
       const center = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
-      pad.position.set(center.x, center.y);
-      pad.zIndex =
+      scene.container.position.set(center.x, center.y);
+      // Zone art y-sorts just behind props/avatars on the same row.
+      scene.container.zIndex =
         depth(
           z.gridPosition.x + z.footprint.w / 2,
           z.gridPosition.y + z.footprint.h / 2,
-        ) + 0.1;
-
-      // Per-zone hue: rotate the accent slightly so the six zones read apart
-      // while staying inside the pack's palette family.
-      const baseTone = overrides?.landAlt ?? palette.landAlt;
-      const tint = lerpHex(baseTone, palette.accent, 0.18 + (i % 3) * 0.12);
-
-      const halfW = (z.footprint.w * TILE_W) / 2;
-      const halfH = (z.footprint.h * TILE_H) / 2;
-
-      const g = new Graphics();
-      // Diamond-ish pad matching the footprint, lifted a touch for relief.
-      const lift = 6;
-      g.poly([
-        0, -halfH - lift,
-        halfW, -lift,
-        0, halfH - lift,
-        -halfW, -lift,
-      ])
-        .fill({ color: tint, alpha: z.unlocked ? 1 : 0.5 });
-      // Glow ring affordance (full hover/keyboard polish is Milestone 4).
-      g.poly([
-        0, -halfH - lift,
-        halfW, -lift,
-        0, halfH - lift,
-        -halfW, -lift,
-      ]).stroke({
-        width: 2,
-        color: hexNum(overrides?.accent ?? palette.accent),
-        alpha: z.unlocked ? 0.9 : 0.4,
-      });
-      pad.addChild(g);
-
-      if (!z.unlocked) {
-        const lock = new Graphics();
-        lock.roundRect(-7, -4 - lift, 14, 11, 3).fill({ color: hexNum(palette.ink), alpha: 0.55 });
-        lock.rect(-4, -9 - lift, 8, 6).stroke({ width: 2, color: hexNum(palette.ink), alpha: 0.55 });
-        pad.addChild(lock);
-      }
-
-      if (!this.opts.hideTextLabels) {
-        const label = new Text({
-          text: z.unlocked ? z.skinName : `${z.skinName} (locked)`,
-          style: {
-            fontFamily: "system-ui, sans-serif",
-            fontSize: 13,
-            fontWeight: "700",
-            fill: hexNum(palette.ink),
-            align: "center",
-          },
-        });
-        label.anchor.set(0.5, 1);
-        label.position.set(0, -halfH - lift - 6);
-        label.alpha = z.unlocked ? 1 : 0.7;
-        pad.addChild(label);
-      }
-
-      // Interactivity: tap walks the local avatar to the entrance, then fires
-      // onZoneTap; gentle hover scale (affordance).
-      g.eventMode = "static";
-      g.cursor = "pointer";
-      g.on("pointertap", (e: FederatedPointerEvent) => {
-        e.stopPropagation();
-        this.requestZoneTap(z);
-      });
-      g.on("pointerover", () => {
-        pad.scale.set(1.05);
-      });
-      g.on("pointerout", () => {
-        pad.scale.set(1);
-      });
-
-      this.entities.addChild(pad);
-      this.staticEntities.push(pad);
+        ) + 0.05;
+      this.entities.addChild(scene.container);
+      this.staticEntities.push(scene.container);
+      this.zoneScenes.set(z.key, { setHover: scene.setHover });
     }
   }
 
@@ -445,13 +440,6 @@ export class SceneRenderer {
       const shadow = new Graphics();
       shadow.ellipse(c.x, c.y, 12 * (d.scale ?? 1), 5 * (d.scale ?? 1)).fill({ color: 0x000000, alpha: 0.18 });
       shadow.zIndex = sprite.zIndex - 0.01;
-
-      sprite.eventMode = "static";
-      sprite.cursor = "pointer";
-      sprite.on("pointertap", (e: FederatedPointerEvent) => {
-        e.stopPropagation();
-        this.opts.onObjectInteract?.(d.id, null);
-      });
 
       this.entities.addChild(shadow, sprite);
       this.staticEntities.push(shadow, sprite);
@@ -528,6 +516,7 @@ export class SceneRenderer {
   private createAvatarView(a: AvatarInstance, hash: string): AvatarView {
     const container = new Container();
     const sprite = buildAvatarSprite(a.config);
+    sprite.container.scale.set(AVATAR_SCALE);
     container.addChild(sprite.container);
 
     let tag: Text | undefined;
@@ -536,13 +525,14 @@ export class SceneRenderer {
         text: a.label,
         style: {
           fontFamily: "system-ui, sans-serif",
-          fontSize: 11,
-          fontWeight: "600",
+          fontSize: 12,
+          fontWeight: "700",
           fill: hexNum(a.config.displayColor),
+          stroke: { color: 0xffffff, width: 3 },
         },
       });
       tag.anchor.set(0.5, 1);
-      tag.position.set(0, -42);
+      tag.position.set(0, -38 * AVATAR_SCALE - 6);
       container.addChild(tag);
     }
 
@@ -582,27 +572,6 @@ export class SceneRenderer {
     view.container.zIndex = depth(view.pos.x, view.pos.y) + 0.3;
   }
 
-  // ── Interaction ─────────────────────────────────────────────────
-
-  private handleTap = (e: FederatedPointerEvent): void => {
-    if (!this.localId) return;
-    const local = this.avatarViews.get(this.localId);
-    if (!local) return;
-    const p = this.world.toLocal(e.global);
-    const tile = screenToTile(p.x, p.y);
-
-    const zone = this.zoneAt(tile.x, tile.y);
-    if (zone) {
-      this.requestZoneTap(zone);
-      return;
-    }
-    if (this.grid.walkable(tile.x, tile.y)) {
-      this.walkView(local, tile, () =>
-        this.opts.onAvatarMove?.(local.id, { x: tile.x, y: tile.y }),
-      );
-    }
-  };
-
   private requestZoneTap(zone: ZoneInstance): void {
     if (!this.localId) {
       this.opts.onZoneTap?.(zone.key);
@@ -635,54 +604,172 @@ export class SceneRenderer {
     return null;
   }
 
-  /**
-   * Scale + center the world so the whole island fits inside the viewport
-   * with margin — never scrolls off-screen, never overflows the canvas.
-   * (Pinch/scroll zoom on top of this is a later milestone.)
-   */
-  private fitCamera(): void {
-    const cells = this.layout.landCells;
-    if (cells.length === 0) return;
+  // ── Camera ──────────────────────────────────────────────────────
+
+  /** World-pixel bounding box of the island (incl. cliff + label headroom). */
+  private computeWorldBounds(): void {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const c of cells) {
+    for (const c of this.layout.landCells) {
       const { x, y } = tileToScreen(c.x, c.y);
       minX = Math.min(minX, x - TILE_W / 2);
       maxX = Math.max(maxX, x + TILE_W / 2);
-      minY = Math.min(minY, y);
+      minY = Math.min(minY, y - 40);
       maxY = Math.max(maxY, y + TILE_H + CLIFF);
     }
-    // Headroom above the top tile for zone/avatar labels that overhang it.
-    minY -= 56;
+    if (!Number.isFinite(minX)) { minX = maxX = minY = maxY = 0; }
+    this.worldBounds = { minX, maxX, minY, maxY };
+  }
 
-    const bboxW = Math.max(1, maxX - minX);
-    const bboxH = Math.max(1, maxY - minY);
+  /** Comfortable zoom: enough that the avatar is readable but the island is
+   *  bigger than the viewport (you explore rather than see it all). */
+  private updateCamScale(): void {
     const sw = this.app.screen.width;
     const sh = this.app.screen.height;
-    const margin = 40;
+    this.camScale = Math.max(0.95, Math.min(1.6, Math.min(sw, sh) / 640));
+  }
 
-    // Fit to whichever axis is tighter; cap so it never balloons on big screens.
-    const scale = Math.min(
-      (sw - margin * 2) / bboxW,
-      (sh - margin * 2) / bboxH,
-      1.4,
+  /** First-time camera placement: zoom, then center on the local avatar. */
+  private setupCamera(): void {
+    this.updateCamScale();
+    if (!this.cameraInit) {
+      const focus = this.localFocus();
+      this.camX = this.app.screen.width / 2 - focus.x * this.camScale;
+      this.camY = this.app.screen.height / 2 - focus.y * this.camScale;
+      this.cameraInit = true;
+    }
+    this.clampCamera();
+    this.applyCamera();
+  }
+
+  /** World-space point the camera wants to keep centered (the local avatar). */
+  private localFocus(): { x: number; y: number } {
+    const local = this.localId ? this.avatarViews.get(this.localId) : null;
+    const pos = local
+      ? local.pos
+      : { x: this.layout.spawnPoint.x, y: this.layout.spawnPoint.y };
+    return tileCenter(pos.x, pos.y);
+  }
+
+  private clampCamera(): void {
+    const sw = this.app.screen.width;
+    const sh = this.app.screen.height;
+    const s = this.camScale;
+    const M = 90; // sea border allowed around the island
+    const { minX, maxX, minY, maxY } = this.worldBounds;
+
+    const loX = sw - M - maxX * s;
+    const hiX = M - minX * s;
+    this.camX = loX > hiX ? (loX + hiX) / 2 : Math.min(hiX, Math.max(loX, this.camX));
+
+    const loY = sh - M - maxY * s;
+    const hiY = M - minY * s;
+    this.camY = loY > hiY ? (loY + hiY) / 2 : Math.min(hiY, Math.max(loY, this.camY));
+  }
+
+  private applyCamera(): void {
+    this.world.scale.set(this.camScale);
+    this.world.position.set(this.camX, this.camY);
+  }
+
+  private followCamera(dt: number): void {
+    if (!this.followEnabled || this.pointerDown) return;
+    const focus = this.localFocus();
+    const targetX = this.app.screen.width / 2 - focus.x * this.camScale;
+    const targetY = this.app.screen.height / 2 - focus.y * this.camScale;
+    // Critically-damped-ish ease.
+    const k = 1 - Math.exp(-6 * dt);
+    this.camX += (targetX - this.camX) * k;
+    this.camY += (targetY - this.camY) * k;
+    this.clampCamera();
+    this.applyCamera();
+  }
+
+  // ── Pointer: tap to act, drag to pan ────────────────────────────
+
+  private onPointerDown = (e: FederatedPointerEvent): void => {
+    this.pointerDown = true;
+    this.pointerMoved = false;
+    this.downX = this.lastX = e.global.x;
+    this.downY = this.lastY = e.global.y;
+  };
+
+  private onPointerMove = (e: FederatedPointerEvent): void => {
+    if (this.pointerDown) {
+      const dx = e.global.x - this.lastX;
+      const dy = e.global.y - this.lastY;
+      this.lastX = e.global.x;
+      this.lastY = e.global.y;
+      if (Math.hypot(e.global.x - this.downX, e.global.y - this.downY) > DRAG_THRESHOLD) {
+        this.pointerMoved = true;
+        this.followEnabled = false; // user is exploring; stop auto-follow
+        this.camX += dx;
+        this.camY += dy;
+        this.clampCamera();
+        this.applyCamera();
+      }
+      return;
+    }
+    // Hover affordance (mouse): highlight the zone under the pointer.
+    this.updateHover(e);
+  };
+
+  private onPointerUp = (e: FederatedPointerEvent): void => {
+    const wasTap = this.pointerDown && !this.pointerMoved;
+    this.pointerDown = false;
+    if (wasTap) this.tapAt(e);
+  };
+
+  private updateHover(e: FederatedPointerEvent): void {
+    const p = this.world.toLocal(e.global);
+    const tile = screenToTile(p.x, p.y);
+    const zone = this.zoneAt(tile.x, tile.y);
+    const key = zone?.key ?? null;
+    if (key === this.hoveredZone) return;
+    if (this.hoveredZone) this.zoneScenes.get(this.hoveredZone)?.setHover(false);
+    this.hoveredZone = key;
+    if (key) this.zoneScenes.get(key)?.setHover(true);
+  }
+
+  private tapAt(e: FederatedPointerEvent): void {
+    if (!this.localId) return;
+    const local = this.avatarViews.get(this.localId);
+    if (!local) return;
+    const p = this.world.toLocal(e.global);
+    const tile = screenToTile(p.x, p.y);
+
+    // Tapped a decoration? Fire onObjectInteract instead of walking.
+    const deco = (this.layout.decorations ?? []).find(
+      (d) => d.position.x === tile.x && d.position.y === tile.y,
     );
-    const s = scale > 0 && Number.isFinite(scale) ? scale : 1;
-    this.world.scale.set(s);
+    if (deco) {
+      this.opts.onObjectInteract?.(deco.id, null);
+      return;
+    }
 
-    const cx = (minX + maxX) / 2;
-    const cy = (minY + maxY) / 2;
-    this.world.position.set(sw / 2 - cx * s, sh / 2 - cy * s);
+    const zone = this.zoneAt(tile.x, tile.y);
+    if (zone) {
+      this.followEnabled = true;
+      this.requestZoneTap(zone);
+      return;
+    }
+    if (this.grid.walkable(tile.x, tile.y)) {
+      this.followEnabled = true;
+      this.walkView(local, tile, () =>
+        this.opts.onAvatarMove?.(local.id, { x: tile.x, y: tile.y }),
+      );
+    }
   }
 
   // ── Per-frame update (movement always; bob/shimmer gated) ───────
 
   private update = (ticker: Ticker): void => {
-    const dt = ticker.deltaMS / 1000;
+    const dt = Math.min(0.05, ticker.deltaMS / 1000);
     this.elapsed += ticker.deltaMS;
 
     for (const view of this.avatarViews.values()) {
       this.advanceAvatar(view, dt);
     }
+    this.followCamera(dt);
 
     if (!this.opts.reducedMotion) this.drawShimmer();
   };
@@ -745,7 +832,10 @@ export class SceneRenderer {
     this.tornDown = true;
     try {
       this.app.ticker.remove(this.update);
-      this.tapSurface.off("pointertap", this.handleTap);
+      this.app.stage.off("pointerdown", this.onPointerDown);
+      this.app.stage.off("pointermove", this.onPointerMove);
+      this.app.stage.off("pointerup", this.onPointerUp);
+      this.app.stage.off("pointerupoutside", this.onPointerUp);
     } catch {
       /* ticker/listeners may not be attached */
     }

@@ -3,12 +3,13 @@
 A 2.5D tap-to-move island world renderer for **Engage Island**. Pure
 presentational React + PixiJS component. The host app owns all data.
 
-> **Status:** Milestone 3 — layered avatar compositor (body → outfit → hair
-> → accessory → display-color ring), tap-to-move with A\* pathfinding, walk +
-> idle animation, and y-sorted depth, on top of the Milestone 2 terrain /
-> zones / live theme swapping. Tap the island to walk; tap a zone to walk to
-> its entrance, then `onZoneTap` fires. The harness builds to a static site
-> for visual review.
+> **Status:** Milestone 3 (+ scale/feel pass) — a large, explorable island
+> with an eased follow camera and drag-to-pan, a chunky layered avatar
+> compositor, A\* tap-to-move, characterful per-zone art (pond, beach,
+> campfire, hollow, garden, meadow), lush varied terrain, and y-sorted
+> depth, on top of live theme swapping. Tap to walk; tap a zone to walk to
+> its entrance, then `onZoneTap` fires; drag to look around. The harness
+> builds to a full-screen static site for visual review.
 
 ---
 

@@ -80,9 +80,10 @@ export function toNum(c: { r: number; g: number; b: number }): number {
   return (clamp8(c.r) << 16) | (clamp8(c.g) << 8) | clamp8(c.b);
 }
 
-/** Parse a hex string straight to a Pixi color number. */
-export function hexNum(hex: string): number {
-  return toNum(parseHex(hex));
+/** Parse a hex string straight to a Pixi color number. Numbers pass through,
+ *  so it is safe to wrap values already produced by `shade`/`lerpHex`. */
+export function hexNum(hex: string | number): number {
+  return typeof hex === "number" ? hex : toNum(parseHex(hex));
 }
 
 /**
