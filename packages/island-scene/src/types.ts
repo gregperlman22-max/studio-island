@@ -94,7 +94,7 @@ export interface GridFootprint {
 
 export interface ZoneInstance {
   key: ZoneKey;
-  /** Human-facing label (host controls localization / non-reader mode). */
+  /** Player-facing label (host controls localization / non-reader mode). */
   displayName: string;
   /** Theme-pack skin name surfaced for tooltips. */
   skinName: string;
@@ -142,40 +142,29 @@ export interface DecorationPlacement {
 
 /**
  * Renderable avatar option sets — the single source of truth shared by the
- * layer compositor (what it can draw) and the host's avatar editor (what it
+ * animal compositor (what it can draw) and the host's avatar editor (what it
  * may offer). The package OWNS this set: the host enumerates these arrays to
  * build its picker UI, and cannot author an option the compositor can't draw.
- * Grow the starter set here as new layers ship; the derived union types and
- * the host editor stay in sync automatically.
+ *
+ * Characters are ANIMALS only — cute, chunky, big-headed creatures. There are
+ * deliberately no human attributes anywhere (no skin tones, no hair, no
+ * gender indicators). The therapist and child avatars are both animals.
  */
-export const BODY_TONES = [
-  "warm-light",
-  "warm-mid",
-  "warm-deep",
-  "cool-light",
-  "cool-mid",
-  "cool-deep",
-] as const;
-export const HAIR_STYLES = ["tuft", "braid", "swoop"] as const;
-export const OUTFIT_KEYS = ["stripes", "overalls", "tunic", "raincoat"] as const;
-export const ACCESSORY_KEYS = ["none", "satchel", "headband", "scarf"] as const;
+export const SPECIES = ["bunny", "fox", "bear", "frog", "cat", "deer"] as const;
+export const ACCESSORY_KEYS = ["none", "hat", "bow", "scarf", "backpack"] as const;
 
-export type BodyTone = (typeof BODY_TONES)[number];
-export type HairStyle = (typeof HAIR_STYLES)[number];
-export type OutfitKey = (typeof OUTFIT_KEYS)[number];
+export type Species = (typeof SPECIES)[number];
 export type AccessoryKey = (typeof ACCESSORY_KEYS)[number];
 
 /**
- * Layered 2D sprite system. The compositor stacks layers in this order:
- *   body → outfit → hair → accessory → displayColor tint.
- * Keys are validated against the TextureProvider's registered ids.
+ * Animal character config. The compositor draws a chunky creature of the given
+ * `species`, tinted by a soft pastel `bodyColor`, with an optional `accessory`,
+ * and a `displayColor` used for the name tag + selection ring.
  */
 export interface AvatarConfig {
-  bodyTone: BodyTone;
-  hairStyle: HairStyle;
-  /** Free-form hex; tints the hair layer. */
-  hairColor: string;
-  outfitKey: OutfitKey;
+  species: Species;
+  /** Soft pastel body tint (free-form hex). */
+  bodyColor: string;
   accessoryKey: AccessoryKey;
   /** Display color used for the name tag and selection ring. */
   displayColor: string;

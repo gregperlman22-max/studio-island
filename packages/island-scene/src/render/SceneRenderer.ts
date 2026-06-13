@@ -30,6 +30,7 @@ import {
 } from "./iso";
 import { ProgrammaticTextureProvider } from "./TextureProvider";
 import { buildAvatarSprite, type AvatarSprite } from "./avatar";
+import { biomeAt, landContext } from "./biome";
 import { buildZoneScene } from "./zones";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 
@@ -95,6 +96,11 @@ export class SceneRenderer {
   private terrain = new Graphics();
   /** y-sorted props: zones, decorations, avatars. */
   private entities = new Container();
+  /** Ambient firefly overlay (world space, drawn above props). */
+  private fireflies = new Container();
+  private fireflyDots: {
+    g: Graphics; cx: number; cy: number; rx: number; ry: number; phase: number; speed: number;
+  }[] = [];
 
   private textures!: ProgrammaticTextureProvider;
   private theme!: ThemePackConfig;
@@ -166,7 +172,7 @@ export class SceneRenderer {
     this.opts.container.appendChild(this.app.canvas);
     this.app.stage.addChild(this.backdrop, this.world);
     this.backdrop.addChild(this.sky, this.shimmer);
-    this.world.addChild(this.terrain, this.entities);
+    this.world.addChild(this.terrain, this.entities, this.fireflies);
     this.entities.sortableChildren = true;
 
     // Unified pointer handling on the stage: press + release without travel is
@@ -264,7 +270,33 @@ export class SceneRenderer {
     // layout.pictureFrameAnchor is an invisible reserved coordinate only —
     // nothing is rendered for it (a future phase docks a video window there).
     this.reconcileAvatars();
+    this.buildFireflies();
     this.setupCamera();
+  }
+
+  /** Soft fireflies drifting near the cave (Worry Hollow) — calm, magical. */
+  private buildFireflies(): void {
+    this.fireflies.removeChildren().forEach((c) => c.destroy());
+    this.fireflyDots = [];
+    const hollow = this.zones.find((z) => z.key === "worry_hollow");
+    if (!hollow) return;
+    const c = footprintCenter(hollow.gridPosition, hollow.footprint.w, hollow.footprint.h);
+    for (let i = 0; i < 11; i++) {
+      const g = new Graphics();
+      g.circle(0, 0, 2.2).fill({ color: 0xfff0a0, alpha: 0.9 });
+      g.circle(0, 0, 4.5).fill({ color: 0xffe07a, alpha: 0.25 });
+      const cx = c.x + (Math.random() - 0.5) * hollow.footprint.w * TILE_W * 0.9;
+      const cy = c.y - 6 + (Math.random() - 0.5) * hollow.footprint.h * TILE_H * 0.9;
+      g.position.set(cx, cy);
+      this.fireflies.addChild(g);
+      this.fireflyDots.push({
+        g, cx, cy,
+        rx: 6 + Math.random() * 10,
+        ry: 4 + Math.random() * 7,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.4 + Math.random() * 0.5,
+      });
+    }
   }
 
   /** Walkable = land, minus decoration cells and zone footprints (obstacles). */
@@ -306,54 +338,76 @@ export class SceneRenderer {
           : lerpHex(palette.skyBottom, palette.water, (t - 0.55) / 0.45);
       this.sky.rect(0, (h * i) / bands, w, h / bands + 1).fill(color);
     }
+
+    // Warm golden-hour glow from the upper area + a soft edge vignette so the
+    // whole world reads calm and sun-bathed.
+    for (let i = 0; i < 4; i++) {
+      this.sky
+        .ellipse(w * 0.5, h * 0.12, w * (0.5 - i * 0.08), h * (0.34 - i * 0.05))
+        .fill({ color: 0xffe9b0, alpha: 0.08 });
+    }
+    const vig = Math.max(w, h);
+    this.sky.rect(0, 0, w, h).fill({ color: 0x000000, alpha: 0 });
+    this.sky.ellipse(w / 2, h / 2, vig * 0.62, vig * 0.62).fill({ color: 0xffd98a, alpha: 0.05 });
   }
 
   private drawTerrain(): void {
     const { palette } = this.theme;
-    const cliff = shade(palette.land, -0.4);
-    const cliffShade = shade(palette.land, -0.55);
-    const edge = shade(palette.foliage, -0.1);
+    const cliff = shade(palette.land, -0.42);
+    const cliffShade = shade(palette.land, -0.58);
 
-    // Lush, varied grass: blend the land tone toward foliage/lighter grass
-    // with a couple of overlaid frequencies so greens read rich, not flat.
-    const lighter = shade(palette.land, 0.14);
-    const deeper = lerpHex(palette.land, palette.foliage, 0.4);
-    const landTone = (gx: number, gy: number) => {
-      const n =
-        Math.sin(gx * 0.45 + gy * 0.28) * 0.5 +
-        Math.sin((gx - gy) * 0.6 + 2.0) * 0.3 +
-        Math.sin((gx + gy) * 0.17) * 0.2; // ~[-1,1]
-      const t = (n + 1) / 2;
-      // Bias toward the base land color, occasionally lighter/deeper patches.
-      if (t > 0.72) return deeper;
-      if (t < 0.26) return lighter;
-      return shade(palette.land, (t - 0.5) * 0.12);
-    };
+    // Biome ground tones (warm, golden-hour leaning).
+    const sand = shade(palette.landAlt, 0.06);
+    const forestFloor = lerpHex(palette.land, palette.foliageShadow, 0.5);
+    const stone = lerpHex(palette.landAlt, "#9a9080", 0.62);
+    const meadowGrass = shade(palette.land, 0.13);
+    const grassLight = shade(palette.land, 0.16);
+    const grassDeep = lerpHex(palette.land, palette.foliage, 0.42);
 
-    // Deterministic per-tile hash for scattering flowers/clover.
     const hash = (x: number, y: number) => {
       const h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
       return h - Math.floor(h);
     };
-    const flowerCols = [hexNum(palette.accent), 0xfff0a0, 0xffffff, 0xb98aff];
 
-    const lookup = new Set(
-      this.layout.landCells.map((c) => `${c.x},${c.y}`),
-    );
-    const isLand = (x: number, y: number) => lookup.has(`${x},${y}`);
+    const ctx = landContext(this.layout.grid, this.layout.landCells);
+    const isLand = ctx.isLand;
     const interior = (x: number, y: number) =>
       isLand(x, y) && isLand(x + 1, y) && isLand(x, y + 1) && isLand(x - 1, y) && isLand(x, y - 1);
 
+    const groundTone = (gx: number, gy: number, biome: ReturnType<typeof biomeAt>): number => {
+      const n =
+        Math.sin(gx * 0.45 + gy * 0.28) * 0.5 + Math.sin((gx - gy) * 0.6 + 2) * 0.5; // ~[-1,1]
+      switch (biome) {
+        case "beach": return shade(sand, n * 0.05);
+        case "forest": return shade(forestFloor, n * 0.06);
+        case "mountain": return shade(stone, n * 0.06);
+        case "meadow": return shade(meadowGrass, n * 0.06);
+        default: {
+          const t = (n + 1) / 2;
+          if (t > 0.74) return grassDeep;
+          if (t < 0.24) return grassLight;
+          return shade(palette.land, (t - 0.5) * 0.1);
+        }
+      }
+    };
+    const flowerCols = [hexNum(palette.accent), 0xfff0a0, 0xffffff, 0xb98aff];
+
     this.terrain.clear();
 
-    // Sort back-to-front so cliffs overlap correctly.
     const cells = [...this.layout.landCells].sort(
       (a, b) => depth(a.x, a.y) - depth(b.x, b.y),
     );
 
+    // Coastal foam ring (under the land, hugging the shore).
+    for (const c of cells) {
+      if (interior(c.x, c.y)) continue;
+      this.terrain
+        .poly(diamondPoly(c.x, c.y))
+        .stroke({ width: 4, color: hexNum(palette.waterShimmer), alpha: 0.35 });
+    }
+
     for (const c of cells) {
       const { x, y } = tileToScreen(c.x, c.y);
-      // Cliff skirt under both front-facing edges (covered inland, thick coast).
       this.terrain
         .poly([
           x - TILE_W / 2, y + TILE_H / 2,
@@ -370,25 +424,16 @@ export class SceneRenderer {
           x, y + TILE_H + CLIFF,
         ])
         .fill(cliff);
-      this.terrain.poly(diamondPoly(c.x, c.y)).fill(landTone(c.x, c.y));
+      this.terrain.poly(diamondPoly(c.x, c.y)).fill(groundTone(c.x, c.y, biomeAt(c.x, c.y, ctx)));
     }
 
-    // Coast outline for a storybook edge.
-    for (const c of cells) {
-      if (!isLand(c.x - 1, c.y) || !isLand(c.x, c.y - 1)) {
-        this.terrain
-          .poly(diamondPoly(c.x, c.y))
-          .stroke({ width: 1, color: edge, alpha: 0.22 });
-      }
-    }
-
-    // Scatter flower clusters + clover specks on open interior tiles.
+    // Scattered natural detail per biome.
     for (const c of cells) {
       if (!interior(c.x, c.y)) continue;
+      const biome = biomeAt(c.x, c.y, ctx);
       const r = hash(c.x, c.y);
       const ctr = tileCenter(c.x, c.y);
-      if (r < 0.12) {
-        // small flower cluster
+      if ((biome === "meadow" || biome === "grass") && r < 0.16) {
         const col = flowerCols[Math.floor(hash(c.y, c.x) * flowerCols.length) % flowerCols.length];
         for (let k = 0; k < 3; k++) {
           const fx = ctr.x + (hash(c.x + k, c.y) - 0.5) * 16;
@@ -396,13 +441,21 @@ export class SceneRenderer {
           this.terrain.circle(fx, fy, 1.7).fill(col);
           this.terrain.circle(fx, fy, 0.7).fill(0xfff0a0);
         }
-      } else if (r < 0.34) {
-        // clover/grass specks
+      } else if (biome === "forest" && r < 0.4) {
+        // fallen leaves
         for (let k = 0; k < 3; k++) {
-          const fx = ctr.x + (hash(c.x + k * 2, c.y) - 0.5) * 18;
-          const fy = ctr.y + (hash(c.x, c.y + k * 2) - 0.5) * 9;
-          this.terrain.circle(fx, fy, 1.3).fill({ color: hexNum(deeper), alpha: 0.6 });
+          const fx = ctr.x + (hash(c.x + k * 3, c.y) - 0.5) * 18;
+          const fy = ctr.y + (hash(c.x, c.y + k * 3) - 0.5) * 9;
+          this.terrain.ellipse(fx, fy, 2, 1).fill({ color: 0xc8893f, alpha: 0.6 });
         }
+      } else if (biome === "mountain" && r < 0.3) {
+        const fx = ctr.x + (hash(c.x, c.y) - 0.5) * 12;
+        const fy = ctr.y + (hash(c.y, c.x) - 0.5) * 6;
+        this.terrain.ellipse(fx, fy, 3, 1.6).fill({ color: hexNum(shade(stone, -0.18)), alpha: 0.7 });
+      } else if (biome === "beach" && r < 0.12) {
+        const fx = ctr.x + (hash(c.x, c.y) - 0.5) * 14;
+        const fy = ctr.y + (hash(c.y, c.x) - 0.5) * 7;
+        this.terrain.circle(fx, fy, 1.1).fill({ color: hexNum(shade(sand, -0.18)), alpha: 0.6 });
       }
     }
   }
@@ -446,13 +499,13 @@ export class SceneRenderer {
     }
   }
 
-  // ── Avatars (persistent views, layered compositor, movement) ────
+  // ── Avatars (persistent animal views + movement) ────────────────
 
   private configHash(a: AvatarInstance): string {
     const c = a.config;
     return [
-      c.bodyTone, c.hairStyle, c.hairColor, c.outfitKey, c.accessoryKey,
-      c.displayColor, a.label ?? "", this.opts.hideTextLabels ? "1" : "0",
+      c.species, c.bodyColor, c.accessoryKey, c.displayColor,
+      a.label ?? "", this.opts.hideTextLabels ? "1" : "0",
     ].join("|");
   }
 
@@ -771,7 +824,20 @@ export class SceneRenderer {
     }
     this.followCamera(dt);
 
-    if (!this.opts.reducedMotion) this.drawShimmer();
+    if (this.opts.reducedMotion) {
+      this.fireflies.visible = false;
+    } else {
+      this.fireflies.visible = true;
+      this.drawShimmer();
+      const t = this.elapsed / 1000;
+      for (const f of this.fireflyDots) {
+        f.g.position.set(
+          f.cx + Math.cos(t * f.speed + f.phase) * f.rx,
+          f.cy + Math.sin(t * f.speed * 1.3 + f.phase) * f.ry,
+        );
+        f.g.alpha = 0.45 + 0.45 * (0.5 + 0.5 * Math.sin(t * 2 + f.phase));
+      }
+    }
   };
 
   private advanceAvatar(view: AvatarView, dt: number): void {

@@ -3,13 +3,18 @@
 A 2.5D tap-to-move island world renderer for **Engage Island**. Pure
 presentational React + PixiJS component. The host app owns all data.
 
-> **Status:** Milestone 3 (+ scale/feel pass) — a large, explorable island
-> with an eased follow camera and drag-to-pan, a chunky layered avatar
-> compositor, A\* tap-to-move, characterful per-zone art (pond, beach,
-> campfire, hollow, garden, meadow), lush varied terrain, and y-sorted
-> depth, on top of live theme swapping. Tap to walk; tap a zone to walk to
-> its entrance, then `onZoneTap` fires; drag to look around. The harness
-> builds to a full-screen static site for visual review.
+> **Status:** Zen-world creative pass — a large, organic open-world island
+> with natural biomes (forest, mountain, meadow, wrapping beach shore),
+> warm golden-hour tone, real per-zone structures (dock, beach hut, cabin,
+> glowing cave, greenhouse, gazebo), fireflies by the cave, and an alive
+> shimmering sea. Characters are **animals** (bunny / fox / bear / frog /
+> cat / deer) — chunky and cute, no human attributes. Eased follow camera +
+> drag-to-pan, A\* tap-to-move, y-sorted depth, live theme swapping. The
+> harness is a full-screen static site for visual review.
+>
+> **Contract note:** `AvatarConfig` is now the animal shape
+> `{ species, bodyColor, accessoryKey, displayColor }` (was a human
+> layered-sprite shape) — a deliberate creative-direction change.
 
 ---
 

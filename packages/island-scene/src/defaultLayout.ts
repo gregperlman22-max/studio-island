@@ -4,26 +4,32 @@ import type {
   LayoutConfig,
   ZoneInstance,
 } from "./types";
+import { biomeAt, landContext } from "./render/biome";
 
 /**
- * Sample island used by the demo harness. A large, organic (blob-shaped)
- * island — a world to explore rather than a single board tile. Hosts pass
- * their own LayoutConfig (mirrors islands.layout_config); this is just a
+ * Sample island used by the demo harness — a large, organic open-world island
+ * with natural biomes (forest, mountain, meadow, beach shore). Hosts pass
+ * their own LayoutConfig (mirrors islands.layout_config); this is a
  * representative default.
  */
 
-const GRID_W = 44;
-const GRID_H = 30;
-const CX = 22;
-const CY = 15;
-const RX = 19;
-const RY = 12.5;
+const GRID_W = 54;
+const GRID_H = 36;
+const CX = 27;
+const CY = 18;
+const RX = 24;
+const RY = 16;
 
-// Deterministic island silhouette: an ellipse with a little coastal wobble.
+// Organic silhouette: ellipse with multi-frequency coastal wobble for bays
+// and headlands (no hard edges, no square corners).
 function isLandCell(x: number, y: number): boolean {
+  const ang = Math.atan2(y - CY, x - CX);
+  const wobble =
+    0.06 * Math.sin(ang * 3 + 0.5) +
+    0.05 * Math.sin(ang * 5 + 2.1) +
+    0.04 * Math.sin(x * 0.5) * Math.cos(y * 0.4);
   const nx = (x - CX) / RX;
   const ny = (y - CY) / RY;
-  const wobble = 0.05 * Math.sin(x * 0.7) + 0.05 * Math.sin(y * 0.6 + 1.3);
   return nx * nx + ny * ny <= 1.04 + wobble;
 }
 
@@ -38,18 +44,20 @@ const landCells: GridPosition[] = (() => {
 })();
 
 export const sampleZones: ZoneInstance[] = [
-  { key: "calm_cove",          displayName: "Calm Cove",          skinName: "Bubble Cove",        gridPosition: { x: 8,  y: 8 },  footprint: { w: 5, h: 4 }, unlocked: true  },
-  { key: "campfire",           displayName: "Campfire",           skinName: "Marshmallow Ring",   gridPosition: { x: 20, y: 6 },  footprint: { w: 4, h: 4 }, unlocked: true  },
-  { key: "build_beach",        displayName: "Build Beach",        skinName: "Sandcastle Shore",   gridPosition: { x: 31, y: 9 },  footprint: { w: 5, h: 4 }, unlocked: true  },
-  { key: "worry_hollow",       displayName: "Worry Hollow",       skinName: "Whisper Hollow",     gridPosition: { x: 8,  y: 19 }, footprint: { w: 5, h: 4 }, unlocked: false },
-  { key: "field_guide_meadow", displayName: "Field Guide Meadow", skinName: "Clover Meadow",      gridPosition: { x: 19, y: 20 }, footprint: { w: 5, h: 4 }, unlocked: true  },
-  { key: "garden",             displayName: "Garden",             skinName: "Carrot Patch",       gridPosition: { x: 31, y: 19 }, footprint: { w: 5, h: 4 }, unlocked: true  },
+  { key: "campfire",           displayName: "Campfire",           skinName: "Marshmallow Ring",   gridPosition: { x: 13, y: 9 },  footprint: { w: 4, h: 4 }, unlocked: true  },
+  { key: "build_beach",        displayName: "Build Beach",        skinName: "Sandcastle Shore",   gridPosition: { x: 28, y: 7 },  footprint: { w: 5, h: 4 }, unlocked: true  },
+  { key: "calm_cove",          displayName: "Calm Cove",          skinName: "Bubble Cove",        gridPosition: { x: 9,  y: 21 }, footprint: { w: 5, h: 4 }, unlocked: true  },
+  { key: "worry_hollow",       displayName: "Worry Hollow",       skinName: "Whisper Hollow",     gridPosition: { x: 41, y: 14 }, footprint: { w: 5, h: 4 }, unlocked: false },
+  { key: "field_guide_meadow", displayName: "Field Guide Meadow", skinName: "Clover Meadow",      gridPosition: { x: 24, y: 26 }, footprint: { w: 5, h: 4 }, unlocked: true  },
+  { key: "garden",             displayName: "Garden",             skinName: "Carrot Patch",       gridPosition: { x: 38, y: 24 }, footprint: { w: 5, h: 4 }, unlocked: true  },
 ];
 
-const spawnPoint: GridPosition = { x: 21, y: 14 };
+const spawnPoint: GridPosition = { x: 27, y: 18 };
 
-// Scatter trees and rocks across the open land, avoiding zones + spawn.
+// Biome-aware scatter: dense trees in the forest, rocks on the mountain,
+// mushrooms in shade, shells along the beach, sparse elsewhere.
 const decorations: DecorationPlacement[] = (() => {
+  const ctx = landContext({ w: GRID_W, h: GRID_H }, landCells);
   const blocked = new Set<string>();
   for (const z of sampleZones) {
     for (let dx = -1; dx <= z.footprint.w; dx++) {
@@ -60,23 +68,29 @@ const decorations: DecorationPlacement[] = (() => {
   }
   blocked.add(`${spawnPoint.x},${spawnPoint.y}`);
 
-  const land = new Set(landCells.map((c) => `${c.x},${c.y}`));
-  // Simple LCG for a stable scatter.
-  let seed = 1337;
+  let seed = 9281;
   const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
 
   const out: DecorationPlacement[] = [];
   let id = 0;
-  for (let i = 0; i < 240 && out.length < 34; i++) {
-    const x = 2 + Math.floor(rnd() * (GRID_W - 4));
-    const y = 2 + Math.floor(rnd() * (GRID_H - 4));
-    const key = `${x},${y}`;
-    if (!land.has(key) || blocked.has(key)) continue;
-    // Keep an interior away from the very coast so props sit on solid ground.
-    if (!isLandCell(x + 1, y) || !isLandCell(x, y + 1)) continue;
+  for (const c of landCells) {
+    const key = `${c.x},${c.y}`;
+    if (blocked.has(key)) continue;
+    // Keep props off the very coast so they sit on solid ground.
+    if (!isLandCell(c.x + 1, c.y) || !isLandCell(c.x, c.y + 1) || !isLandCell(c.x - 1, c.y)) continue;
+
+    const biome = biomeAt(c.x, c.y, ctx);
+    const r = rnd();
+    let kind: string | null = null;
+    if (biome === "forest") kind = r < 0.5 ? "tree" : r < 0.6 ? "mushroom" : null;
+    else if (biome === "mountain") kind = r < 0.45 ? "rock" : null;
+    else if (biome === "beach") kind = r < 0.08 ? "shell" : null;
+    else if (biome === "meadow") kind = r < 0.08 ? "tree" : null;
+    else kind = r < 0.12 ? (r < 0.08 ? "tree" : "rock") : null;
+    if (!kind) continue;
+
     blocked.add(key);
-    const kind = rnd() < 0.62 ? "tree" : "rock";
-    out.push({ id: `${kind}-${id++}`, kind, position: { x, y }, scale: 0.9 + rnd() * 0.5 });
+    out.push({ id: `${kind}-${id++}`, kind, position: { x: c.x, y: c.y }, scale: 0.85 + rnd() * 0.5 });
   }
   return out;
 })();
@@ -85,6 +99,6 @@ export const sampleLayout: LayoutConfig = {
   grid: { w: GRID_W, h: GRID_H },
   landCells,
   spawnPoint,
-  pictureFrameAnchor: { x: 21, y: 11 },
+  pictureFrameAnchor: { x: 27, y: 14 },
   decorations,
 };

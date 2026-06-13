@@ -46,21 +46,42 @@ export class ProgrammaticTextureProvider implements TextureProvider {
 
     switch (this.normalize(kind)) {
       case "tree": {
-        const trunk = shade(p?.land ?? "#7a5a3a", -0.45);
+        // Rounded, leafy tree with dappled highlights.
+        const trunk = shade(p?.land ?? "#7a5a3a", -0.5);
         const leaf = hexNum(p?.foliage ?? "#5fb35a");
-        const leafDark = shade(p?.foliage ?? "#5fb35a", -0.25);
-        g.roundRect(-4, -14, 8, 18, 3).fill(trunk);
-        g.ellipse(0, -22, 16, 14).fill(leafDark);
-        g.ellipse(-3, -26, 13, 12).fill(leaf);
-        g.ellipse(5, -24, 10, 9).fill(leaf);
+        const leafDark = shade(p?.foliage ?? "#5fb35a", -0.28);
+        const leafLit = shade(p?.foliage ?? "#5fb35a", 0.22);
+        g.roundRect(-4, -18, 8, 22, 3).fill(trunk);
+        g.ellipse(0, -28, 19, 17).fill(leafDark);
+        g.ellipse(-4, -33, 15, 14).fill(leaf);
+        g.ellipse(6, -30, 12, 11).fill(leaf);
+        g.ellipse(-2, -37, 8, 7).fill(leafLit);
         break;
       }
       case "rock": {
-        const base = shade(p?.landAlt ?? "#9b8a6a", -0.15);
-        const lit = shade(p?.landAlt ?? "#9b8a6a", 0.2);
-        g.ellipse(0, 0, 14, 8).fill(shade(p?.land ?? "#7a5a3a", -0.5));
-        g.roundRect(-12, -12, 24, 14, 6).fill(base);
-        g.roundRect(-9, -12, 12, 7, 4).fill(lit);
+        // Layered stack to suggest a little height (mountain feel).
+        const base = shade(p?.landAlt ?? "#9b8a6a", -0.2);
+        const mid = shade(p?.landAlt ?? "#9b8a6a", -0.05);
+        const lit = shade(p?.landAlt ?? "#9b8a6a", 0.22);
+        g.ellipse(0, 0, 16, 8).fill(shade(p?.land ?? "#7a5a3a", -0.55));
+        g.roundRect(-13, -14, 26, 16, 7).fill(base);
+        g.roundRect(-9, -22, 18, 12, 6).fill(mid);
+        g.roundRect(-6, -22, 8, 6, 3).fill(lit);
+        break;
+      }
+      case "mushroom": {
+        g.roundRect(-2, -6, 4, 7, 2).fill(0xf3e7cf);
+        g.ellipse(0, -7, 8, 5).fill(0xd9534f);
+        g.circle(-3, -8, 1.4).fill(0xfff0e0);
+        g.circle(2, -6, 1.1).fill(0xfff0e0);
+        break;
+      }
+      case "shell": {
+        const sh = hexNum(p?.accent ?? "#ff8aa3");
+        g.ellipse(0, -1, 7, 6).fill(sh);
+        for (let i = -2; i <= 2; i++) {
+          g.moveTo(0, 1).lineTo(i * 3, -7).stroke({ width: 1, color: 0xffffff, alpha: 0.6 });
+        }
         break;
       }
       default: {
@@ -80,6 +101,8 @@ export class ProgrammaticTextureProvider implements TextureProvider {
     const k = kind.toLowerCase();
     if (k.includes("tree") || k.includes("clover") || k.includes("fern")) return "tree";
     if (k.includes("rock") || k.includes("stone") || k.includes("cairn") || k.includes("driftwood")) return "rock";
+    if (k.includes("mushroom") || k.includes("toadstool")) return "mushroom";
+    if (k.includes("shell") || k.includes("starfish")) return "shell";
     return "shrub";
   }
 

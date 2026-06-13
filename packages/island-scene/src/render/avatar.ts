@@ -1,44 +1,17 @@
 import { Container, Graphics } from "pixi.js";
-import type {
-  AccessoryKey,
-  AvatarConfig,
-  BodyTone,
-  HairStyle,
-  OutfitKey,
-} from "../types";
+import type { AccessoryKey, AvatarConfig, Species } from "../types";
 import { hexNum, shade } from "./iso";
 
 /**
- * Programmatic layered avatar compositor. Stacks layers bottom-to-top in the
- * contract order: body → outfit → hair → accessory → displayColor ring.
+ * Programmatic ANIMAL compositor. Draws a chunky, big-headed creature
+ * (Animal Crossing proportions) of the given species, tinted by a soft pastel
+ * body color, with an optional accessory and a display-color selection ring.
  *
- * Origin (0,0) is the avatar's feet (ground contact), art drawn upward in
- * negative-y, so the renderer can place it at a tile center and y-sort it.
- * Everything is Pixi Graphics so a later phase can swap these for atlas
- * sprites behind the same builder without touching scene logic.
+ * There are deliberately NO human attributes — no skin tones, no hair, no
+ * gender indicators. Origin (0,0) is the feet (ground contact); art is drawn
+ * upward in negative-y so the renderer can place + y-sort it. Programmatic
+ * now, swappable for atlas sprites later behind the same builder.
  */
-
-const SKIN: Record<BodyTone, string> = {
-  "warm-light": "#f2c79a",
-  "warm-mid": "#d89a63",
-  "warm-deep": "#8a5a36",
-  "cool-light": "#ecc6ac",
-  "cool-mid": "#b98a6a",
-  "cool-deep": "#6f4a32",
-};
-
-const OUTFIT: Record<OutfitKey, { base: string; trim: string }> = {
-  stripes: { base: "#e86a6a", trim: "#ffffff" },
-  overalls: { base: "#4f7fb8", trim: "#3a5f8a" },
-  tunic: { base: "#7ba05b", trim: "#5d7a42" },
-  raincoat: { base: "#f4c430", trim: "#d9a400" },
-};
-
-const ACCESSORY_COLOR: Record<Exclude<AccessoryKey, "none">, string> = {
-  satchel: "#9b6b3f",
-  headband: "#ef6ea0",
-  scarf: "#5ec3c9",
-};
 
 export interface AvatarSprite {
   container: Container;
@@ -48,49 +21,39 @@ export interface AvatarSprite {
 
 export function buildAvatarSprite(config: AvatarConfig): AvatarSprite {
   const container = new Container();
+  const body = hexNum(config.bodyColor);
+  const bodyDark = shade(config.bodyColor, -0.16);
+  const bodyLight = shade(config.bodyColor, 0.22);
+  const belly = shade(config.bodyColor, 0.34);
 
   // Ground contact shadow.
   const shadow = new Graphics();
-  shadow.ellipse(0, 0, 10, 4).fill({ color: 0x000000, alpha: 0.22 });
+  shadow.ellipse(0, 0, 12, 4.5).fill({ color: 0x000000, alpha: 0.22 });
   container.addChild(shadow);
 
-  // Selection ring in the avatar's display color (under the body).
+  // Selection ring (display color), under the body.
   const ring = new Graphics();
-  ring
-    .ellipse(0, -1, 12, 5)
-    .stroke({ width: 2, color: hexNum(config.displayColor), alpha: 0.9 });
+  ring.ellipse(0, -1, 14, 5.5).stroke({ width: 2.5, color: hexNum(config.displayColor), alpha: 0.95 });
   ring.visible = false;
   container.addChild(ring);
 
-  // ── body (skin base: legs, torso, head, ears) ──
-  const skin = hexNum(SKIN[config.bodyTone]);
-  const skinShade = shade(SKIN[config.bodyTone], -0.18);
-  const body = new Graphics();
-  // legs
-  body.roundRect(-5, -9, 4, 9, 2).fill(skinShade);
-  body.roundRect(1, -9, 4, 9, 2).fill(skinShade);
-  // torso
-  body.roundRect(-6, -22, 12, 14, 5).fill(skin);
-  // head
-  body.circle(0, -28, 6).fill(skin);
-  container.addChild(body);
+  const g = new Graphics();
 
-  // ── outfit (over torso) ──
-  container.addChild(buildOutfit(config.outfitKey));
+  // Small rounded body + little feet.
+  g.ellipse(-4, -2, 2.6, 2).fill(bodyDark);
+  g.ellipse(4, -2, 2.6, 2).fill(bodyDark);
+  g.roundRect(-7, -16, 14, 15, 6).fill(body);
+  g.ellipse(0, -8, 5, 6).fill(belly); // belly
 
-  // ── hair (over head, tinted hairColor) ──
-  container.addChild(buildHair(config.hairStyle, config.hairColor));
+  // Species-specific head + features (drawn around head center ~ y -26).
+  drawSpecies(g, config.species, { body, bodyDark, bodyLight });
 
-  // ── accessory ──
+  container.addChild(g);
+
+  // Accessory on top.
   if (config.accessoryKey !== "none") {
-    container.addChild(buildAccessory(config.accessoryKey));
+    container.addChild(buildAccessory(config.accessoryKey, config.bodyColor));
   }
-
-  // face: simple eyes so the avatar reads as a character.
-  const face = new Graphics();
-  face.circle(-2.2, -28.5, 0.9).fill(0x2a2a2a);
-  face.circle(2.2, -28.5, 0.9).fill(0x2a2a2a);
-  container.addChild(face);
 
   return {
     container,
@@ -100,71 +63,134 @@ export function buildAvatarSprite(config: AvatarConfig): AvatarSprite {
   };
 }
 
-function buildOutfit(key: OutfitKey): Graphics {
-  const g = new Graphics();
-  const c = OUTFIT[key];
-  const base = hexNum(c.base);
-  const trim = hexNum(c.trim);
-  // Garment over the torso.
-  g.roundRect(-6, -21, 12, 13, 5).fill(base);
-
-  switch (key) {
-    case "stripes":
-      g.rect(-6, -18, 12, 2).fill({ color: trim, alpha: 0.9 });
-      g.rect(-6, -13, 12, 2).fill({ color: trim, alpha: 0.9 });
-      break;
-    case "overalls":
-      g.rect(-4, -21, 2, 9).fill(trim);
-      g.rect(2, -21, 2, 9).fill(trim);
-      g.roundRect(-5, -16, 10, 6, 2).fill({ color: trim, alpha: 0.6 });
-      break;
-    case "tunic":
-      g.moveTo(0, -21).lineTo(0, -9).stroke({ width: 1.5, color: trim, alpha: 0.8 });
-      break;
-    case "raincoat":
-      g.roundRect(-6.5, -24, 13, 6, 3).fill(base); // hood
-      g.roundRect(-6, -21, 12, 13, 5).stroke({ width: 1.5, color: trim, alpha: 0.8 });
-      break;
-  }
-  return g;
+interface Tones {
+  body: number;
+  bodyDark: number;
+  bodyLight: number;
 }
 
-function buildHair(style: HairStyle, color: string): Graphics {
-  const g = new Graphics();
-  const c = hexNum(color);
-  const dark = shade(color, -0.2);
-  switch (style) {
-    case "tuft":
-      g.ellipse(0, -33, 6.5, 4).fill(c);
-      g.ellipse(0, -35, 2.2, 3).fill(c);
+const HEAD_Y = -26;
+
+function drawSpecies(g: Graphics, species: Species, t: Tones): void {
+  const { body, bodyDark, bodyLight } = t;
+  const head = () => g.circle(0, HEAD_Y, 10).fill(body);
+  const eyes = (dx = 3.2, dy = -27.5, r = 1.3) => {
+    g.circle(-dx, dy, r).fill(0x2a2a2a);
+    g.circle(dx, dy, r).fill(0x2a2a2a);
+  };
+  const muzzle = (color: number, y = -23) => {
+    g.ellipse(0, y, 5, 3.6).fill(color);
+    g.ellipse(0, y - 1.5, 1.6, 1.2).fill(0x2a2a2a); // nose
+  };
+
+  switch (species) {
+    case "bunny": {
+      // tall ears
+      g.ellipse(-4, HEAD_Y - 13, 2.6, 8).fill(body);
+      g.ellipse(4, HEAD_Y - 13, 2.6, 8).fill(body);
+      g.ellipse(-4, HEAD_Y - 13, 1.2, 5).fill(bodyLight);
+      g.ellipse(4, HEAD_Y - 13, 1.2, 5).fill(bodyLight);
+      head();
+      eyes();
+      muzzle(bodyLight, -22.5);
       break;
-    case "braid":
-      g.ellipse(0, -33, 6.5, 4).fill(c);
-      g.roundRect(5, -32, 3, 12, 1.5).fill(c);
-      g.circle(6.5, -22, 2).fill(dark);
+    }
+    case "fox": {
+      // pointed ears + tail
+      g.poly([-9, HEAD_Y - 4, -3, HEAD_Y - 13, -2, HEAD_Y - 3]).fill(bodyDark);
+      g.poly([9, HEAD_Y - 4, 3, HEAD_Y - 13, 2, HEAD_Y - 3]).fill(bodyDark);
+      g.ellipse(10, -6, 4, 6).fill(bodyDark);
+      g.ellipse(11, -3, 2.5, 3).fill(0xffffff);
+      head();
+      g.ellipse(0, -23, 6, 4).fill(0xfff4e8); // white snout
+      eyes();
+      g.circle(0, -24.5, 1.5).fill(0x2a2a2a);
       break;
-    case "swoop":
-      g.ellipse(0, -33, 6.8, 4.2).fill(c);
-      g.moveTo(-6, -32).quadraticCurveTo(-9, -27, -5, -26).fill(c);
+    }
+    case "bear": {
+      // round ears
+      g.circle(-7, HEAD_Y - 8, 3.6).fill(body);
+      g.circle(7, HEAD_Y - 8, 3.6).fill(body);
+      g.circle(-7, HEAD_Y - 8, 1.8).fill(bodyLight);
+      g.circle(7, HEAD_Y - 8, 1.8).fill(bodyLight);
+      head();
+      muzzle(bodyLight);
+      eyes(3, -28);
       break;
+    }
+    case "frog": {
+      // wide head, eyes on top
+      g.ellipse(0, HEAD_Y, 11, 8).fill(body);
+      g.circle(-5, HEAD_Y - 7, 3.4).fill(body);
+      g.circle(5, HEAD_Y - 7, 3.4).fill(body);
+      g.circle(-5, HEAD_Y - 7, 1.8).fill(0xffffff);
+      g.circle(5, HEAD_Y - 7, 1.8).fill(0xffffff);
+      g.circle(-5, HEAD_Y - 7, 0.9).fill(0x2a2a2a);
+      g.circle(5, HEAD_Y - 7, 0.9).fill(0x2a2a2a);
+      g.arc(0, HEAD_Y, 6, 0.15, Math.PI - 0.15).stroke({ width: 1.4, color: shade("#2a2a2a", 0) });
+      break;
+    }
+    case "cat": {
+      // triangle ears + whiskers + tail
+      g.poly([-8, HEAD_Y - 4, -3, HEAD_Y - 12, -1, HEAD_Y - 4]).fill(body);
+      g.poly([8, HEAD_Y - 4, 3, HEAD_Y - 12, 1, HEAD_Y - 4]).fill(body);
+      g.poly([-7, HEAD_Y - 5, -3.5, HEAD_Y - 10, -2, HEAD_Y - 5]).fill(bodyLight);
+      g.poly([7, HEAD_Y - 5, 3.5, HEAD_Y - 10, 2, HEAD_Y - 5]).fill(bodyLight);
+      g.ellipse(9, -8, 2.4, 5).fill(bodyDark);
+      head();
+      eyes();
+      g.circle(0, -23.5, 1.1).fill(0xff9bb0);
+      g.moveTo(2, -23).lineTo(8, -24).stroke({ width: 0.8, color: 0xffffff });
+      g.moveTo(-2, -23).lineTo(-8, -24).stroke({ width: 0.8, color: 0xffffff });
+      break;
+    }
+    case "deer": {
+      // antlers + long ears + snout
+      g.moveTo(-3, HEAD_Y - 8).lineTo(-5, HEAD_Y - 14).moveTo(-4, HEAD_Y - 11).lineTo(-8, HEAD_Y - 13)
+        .stroke({ width: 1.6, color: shade("#9a7a4a", 0) });
+      g.moveTo(3, HEAD_Y - 8).lineTo(5, HEAD_Y - 14).moveTo(4, HEAD_Y - 11).lineTo(8, HEAD_Y - 13)
+        .stroke({ width: 1.6, color: shade("#9a7a4a", 0) });
+      g.ellipse(-8, HEAD_Y - 5, 2.2, 4).fill(bodyDark);
+      g.ellipse(8, HEAD_Y - 5, 2.2, 4).fill(bodyDark);
+      head();
+      g.ellipse(0, -22.5, 5, 4).fill(bodyLight);
+      g.ellipse(0, -23.5, 1.5, 1.1).fill(0x2a2a2a);
+      eyes(3.2, -27.5);
+      break;
+    }
   }
-  return g;
 }
 
-function buildAccessory(key: Exclude<AccessoryKey, "none">): Graphics {
+const ACCESSORY_COLOR: Record<Exclude<AccessoryKey, "none">, number> = {
+  hat: 0xe8643c,
+  bow: 0xff6f97,
+  scarf: 0x5ec3c9,
+  backpack: 0x9b6b3f,
+};
+
+function buildAccessory(key: Exclude<AccessoryKey, "none">, bodyColor: string): Graphics {
   const g = new Graphics();
-  const c = hexNum(ACCESSORY_COLOR[key]);
+  const c = ACCESSORY_COLOR[key];
   switch (key) {
-    case "satchel":
-      g.moveTo(-6, -21).lineTo(6, -13).stroke({ width: 1.5, color: c, alpha: 0.9 });
-      g.roundRect(4, -14, 6, 6, 2).fill(c);
+    case "hat":
+      g.ellipse(0, HEAD_Y - 8, 9, 3).fill(c);
+      g.roundRect(-5, HEAD_Y - 15, 10, 8, 3).fill(c);
+      g.ellipse(0, HEAD_Y - 15, 5, 2).fill(shade("#ffffff", -0.1));
       break;
-    case "headband":
-      g.roundRect(-6.5, -31, 13, 2.5, 1).fill(c);
+    case "bow":
+      g.poly([-1, HEAD_Y - 9, -7, HEAD_Y - 12, -7, HEAD_Y - 6]).fill(c);
+      g.poly([1, HEAD_Y - 9, 7, HEAD_Y - 12, 7, HEAD_Y - 6]).fill(c);
+      g.circle(0, HEAD_Y - 9, 1.8).fill(shade(`#ffffff`, -0.05));
       break;
     case "scarf":
-      g.roundRect(-6, -23, 12, 3, 1.5).fill(c);
-      g.roundRect(-2, -22, 3, 7, 1.5).fill(c);
+      g.roundRect(-7, -17, 14, 4, 2).fill(c);
+      g.roundRect(-2, -16, 4, 9, 1.5).fill(0x4aa8ae);
+      break;
+    case "backpack":
+      g.roundRect(-8, -14, 4, 10, 2).fill(c);
+      g.roundRect(4, -14, 4, 10, 2).fill(c);
+      g.roundRect(-6, -13, 12, 9, 3).fill(c);
+      g.roundRect(-3, -11, 6, 4, 1.5).fill(shade(bodyColor, 0.2));
       break;
   }
   return g;

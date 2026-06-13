@@ -69,6 +69,11 @@ export function buildZoneScene(
   });
   art.addChild(ring);
 
+  // ── Structure (a real little building per zone) ──
+  const structure = new Graphics();
+  buildStructure(structure, zone.key, palette);
+  art.addChild(structure);
+
   // ── Locked state: dim + lock badge ──
   if (!zone.unlocked) {
     art.alpha = 0.6;
@@ -236,4 +241,94 @@ function flower(g: Graphics, x: number, y: number, color: number) {
     g.circle(x + Math.cos(a) * 2.2, y + Math.sin(a) * 2.2, 1.6).fill(color);
   }
   g.circle(x, y, 1.4).fill(0xffe14d);
+}
+
+// ── Structures ──────────────────────────────────────────────────────
+// Each zone gets a small, cozy building. Drawn around the footprint center,
+// rising upward (negative y). Warm lit windows where it fits the tone.
+
+function buildStructure(g: Graphics, key: ZoneInstance["key"], p: ThemePalette): void {
+  const wood = "#9a6b40";
+  const woodDark = shade(wood, -0.2);
+  const woodLight = shade(wood, 0.18);
+  const glow = 0xffe07a;
+
+  switch (key) {
+    case "calm_cove": {
+      // Wooden meditation dock over the water.
+      for (let i = 0; i < 5; i++) {
+        g.roundRect(-16 + i * 7, -6, 5, 14, 1).fill(i % 2 ? wood : woodLight);
+      }
+      g.roundRect(-18, -8, 36, 4, 2).fill(woodDark);
+      // posts + a paper lantern
+      g.roundRect(-16, -6, 2.5, 12, 1).fill(woodDark);
+      g.roundRect(14, -6, 2.5, 12, 1).fill(woodDark);
+      g.moveTo(0, -8).lineTo(0, -24).stroke({ width: 2, color: woodDark });
+      g.circle(0, -28, 5).fill(glow);
+      g.circle(0, -28, 5).stroke({ width: 1.2, color: hexNum(p.accent), alpha: 0.7 });
+      break;
+    }
+    case "build_beach": {
+      // Colorful beach hut with a striped awning.
+      g.roundRect(-15, -22, 30, 22, 3).fill(woodLight);
+      g.roundRect(-7, -14, 14, 14, 2).fill(shade(wood, -0.05)); // doorway
+      // striped awning roof
+      for (let i = 0; i < 6; i++) {
+        g.poly([-18 + i * 6, -22, -12 + i * 6, -22, -15 + i * 6, -30]).fill(i % 2 ? hexNum(p.accent) : 0xfff2e0);
+      }
+      g.poly([-18, -22, 18, -22, 14, -30, -14, -30]).stroke({ width: 1, color: woodDark, alpha: 0.4 });
+      g.circle(11, -7, 1.6).fill(glow); // little light
+      break;
+    }
+    case "campfire": {
+      // Cozy woodland cabin with warm lit windows.
+      g.roundRect(-17, -24, 34, 24, 3).fill(wood);
+      g.roundRect(-17, -24, 34, 24, 3).stroke({ width: 1, color: woodDark, alpha: 0.5 });
+      g.poly([-20, -24, 20, -24, 0, -40]).fill(woodDark); // roof
+      g.roundRect(-6, -14, 12, 14, 2).fill(shade(wood, -0.25)); // door
+      g.circle(0, -7, 1.4).fill(glow);
+      g.roundRect(-14, -19, 7, 7, 1.5).fill(glow); // lit windows
+      g.roundRect(7, -19, 7, 7, 1.5).fill(glow);
+      g.roundRect(9, -40, 4, 8, 1).fill(woodDark); // chimney
+      break;
+    }
+    case "worry_hollow": {
+      // Gentle cave entrance with soft glowing light inside — safe, not scary.
+      g.ellipse(0, -2, 26, 16).fill(shade(p.landAlt, -0.32)); // mound
+      g.ellipse(0, -3, 24, 15).fill(shade(p.landAlt, -0.24));
+      g.ellipse(0, 2, 13, 13).fill(0x2a2030); // dark opening
+      g.ellipse(0, 4, 9, 8).fill({ color: glow, alpha: 0.5 }); // inner glow
+      g.ellipse(0, 5, 5, 4).fill({ color: glow, alpha: 0.8 });
+      // little stones at the mouth
+      g.ellipse(-13, 7, 4, 2.5).fill(shade(p.landAlt, -0.3));
+      g.ellipse(13, 7, 4, 2.5).fill(shade(p.landAlt, -0.3));
+      break;
+    }
+    case "garden": {
+      // Glass greenhouse with a green frame + flower boxes.
+      g.roundRect(-15, -22, 30, 22, 2).fill({ color: 0xddf3e8, alpha: 0.85 });
+      g.poly([-17, -22, 17, -22, 0, -34]).fill({ color: 0xcdeede, alpha: 0.9 });
+      // frame lines
+      for (let i = -2; i <= 2; i++) g.moveTo(i * 6, -22).lineTo(i * 6, 0).stroke({ width: 1, color: hexNum(p.foliage), alpha: 0.6 });
+      g.moveTo(-15, -11).lineTo(15, -11).stroke({ width: 1, color: hexNum(p.foliage), alpha: 0.6 });
+      g.roundRect(-17, -2, 34, 4, 1).fill(shade(p.foliage, -0.1));
+      flower(g, -11, 1, hexNum(p.accent));
+      flower(g, 11, 1, 0xfff0a0);
+      break;
+    }
+    case "field_guide_meadow": {
+      // Open-air gazebo with a soft roof.
+      g.roundRect(-15, -3, 30, 3, 1).fill(woodLight);
+      g.roundRect(-14, -22, 3, 20, 1).fill(wood);
+      g.roundRect(11, -22, 3, 20, 1).fill(wood);
+      g.roundRect(-2, -22, 3, 20, 1).fill({ color: wood, alpha: 0.5 });
+      g.poly([-19, -22, 19, -22, 0, -36]).fill(hexNum(p.accent));
+      g.poly([-19, -22, 19, -22, 0, -36]).stroke({ width: 1, color: 0xffffff, alpha: 0.4 });
+      g.circle(0, -34, 2).fill(0xfff0a0);
+      // butterflies
+      g.ellipse(-16, -26, 2.5, 1.6).fill(hexNum(p.accent));
+      g.ellipse(-13, -26, 2.5, 1.6).fill(hexNum(p.accent));
+      break;
+    }
+  }
 }

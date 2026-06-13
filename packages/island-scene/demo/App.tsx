@@ -5,17 +5,13 @@ import {
   sampleLayout,
   sampleZones,
   ACCESSORY_KEYS,
-  BODY_TONES,
-  HAIR_STYLES,
-  OUTFIT_KEYS,
+  SPECIES,
   type AccessoryKey,
   type AvatarConfig,
   type AvatarInstance,
-  type BodyTone,
-  type HairStyle,
   type IslandSceneHandle,
-  type OutfitKey,
   type SceneMode,
+  type Species,
   type ThemePackKey,
   type ZoneKey,
 } from "../src";
@@ -35,12 +31,10 @@ export function DemoApp() {
   const [lockHollow, setLockHollow] = useState(true);
 
   const [avatarCfg, setAvatarCfg] = useState<AvatarConfig>({
-    bodyTone: "warm-mid",
-    hairStyle: "tuft",
-    hairColor: "#5b3a1f",
-    outfitKey: "overalls",
-    accessoryKey: "satchel",
-    displayColor: "#c47b58",
+    species: "bunny",
+    bodyColor: "#f3c1d6",
+    accessoryKey: "scarf",
+    displayColor: "#c47b9a",
   });
 
   const [log, setLog] = useState<string[]>([]);
@@ -161,13 +155,11 @@ export function DemoApp() {
             </div>
           </Section>
 
-          <Section title="Avatar">
-            <Picker label="Body" value={avatarCfg.bodyTone} options={BODY_TONES} onChange={(v) => set("bodyTone", v as BodyTone)} />
-            <Picker label="Hair" value={avatarCfg.hairStyle} options={HAIR_STYLES} onChange={(v) => set("hairStyle", v as HairStyle)} />
-            <Picker label="Outfit" value={avatarCfg.outfitKey} options={OUTFIT_KEYS} onChange={(v) => set("outfitKey", v as OutfitKey)} />
+          <Section title="Animal">
+            <Picker label="Species" value={avatarCfg.species} options={SPECIES} onChange={(v) => set("species", v as Species)} />
             <Picker label="Accessory" value={avatarCfg.accessoryKey} options={ACCESSORY_KEYS} onChange={(v) => set("accessoryKey", v as AccessoryKey)} />
             <div style={{ display: "flex", gap: 12, marginTop: 6 }}>
-              <Swatch label="Hair color" value={avatarCfg.hairColor} onChange={(v) => set("hairColor", v)} />
+              <Swatch label="Body color" value={avatarCfg.bodyColor} onChange={(v) => set("bodyColor", v)} />
               <Swatch label="Display color" value={avatarCfg.displayColor} onChange={(v) => set("displayColor", v)} />
             </div>
           </Section>

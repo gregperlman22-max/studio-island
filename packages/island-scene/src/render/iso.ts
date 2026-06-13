@@ -64,8 +64,11 @@ function clamp8(n: number): number {
   return Math.max(0, Math.min(255, Math.round(n)));
 }
 
-/** "#rrggbb" -> { r, g, b }. */
-export function parseHex(hex: string): { r: number; g: number; b: number } {
+/** "#rrggbb" or a 0xRRGGBB number -> { r, g, b }. */
+export function parseHex(hex: string | number): { r: number; g: number; b: number } {
+  if (typeof hex === "number") {
+    return { r: (hex >> 16) & 255, g: (hex >> 8) & 255, b: hex & 255 };
+  }
   const h = hex.replace("#", "");
   const v =
     h.length === 3
@@ -90,7 +93,7 @@ export function hexNum(hex: string | number): number {
  * Shade a color: amt < 0 darkens toward black, amt > 0 lightens toward white.
  * amt is roughly the blend fraction in [-1, 1].
  */
-export function shade(hex: string, amt: number): number {
+export function shade(hex: string | number, amt: number): number {
   const { r, g, b } = parseHex(hex);
   const t = Math.abs(amt);
   const target = amt < 0 ? 0 : 255;
@@ -102,7 +105,7 @@ export function shade(hex: string, amt: number): number {
 }
 
 /** Linear blend between two hex colors -> Pixi color number. */
-export function lerpHex(a: string, b: string, t: number): number {
+export function lerpHex(a: string | number, b: string | number, t: number): number {
   const ca = parseHex(a);
   const cb = parseHex(b);
   return toNum({
