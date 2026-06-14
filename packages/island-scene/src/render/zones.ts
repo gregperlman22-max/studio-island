@@ -41,9 +41,10 @@ export function buildZoneScene(
   ground.poly([0, -gh, gw * 0.5, -gh * 0.5, 0, 0, -gw * 0.5, -gh * 0.5]).fill({ color: hexNum(shade(groundColor, 0.16)), alpha: 0.5 });
   art.addChild(ground);
 
-  // Landmark structure.
+  // Landmark structure — LARGE (dominates its clearing).
   const structure = new Graphics();
   ZONE_PAINT[zone.key](structure, palette);
+  structure.scale.set(STRUCTURE_SCALE[zone.key] ?? 2.7);
   art.addChild(structure);
 
   if (!zone.unlocked) {
@@ -78,6 +79,16 @@ export function buildZoneScene(
 }
 
 // ── Ground tone per zone ────────────────────────────────────────────
+const STRUCTURE_SCALE: Record<ZoneKey, number> = {
+  lighthouse_point: 3.4,
+  treehouse_hideaway: 3.2,
+  campfire_circle: 3.0,
+  art_hut: 2.8,
+  arcade_cove: 2.8,
+  calm_beach: 2.4,
+  welcome_dock: 3.0,
+};
+
 const ZONE_GROUND: Record<ZoneKey, (p: ThemePalette) => number> = {
   lighthouse_point: (p) => shade(p.landAlt, -0.12),
   treehouse_hideaway: (p) => shade(p.foliage, -0.1),

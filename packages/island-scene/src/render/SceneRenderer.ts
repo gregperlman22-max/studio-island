@@ -31,6 +31,7 @@ import {
 import { ProgrammaticTextureProvider } from "./TextureProvider";
 import { buildAvatarSprite, type AvatarSprite } from "./avatar";
 import { biomeAt, landContext } from "./biome";
+import { islandOutline, flatten, type Pt } from "./coast";
 import { buildZoneScene, paintZoneStructure, INTERIOR_BG } from "./zones";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 
@@ -95,8 +96,14 @@ export class SceneRenderer {
   private shimmer = new Graphics();
   /** Camera-panned world (Mode 1 — world map). */
   private world = new Container();
+  /** Smooth island blob (base fill + cliff + bold coast outline). */
   private terrain = new Graphics();
+  /** Per-tile biome coloring, masked to the smooth coastline. */
+  private biomeLayer = new Graphics();
+  private landMask = new Graphics();
+  private coastLoop: Pt[] = [];
   private waves = new Graphics();
+  private flame = new Graphics();
   /** y-sorted props: zones, decorations, avatars. */
   private entities = new Container();
   /** Ambient firefly overlay (world space, drawn above props). */
@@ -133,7 +140,7 @@ export class SceneRenderer {
   private hoveredZone: ZoneKey | null = null;
   private localId: string | null = null;
   private grid: WalkGrid = { walkable: () => false };
-  private coastCells: GridPosition[] = [];
+  private flamePos: { x: number; y: number } | null = null;
 
   // ── Camera (zoom + eased follow + drag pan, clamped to world) ──
   private camScale = 1;
@@ -193,7 +200,17 @@ export class SceneRenderer {
     this.opts.container.appendChild(this.app.canvas);
     this.app.stage.addChild(this.backdrop, this.world, this.interior, this.fade);
     this.backdrop.addChild(this.sky, this.shimmer);
-    this.world.addChild(this.terrain, this.waves, this.entities, this.fireflies, this.boat);
+    this.world.addChild(
+      this.terrain,
+      this.biomeLayer,
+      this.landMask,
+      this.waves,
+      this.entities,
+      this.flame,
+      this.fireflies,
+      this.boat,
+    );
+    this.biomeLayer.mask = this.landMask;
     this.entities.sortableChildren = true;
     this.interior.visible = false;
     this.fade.eventMode = "none";
@@ -239,6 +256,7 @@ export class SceneRenderer {
   /** Position the boat off-shore and hide the avatar for the arrival walk-on. */
   private setupArrival(): void {
     this.boat.visible = this.arrival === "boat";
+    this.boat.scale.set(2.2); // a clearly-readable boat with a visible sail
     const local = this.localId ? this.avatarViews.get(this.localId) : null;
     if (this.arrival === "boat" && local) local.container.visible = false;
     this.arrivalT = 0;
@@ -438,7 +456,31 @@ export class SceneRenderer {
     // nothing is rendered for it (a future phase docks a video window there).
     this.reconcileAvatars();
     this.buildFireflies();
+    const fire = this.zones.find((z) => z.key === "campfire_circle");
+    this.flamePos = fire
+      ? footprintCenter(fire.gridPosition, fire.footprint.w, fire.footprint.h)
+      : null;
     this.setupCamera();
+  }
+
+  /** Tall flickering campfire flame (animated), drawn above the props. */
+  private drawFlame(): void {
+    this.flame.clear();
+    if (!this.flamePos) return;
+    const t = this.elapsed / 1000;
+    const sway = Math.sin(t * 6) * 3;
+    const grow = 1 + 0.16 * Math.sin(t * 9 + 1);
+    const bx = this.flamePos.x;
+    const by = this.flamePos.y - 6;
+    const H = 64 * grow;
+    // outer → mid → inner, bold outline on the outer flame.
+    this.flame.poly([bx, by - H, bx + 16, by - 14, bx + sway, by, bx - 16, by - 14])
+      .fill(0xff7a2d).stroke({ width: 3, color: INK });
+    this.flame.poly([bx, by - H * 0.72, bx + 9, by - 12, bx + sway * 0.6, by, bx - 9, by - 12])
+      .fill(0xffd23d);
+    this.flame.poly([bx, by - H * 0.45, bx + 4, by - 8, bx, by, bx - 4, by - 8])
+      .fill(0xfff1a8);
+    this.flame.ellipse(bx, by + 2, 22, 6).fill({ color: 0xff9a3d, alpha: 0.22 }); // ember glow
   }
 
   /** Soft fireflies drifting by the forest treehouse — calm, magical. */
@@ -520,135 +562,102 @@ export class SceneRenderer {
 
   private drawTerrain(): void {
     const { palette } = this.theme;
-    const cliff = shade(palette.land, -0.42);
-    const cliffShade = shade(palette.land, -0.58);
+    const grid = this.layout.grid;
 
-    // Biome ground tones (warm, golden-hour leaning).
-    const sand = shade(palette.landAlt, 0.06);
-    const forestFloor = lerpHex(palette.land, palette.foliageShadow, 0.5);
-    const stone = lerpHex(palette.landAlt, "#9a9080", 0.62);
-    const meadowGrass = shade(palette.land, 0.13);
-    const grassLight = shade(palette.land, 0.16);
-    const grassDeep = lerpHex(palette.land, palette.foliage, 0.42);
+    // The island as one smooth organic blob (no grid steps at the coast).
+    this.coastLoop = islandOutline(this.layout.landCells);
+    const loop = this.coastLoop;
+
+    // Dramatic per-biome ground tones — each area feels like a different level.
+    const sandWarm = "#f0d98c";   // festive beach (east)
+    const sandCalm = "#dfe9ef";   // calm beach (pale blue, west/south)
+    const beachBase = "#ecdcae";  // generic shore / coastal fringe
+    const forestFloor = lerpHex(palette.land, palette.foliageShadow, 0.66);
+    const stone = lerpHex(palette.landAlt, "#8f8a82", 0.78);
+    const meadowGrass = lerpHex(palette.land, "#a9e25a", 0.38);
+    const grassBase = palette.land;
 
     const hash = (x: number, y: number) => {
       const h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
       return h - Math.floor(h);
     };
-
-    const ctx = landContext(this.layout.grid, this.layout.landCells);
-    const isLand = ctx.isLand;
+    const ctx = landContext(grid, this.layout.landCells);
     const interior = (x: number, y: number) =>
-      isLand(x, y) && isLand(x + 1, y) && isLand(x, y + 1) && isLand(x - 1, y) && isLand(x, y - 1);
+      ctx.isLand(x, y) && ctx.isLand(x + 1, y) && ctx.isLand(x, y + 1) &&
+      ctx.isLand(x - 1, y) && ctx.isLand(x, y - 1);
 
     const groundTone = (gx: number, gy: number, biome: ReturnType<typeof biomeAt>): number => {
-      const n =
-        Math.sin(gx * 0.45 + gy * 0.28) * 0.5 + Math.sin((gx - gy) * 0.6 + 2) * 0.5; // ~[-1,1]
+      const n = Math.sin(gx * 0.45 + gy * 0.28) * 0.5 + Math.sin((gx - gy) * 0.6 + 2) * 0.5;
       switch (biome) {
-        case "beach": return shade(sand, n * 0.05);
-        case "forest": return shade(forestFloor, n * 0.06);
-        case "mountain": return shade(stone, n * 0.06);
-        case "meadow": return shade(meadowGrass, n * 0.06);
-        default: {
-          const t = (n + 1) / 2;
-          if (t > 0.74) return grassDeep;
-          if (t < 0.24) return grassLight;
-          return shade(palette.land, (t - 0.5) * 0.1);
+        case "beach": {
+          const east = Math.min(1, Math.max(0, gx / grid.w));
+          return shade(lerpHex(sandCalm, sandWarm, east), n * 0.04);
         }
+        case "forest": return shade(forestFloor, n * 0.05);
+        case "mountain": return shade(stone, n * 0.05);
+        case "meadow": return shade(meadowGrass, n * 0.06);
+        default: return shade(grassBase, n * 0.1);
       }
     };
     const flowerCols = [hexNum(palette.accent), 0xfff0a0, 0xffffff, 0xb98aff];
 
+    // ── Smooth landmass: cliff band, base fill (sandy fringe), bold coast ──
     this.terrain.clear();
-
-    const cells = [...this.layout.landCells].sort(
-      (a, b) => depth(a.x, a.y) - depth(b.x, b.y),
-    );
-
-    // Coastal foam ring (under the land, hugging the shore) — and remember the
-    // coast cells so the wave overlay can animate them each frame.
-    this.coastCells = [];
-    for (const c of cells) {
-      if (interior(c.x, c.y)) continue;
-      this.coastCells.push({ x: c.x, y: c.y });
-      this.terrain
-        .poly(diamondPoly(c.x, c.y))
-        .stroke({ width: 4, color: hexNum(palette.waterShimmer), alpha: 0.3 });
+    if (loop.length >= 4) {
+      const cliffH = CLIFF + 6;
+      this.terrain.poly(flatten(loop, 0, cliffH)).fill(shade(palette.land, -0.5));
+      this.terrain.poly(flatten(loop)).fill(beachBase);
+      this.terrain.poly(flatten(loop)).stroke({ width: 5, color: INK, alpha: 0.9 });
     }
 
-    for (const c of cells) {
-      const { x, y } = tileToScreen(c.x, c.y);
-      this.terrain
-        .poly([
-          x - TILE_W / 2, y + TILE_H / 2,
-          x, y + TILE_H,
-          x, y + TILE_H + CLIFF,
-          x - TILE_W / 2, y + TILE_H / 2 + CLIFF,
-        ])
-        .fill(cliffShade);
-      this.terrain
-        .poly([
-          x, y + TILE_H,
-          x + TILE_W / 2, y + TILE_H / 2,
-          x + TILE_W / 2, y + TILE_H / 2 + CLIFF,
-          x, y + TILE_H + CLIFF,
-        ])
-        .fill(cliff);
-      this.terrain.poly(diamondPoly(c.x, c.y)).fill(groundTone(c.x, c.y, biomeAt(c.x, c.y, ctx)));
-    }
+    // Mask so per-tile biome coloring is clipped to the smooth silhouette.
+    this.landMask.clear();
+    if (loop.length >= 4) this.landMask.poly(flatten(loop)).fill(0xffffff);
 
-    // Scattered natural detail per biome.
+    // ── Biome coloring + detail (masked to the coast) ──
+    this.biomeLayer.clear();
+    const cells = [...this.layout.landCells].sort((a, b) => depth(a.x, a.y) - depth(b.x, b.y));
+    for (const c of cells) {
+      const biome = biomeAt(c.x, c.y, ctx);
+      this.biomeLayer.poly(diamondPoly(c.x, c.y)).fill(groundTone(c.x, c.y, biome));
+    }
     for (const c of cells) {
       if (!interior(c.x, c.y)) continue;
       const biome = biomeAt(c.x, c.y, ctx);
       const r = hash(c.x, c.y);
       const ctr = tileCenter(c.x, c.y);
-      if ((biome === "meadow" || biome === "grass") && r < 0.16) {
+      if ((biome === "meadow" || biome === "grass") && r < 0.2) {
         const col = flowerCols[Math.floor(hash(c.y, c.x) * flowerCols.length) % flowerCols.length];
         for (let k = 0; k < 3; k++) {
           const fx = ctr.x + (hash(c.x + k, c.y) - 0.5) * 16;
           const fy = ctr.y + (hash(c.x, c.y + k) - 0.5) * 8;
-          this.terrain.circle(fx, fy, 1.7).fill(col);
-          this.terrain.circle(fx, fy, 0.7).fill(0xfff0a0);
+          this.biomeLayer.circle(fx, fy, 1.8).fill(col);
+          this.biomeLayer.circle(fx, fy, 0.8).fill(0xfff0a0);
         }
-      } else if (biome === "forest" && r < 0.4) {
-        // fallen leaves
+      } else if (biome === "forest" && r < 0.5) {
         for (let k = 0; k < 3; k++) {
           const fx = ctr.x + (hash(c.x + k * 3, c.y) - 0.5) * 18;
           const fy = ctr.y + (hash(c.x, c.y + k * 3) - 0.5) * 9;
-          this.terrain.ellipse(fx, fy, 2, 1).fill({ color: 0xc8893f, alpha: 0.6 });
+          this.biomeLayer.ellipse(fx, fy, 2.2, 1.1).fill({ color: 0xc8893f, alpha: 0.7 });
         }
-      } else if (biome === "mountain" && r < 0.3) {
+      } else if (biome === "mountain" && r < 0.34) {
         const fx = ctr.x + (hash(c.x, c.y) - 0.5) * 12;
         const fy = ctr.y + (hash(c.y, c.x) - 0.5) * 6;
-        this.terrain.ellipse(fx, fy, 3, 1.6).fill({ color: hexNum(shade(stone, -0.18)), alpha: 0.7 });
-      } else if (biome === "beach" && r < 0.12) {
-        const fx = ctr.x + (hash(c.x, c.y) - 0.5) * 14;
-        const fy = ctr.y + (hash(c.y, c.x) - 0.5) * 7;
-        this.terrain.circle(fx, fy, 1.1).fill({ color: hexNum(shade(sand, -0.18)), alpha: 0.6 });
+        this.biomeLayer.ellipse(fx, fy, 3.4, 1.8).fill({ color: hexNum(shade(stone, -0.2)), alpha: 0.8 });
       }
-    }
-
-    // Bold cel outline along the outer coast (Wind Waker terrain edge).
-    for (const c of this.coastCells) {
-      this.terrain
-        .poly(diamondPoly(c.x, c.y))
-        .stroke({ width: 2.5, color: INK, alpha: 0.4 });
     }
   }
 
-  /** Animated shoreline foam (Wind Waker waves), redrawn each frame. */
+  /** Animated shoreline foam (Wind Waker waves) along the smooth coast. */
   private drawWaves(): void {
     this.waves.clear();
+    const loop = this.coastLoop;
+    if (loop.length < 4) return;
     const { palette } = this.theme;
-    const t = this.elapsed / 600;
-    for (const c of this.coastCells) {
-      const phase = c.x * 0.5 + c.y * 0.7;
-      const a = 0.2 + 0.22 * (0.5 + 0.5 * Math.sin(t + phase));
-      this.waves
-        .poly(diamondPoly(c.x, c.y))
-        .stroke({ width: 3, color: hexNum(palette.waterShimmer), alpha: a });
-    }
+    const a = 0.3 + 0.25 * (0.5 + 0.5 * Math.sin(this.elapsed / 700));
+    this.waves.poly(flatten(loop)).stroke({ width: 5, color: hexNum(palette.waterShimmer), alpha: a });
+    const a2 = 0.2 + 0.18 * (0.5 + 0.5 * Math.sin(this.elapsed / 700 + 1.4));
+    this.waves.poly(flatten(loop, 0, 5)).stroke({ width: 3, color: hexNum(palette.waterShimmer), alpha: a2 });
   }
 
   private buildZones(): void {
@@ -1026,11 +1035,14 @@ export class SceneRenderer {
 
     if (this.opts.reducedMotion) {
       this.fireflies.visible = false;
+      this.flame.visible = false;
     } else {
       this.fireflies.visible = this.currentZone === null;
+      this.flame.visible = this.currentZone === null;
       if (this.currentZone === null) {
         this.drawShimmer();
         this.drawWaves();
+        this.drawFlame();
       }
       const t = this.elapsed / 1000;
       for (const f of this.fireflyDots) {

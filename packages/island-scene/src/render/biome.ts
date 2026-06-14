@@ -10,9 +10,9 @@ export interface BiomeContext {
 
 /** Region centers as fractions of the grid (so it scales with any layout). */
 const REGIONS: { biome: Biome; cx: number; cy: number; r: number }[] = [
-  { biome: "forest", cx: 0.30, cy: 0.32, r: 0.24 },
-  { biome: "mountain", cx: 0.76, cy: 0.66, r: 0.20 },
-  { biome: "meadow", cx: 0.52, cy: 0.74, r: 0.18 },
+  { biome: "mountain", cx: 0.47, cy: 0.12, r: 0.22 },
+  { biome: "forest", cx: 0.22, cy: 0.27, r: 0.26 },
+  { biome: "meadow", cx: 0.70, cy: 0.32, r: 0.22 },
 ];
 
 /** True when any water sits within `d` cells (Chebyshev) — i.e. near the coast. */
