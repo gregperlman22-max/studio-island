@@ -207,23 +207,63 @@ const ZONE_PAINT: Record<ZoneKey, (g: Graphics, p: ThemePalette) => void> = {
     g.ellipse(0, -72, 22, 9).fill({ color: 0xfff1a8, alpha: 0.25 });
   },
   treehouse_hideaway: (g, p) => {
-    // Big expressive tree + wooden platform house + ladder.
+    // Biggest tree on the island with a cozy wooden cabin built into the
+    // canopy: walls, plank lines, a door, a lit window, a roof, and a rope
+    // ladder up the trunk. Canopy is drawn BEHIND the cabin so the house reads.
     const trunk = 0x7a5230;
-    g.roundRect(-9, -56, 18, 60, 6).fill(trunk).stroke({ width: 4, color: INK });
-    g.roundRect(-5, -52, 5, 52, 3).fill({ color: hexNum(shade(trunk, 0.18)), alpha: 0.5 });
-    // platform + cabin
-    g.roundRect(-26, -60, 52, 8, 3).fill(0x9a6b40).stroke({ width: 4, color: INK });
-    celBox(g, -16, -84, 32, 24, 4, 0xb07a44);
-    g.poly([-20, -84, 20, -84, 0, -100]).fill(shade(p.foliage, -0.2)).stroke({ width: 4, color: INK });
-    g.roundRect(-5, -76, 10, 16, 2).fill(0x4a3b2c).stroke({ width: 2.5, color: INK });
-    g.roundRect(6, -80, 7, 7, 1.5).fill(0xfff1a8).stroke({ width: 2, color: INK });
-    // epic canopy
-    g.circle(0, -52, 30).fill(hexNum(p.foliage)).stroke({ width: 4, color: INK });
-    g.circle(-16, -62, 18).fill(hexNum(p.foliage)).stroke({ width: 4, color: INK });
-    g.circle(17, -60, 17).fill(hexNum(p.foliage)).stroke({ width: 4, color: INK });
-    g.circle(-8, -66, 12).fill({ color: hexNum(shade(p.foliage, 0.22)), alpha: 0.7 });
-    // ladder
-    g.roundRect(10, -52, 4, 50, 1).fill(trunk).stroke({ width: 2, color: INK });
+    const leaf = hexNum(p.foliage);
+    const leafLit = shade(p.foliage, 0.24);
+    const wood = 0xb07a44;
+    const woodDark = 0x6e4a2a;
+
+    // Trunk.
+    g.poly([-11, 4, -8, -42, 8, -42, 11, 4]).fill(trunk).stroke({ width: 4, color: INK });
+    g.roundRect(-4, -40, 4, 44, 2).fill({ color: hexNum(shade(trunk, 0.2)), alpha: 0.5 });
+
+    // Big canopy BEHIND the house (the tree crown).
+    g.circle(0, -74, 34).fill(leaf).stroke({ width: 4, color: INK });
+    g.circle(-24, -60, 18).fill(leaf).stroke({ width: 4, color: INK });
+    g.circle(24, -60, 18).fill(leaf).stroke({ width: 4, color: INK });
+    g.circle(0, -74, 31).fill(leaf); // mask inner outlines
+    g.circle(-11, -84, 12).fill({ color: hexNum(leafLit), alpha: 0.85 });
+
+    // Platform across the trunk.
+    g.roundRect(-28, -46, 56, 7, 3).fill(wood).stroke({ width: 4, color: INK });
+    g.roundRect(-28, -46, 56, 3, 2).fill({ color: hexNum(shade(wood, 0.2)), alpha: 0.6 });
+    g.roundRect(-26, -39, 3, 6, 1).fill(woodDark); // support posts
+    g.roundRect(23, -39, 3, 6, 1).fill(woodDark);
+
+    // Cabin walls (in front of the canopy) + plank lines.
+    g.roundRect(-18, -76, 36, 30, 3).fill(wood).stroke({ width: 4, color: INK });
+    g.roundRect(-18, -76, 36, 8, 3).fill({ color: hexNum(shade(wood, 0.18)), alpha: 0.5 });
+    g.moveTo(-18, -66).lineTo(18, -66).moveTo(-18, -57).lineTo(18, -57)
+      .stroke({ width: 1.5, color: woodDark, alpha: 0.5 });
+
+    // Pitched roof, slightly overhanging.
+    g.poly([-23, -76, 23, -76, 0, -94]).fill(woodDark).stroke({ width: 4, color: INK });
+    g.poly([-23, -76, 0, -94, -6, -76]).fill({ color: hexNum(shade(woodDark, 0.18)), alpha: 0.5 });
+
+    // Door + knob.
+    g.roundRect(-7, -60, 13, 14, 2).fill(woodDark).stroke({ width: 3, color: INK });
+    g.circle(3, -53, 1).fill(0xffe14d);
+
+    // Lit window with cross bars.
+    g.roundRect(8, -72, 9, 9, 1.5).fill(0xfff1a8).stroke({ width: 2.5, color: INK });
+    g.moveTo(12.5, -72).lineTo(12.5, -63).moveTo(8, -67.5).lineTo(17, -67.5)
+      .stroke({ width: 1.2, color: INK, alpha: 0.7 });
+
+    // Rope ladder down the trunk to the ground.
+    g.moveTo(-6, -46).lineTo(-6, 2).moveTo(2, -46).lineTo(2, 2)
+      .stroke({ width: 2, color: 0xccb089 });
+    for (let i = 0; i < 6; i++) {
+      const yy = -40 + i * 8;
+      g.moveTo(-6, yy).lineTo(2, yy).stroke({ width: 2, color: woodDark });
+    }
+
+    // A couple of front leaf tufts peeking over the roof so it nestles in.
+    g.circle(-23, -80, 12).fill(leaf).stroke({ width: 4, color: INK });
+    g.circle(23, -80, 12).fill(leaf).stroke({ width: 4, color: INK });
+    g.circle(-23, -83, 7).fill({ color: hexNum(leafLit), alpha: 0.8 });
   },
   campfire_circle: (g, p) => {
     // Big stone ring + bold flame.

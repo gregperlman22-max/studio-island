@@ -1132,7 +1132,7 @@ export class SceneRenderer {
         this.drawWaves();
         this.drawFlame();
         // Trees sway their canopy; zone landmarks have idle details.
-        for (const s of this.swayers) s.sprite.rotation = Math.sin(t * 1.3 + s.phase) * 0.22;
+        for (const s of this.swayers) s.sprite.rotation = Math.sin(t * 1.0 + s.phase) * 0.088;
         for (const anim of this.zoneAnimators) anim(t);
       }
       const t = this.elapsed / 1000;
