@@ -28,7 +28,8 @@ export function DemoApp() {
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [hideTextLabels, setHideTextLabels] = useState(false);
-  const [lockHollow, setLockHollow] = useState(true);
+  const [lockLighthouse, setLockLighthouse] = useState(false);
+  const [currentZone, setCurrentZone] = useState<ZoneKey | null>(null);
 
   const [avatarCfg, setAvatarCfg] = useState<AvatarConfig>({
     species: "bunny",
@@ -47,9 +48,9 @@ export function DemoApp() {
       sampleZones.map((z) => ({
         ...z,
         skinName: themePack.zoneSkins[z.key]?.skinName ?? z.skinName,
-        unlocked: z.key === "worry_hollow" ? !lockHollow : z.unlocked,
+        unlocked: z.key === "lighthouse_point" ? !lockLighthouse : z.unlocked,
       })),
-    [themePack, lockHollow],
+    [themePack, lockLighthouse],
   );
 
   const avatars = useMemo<AvatarInstance[]>(
@@ -81,12 +82,14 @@ export function DemoApp() {
         layout={sampleLayout}
         avatars={avatars}
         mode={mode}
+        currentZone={currentZone}
         audioEnabled={audioEnabled}
         reducedMotion={reducedMotion}
         hideTextLabels={hideTextLabels}
         onReady={() => append("onReady")}
         onLoadProgress={(p) => append(`onLoadProgress(${p.toFixed(2)})`)}
-        onZoneTap={(z: ZoneKey) => append(`onZoneTap(${z})`)}
+        onZoneTap={(z: ZoneKey) => { append(`onZoneTap(${z}) → enter`); setCurrentZone(z); }}
+        onZoneExit={() => { append("onZoneExit → world"); setCurrentZone(null); }}
         onObjectInteract={(id) => append(`onObjectInteract(${id})`)}
         onAvatarMove={(id, p) => append(`onAvatarMove(${id}, ${p.x},${p.y})`)}
         onError={(e) => append(`onError: ${e.message}`)}
@@ -96,19 +99,22 @@ export function DemoApp() {
       <button
         onClick={() => setOpen((o) => !o)}
         title="Developer controls"
+        aria-label="Developer controls"
         style={{
           position: "absolute",
-          top: 12,
-          left: 12,
-          width: 40,
-          height: 40,
+          top: 16,
+          left: 16,
+          width: 56,
+          height: 56,
           borderRadius: 999,
-          border: "none",
-          background: "rgba(20,16,10,0.55)",
-          color: "#fff",
-          fontSize: 18,
+          border: "3px solid #23201c",
+          background: "#ffffff",
+          color: "#23201c",
+          fontSize: 26,
+          fontWeight: 800,
           cursor: "pointer",
-          backdropFilter: "blur(4px)",
+          boxShadow: "0 4px 0 #23201c",
+          zIndex: 10,
         }}
       >
         {open ? "×" : "⚙"}
@@ -168,13 +174,13 @@ export function DemoApp() {
             <Toggle label="Audio enabled" checked={audioEnabled} onChange={setAudioEnabled} />
             <Toggle label="Reduced motion" checked={reducedMotion} onChange={setReducedMotion} />
             <Toggle label="Hide text labels" checked={hideTextLabels} onChange={setHideTextLabels} />
-            <Toggle label="Lock Worry Hollow" checked={lockHollow} onChange={setLockHollow} />
+            <Toggle label="Lock Lighthouse" checked={lockLighthouse} onChange={setLockLighthouse} />
           </Section>
 
           <Section title="Imperative handle">
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <button onClick={() => sceneRef.current?.walkLocalAvatarTo({ x: 33, y: 20 })} style={btn}>Walk → Garden</button>
-              <button onClick={() => sceneRef.current?.walkLocalAvatarTo(sampleLayout.spawnPoint)} style={btn}>Walk → spawn</button>
+              <button onClick={() => sceneRef.current?.walkLocalAvatarTo({ x: 27, y: 9 })} style={btn}>Walk → north</button>
+              <button onClick={() => sceneRef.current?.walkLocalAvatarTo(sampleLayout.spawnPoint)} style={btn}>Walk → dock</button>
             </div>
           </Section>
 

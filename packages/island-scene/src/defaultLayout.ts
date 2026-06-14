@@ -43,16 +43,20 @@ const landCells: GridPosition[] = (() => {
   return cells;
 })();
 
+// Seven landmark zones arranged like the Engage Island map: lighthouse up
+// top, dock at the bottom (arrival point), campfire in the middle.
 export const sampleZones: ZoneInstance[] = [
-  { key: "campfire",           displayName: "Campfire",           skinName: "Marshmallow Ring",   gridPosition: { x: 13, y: 9 },  footprint: { w: 4, h: 4 }, unlocked: true  },
-  { key: "build_beach",        displayName: "Build Beach",        skinName: "Sandcastle Shore",   gridPosition: { x: 28, y: 7 },  footprint: { w: 5, h: 4 }, unlocked: true  },
-  { key: "calm_cove",          displayName: "Calm Cove",          skinName: "Bubble Cove",        gridPosition: { x: 9,  y: 21 }, footprint: { w: 5, h: 4 }, unlocked: true  },
-  { key: "worry_hollow",       displayName: "Worry Hollow",       skinName: "Whisper Hollow",     gridPosition: { x: 41, y: 14 }, footprint: { w: 5, h: 4 }, unlocked: false },
-  { key: "field_guide_meadow", displayName: "Field Guide Meadow", skinName: "Clover Meadow",      gridPosition: { x: 24, y: 26 }, footprint: { w: 5, h: 4 }, unlocked: true  },
-  { key: "garden",             displayName: "Garden",             skinName: "Carrot Patch",       gridPosition: { x: 38, y: 24 }, footprint: { w: 5, h: 4 }, unlocked: true  },
+  { key: "lighthouse_point",   displayName: "Lighthouse Point",   skinName: "Beacon Point",       gridPosition: { x: 25, y: 4 },  footprint: { w: 4, h: 4 }, unlocked: true  },
+  { key: "treehouse_hideaway", displayName: "Treehouse Hideaway", skinName: "Treetop Hideaway",   gridPosition: { x: 11, y: 9 },  footprint: { w: 5, h: 5 }, unlocked: true  },
+  { key: "art_hut",            displayName: "Art Hut",            skinName: "Paint Cabin",        gridPosition: { x: 38, y: 11 }, footprint: { w: 4, h: 4 }, unlocked: true  },
+  { key: "campfire_circle",    displayName: "Campfire Circle",    skinName: "Marshmallow Ring",   gridPosition: { x: 25, y: 16 }, footprint: { w: 4, h: 4 }, unlocked: true  },
+  { key: "arcade_cove",        displayName: "Arcade Cove",        skinName: "Arcade Cove",        gridPosition: { x: 40, y: 21 }, footprint: { w: 5, h: 4 }, unlocked: true  },
+  { key: "calm_beach",         displayName: "Calm Beach",         skinName: "Calm Beach",         gridPosition: { x: 9,  y: 23 }, footprint: { w: 6, h: 4 }, unlocked: true  },
+  { key: "welcome_dock",       displayName: "Welcome Dock",       skinName: "Welcome Dock",       gridPosition: { x: 24, y: 28 }, footprint: { w: 6, h: 4 }, unlocked: true  },
 ];
 
-const spawnPoint: GridPosition = { x: 27, y: 18 };
+// Spawn just inland of the dock — the arrival sequence drops the avatar here.
+const spawnPoint: GridPosition = { x: 27, y: 25 };
 
 // Biome-aware scatter: dense trees in the forest, rocks on the mountain,
 // mushrooms in shade, shells along the beach, sparse elsewhere.

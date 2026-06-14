@@ -44,44 +44,45 @@ export class ProgrammaticTextureProvider implements TextureProvider {
     const p = this.palette;
     const g = new Graphics();
 
+    const INK = 0x23201c;
     switch (this.normalize(kind)) {
       case "tree": {
-        // Rounded, leafy tree with dappled highlights.
+        // Epic, expressive tree: tall characterful trunk + big rounded canopy,
+        // bold outline, flat cel fill with a light highlight (Wind Waker).
         const trunk = shade(p?.land ?? "#7a5a3a", -0.5);
         const leaf = hexNum(p?.foliage ?? "#5fb35a");
-        const leafDark = shade(p?.foliage ?? "#5fb35a", -0.28);
-        const leafLit = shade(p?.foliage ?? "#5fb35a", 0.22);
-        g.roundRect(-4, -18, 8, 22, 3).fill(trunk);
-        g.ellipse(0, -28, 19, 17).fill(leafDark);
-        g.ellipse(-4, -33, 15, 14).fill(leaf);
-        g.ellipse(6, -30, 12, 11).fill(leaf);
-        g.ellipse(-2, -37, 8, 7).fill(leafLit);
+        const leafLit = shade(p?.foliage ?? "#5fb35a", 0.24);
+        const leafDark = shade(p?.foliage ?? "#5fb35a", -0.22);
+        g.poly([-6, 4, -4, -30, 4, -30, 6, 4]).fill(trunk).stroke({ width: 3, color: INK });
+        g.circle(0, -44, 23).fill(leaf).stroke({ width: 4, color: INK });
+        g.circle(-17, -36, 15).fill(leaf).stroke({ width: 4, color: INK });
+        g.circle(18, -38, 14).fill(leaf).stroke({ width: 4, color: INK });
+        g.circle(2, -54, 14).fill(leaf).stroke({ width: 4, color: INK });
+        // re-fill centers to hide inner outlines, then highlight + shadow
+        g.circle(0, -44, 21).fill(leaf);
+        g.circle(-6, -50, 9).fill({ color: hexNum(leafLit), alpha: 0.85 });
+        g.ellipse(8, -34, 12, 7).fill({ color: hexNum(leafDark), alpha: 0.4 });
         break;
       }
       case "rock": {
-        // Layered stack to suggest a little height (mountain feel).
-        const base = shade(p?.landAlt ?? "#9b8a6a", -0.2);
-        const mid = shade(p?.landAlt ?? "#9b8a6a", -0.05);
+        // Bold-outlined layered boulder.
+        const base = shade(p?.landAlt ?? "#9b8a6a", -0.18);
         const lit = shade(p?.landAlt ?? "#9b8a6a", 0.22);
-        g.ellipse(0, 0, 16, 8).fill(shade(p?.land ?? "#7a5a3a", -0.55));
-        g.roundRect(-13, -14, 26, 16, 7).fill(base);
-        g.roundRect(-9, -22, 18, 12, 6).fill(mid);
-        g.roundRect(-6, -22, 8, 6, 3).fill(lit);
+        g.ellipse(0, 1, 17, 7).fill({ color: 0x000000, alpha: 0.18 });
+        g.poly([-15, 2, -10, -14, 2, -20, 14, -12, 16, 0]).fill(base).stroke({ width: 4, color: INK });
+        g.poly([-2, -18, 6, -19, 12, -10, 2, -9]).fill({ color: hexNum(lit), alpha: 0.7 });
         break;
       }
       case "mushroom": {
-        g.roundRect(-2, -6, 4, 7, 2).fill(0xf3e7cf);
-        g.ellipse(0, -7, 8, 5).fill(0xd9534f);
-        g.circle(-3, -8, 1.4).fill(0xfff0e0);
-        g.circle(2, -6, 1.1).fill(0xfff0e0);
+        g.roundRect(-2.5, -6, 5, 8, 2).fill(0xf3e7cf).stroke({ width: 2.5, color: INK });
+        g.ellipse(0, -8, 9, 6).fill(0xe2553c).stroke({ width: 3, color: INK });
+        g.circle(-3, -9, 1.6).fill(0xfff0e0);
+        g.circle(2.5, -7, 1.2).fill(0xfff0e0);
         break;
       }
       case "shell": {
         const sh = hexNum(p?.accent ?? "#ff8aa3");
-        g.ellipse(0, -1, 7, 6).fill(sh);
-        for (let i = -2; i <= 2; i++) {
-          g.moveTo(0, 1).lineTo(i * 3, -7).stroke({ width: 1, color: 0xffffff, alpha: 0.6 });
-        }
+        g.poly([0, 3, -7, -7, -2.5, -8, 0, -3, 2.5, -8, 7, -7]).fill(sh).stroke({ width: 2.5, color: INK });
         break;
       }
       default: {

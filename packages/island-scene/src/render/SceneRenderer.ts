@@ -31,11 +31,13 @@ import {
 import { ProgrammaticTextureProvider } from "./TextureProvider";
 import { buildAvatarSprite, type AvatarSprite } from "./avatar";
 import { biomeAt, landContext } from "./biome";
-import { buildZoneScene } from "./zones";
+import { buildZoneScene, paintZoneStructure, INTERIOR_BG } from "./zones";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 
 /** Walk speed in grid tiles per second. */
 const WALK_SPEED = 4.5;
+/** Bold cel outline color, matching the Wind Waker art register. */
+const INK = 0x23201c;
 /** Avatar art scale — chunky + readable relative to the tiles. */
 const AVATAR_SCALE = 1.6;
 /** Pointer travel (px) beyond which a press becomes a pan, not a tap. */
@@ -91,9 +93,10 @@ export class SceneRenderer {
   private backdrop = new Container();
   private sky = new Graphics();
   private shimmer = new Graphics();
-  /** Camera-panned world. */
+  /** Camera-panned world (Mode 1 — world map). */
   private world = new Container();
   private terrain = new Graphics();
+  private waves = new Graphics();
   /** y-sorted props: zones, decorations, avatars. */
   private entities = new Container();
   /** Ambient firefly overlay (world space, drawn above props). */
@@ -101,6 +104,21 @@ export class SceneRenderer {
   private fireflyDots: {
     g: Graphics; cx: number; cy: number; rx: number; ry: number; phase: number; speed: number;
   }[] = [];
+  /** Arrival boat (world space). */
+  private boat = new Graphics();
+  /** Mode 2 — full-screen zone interior (screen space). */
+  private interior = new Container();
+  /** Transition fade overlay (screen space, on top of everything). */
+  private fade = new Graphics();
+
+  // Two-mode + transition state.
+  private currentZone: ZoneKey | null = null;
+  private pendingZone: ZoneKey | null = null;
+  private fadePhase: "idle" | "out" | "in" = "idle";
+
+  // Arrival sequence state.
+  private arrival: "boat" | "step" | "done" = "boat";
+  private arrivalT = 0;
 
   private textures!: ProgrammaticTextureProvider;
   private theme!: ThemePackConfig;
@@ -115,6 +133,7 @@ export class SceneRenderer {
   private hoveredZone: ZoneKey | null = null;
   private localId: string | null = null;
   private grid: WalkGrid = { walkable: () => false };
+  private coastCells: GridPosition[] = [];
 
   // ── Camera (zoom + eased follow + drag pan, clamped to world) ──
   private camScale = 1;
@@ -144,11 +163,13 @@ export class SceneRenderer {
     layout: LayoutConfig,
     zones: ZoneInstance[],
     avatars: AvatarInstance[],
+    initialZone: ZoneKey | null = null,
   ): Promise<void> {
     this.theme = theme;
     this.layout = layout;
     this.zones = zones;
     this.avatars = avatars;
+    this.currentZone = initialZone;
 
     try {
       await this.app.init({
@@ -170,10 +191,17 @@ export class SceneRenderer {
 
     this.app.canvas.style.display = "block";
     this.opts.container.appendChild(this.app.canvas);
-    this.app.stage.addChild(this.backdrop, this.world);
+    this.app.stage.addChild(this.backdrop, this.world, this.interior, this.fade);
     this.backdrop.addChild(this.sky, this.shimmer);
-    this.world.addChild(this.terrain, this.entities, this.fireflies);
+    this.world.addChild(this.terrain, this.waves, this.entities, this.fireflies, this.boat);
     this.entities.sortableChildren = true;
+    this.interior.visible = false;
+    this.fade.eventMode = "none";
+
+    // Arrival: reduced motion skips straight to "landed"; otherwise the boat
+    // pulls up to the dock on first load. If the host starts inside a zone,
+    // there's no world arrival to play.
+    this.arrival = this.opts.reducedMotion || initialZone ? "done" : "boat";
 
     // Unified pointer handling on the stage: press + release without travel is
     // a tap (walk / zone / object); press + drag pans the camera. Zones and
@@ -191,6 +219,14 @@ export class SceneRenderer {
     this.opts.onLoadProgress?.(0.6);
 
     this.rebuild();
+    this.drawFadeRect();
+    this.fade.alpha = 0;
+
+    // Boat starts off-shore; the local avatar is hidden until it steps off.
+    this.setupArrival();
+    // Start inside a zone if the host asked for it.
+    if (initialZone) this.applyMode(initialZone);
+
     this.opts.onLoadProgress?.(1);
 
     // Single always-on ticker: movement runs even under reduced motion; only
@@ -198,6 +234,38 @@ export class SceneRenderer {
     this.app.ticker.add(this.update);
 
     this.opts.onReady?.();
+  }
+
+  /** Position the boat off-shore and hide the avatar for the arrival walk-on. */
+  private setupArrival(): void {
+    this.boat.visible = this.arrival === "boat";
+    const local = this.localId ? this.avatarViews.get(this.localId) : null;
+    if (this.arrival === "boat" && local) local.container.visible = false;
+    this.arrivalT = 0;
+    this.drawBoat();
+  }
+
+  private dockApproach(): { fromX: number; fromY: number; toX: number; toY: number } {
+    const dock = this.zones.find((z) => z.key === "welcome_dock");
+    const c = dock
+      ? footprintCenter(dock.gridPosition, dock.footprint.w, dock.footprint.h)
+      : tileCenter(this.layout.spawnPoint.x, this.layout.spawnPoint.y);
+    // Boat docks just in front (down-screen) of the dock, arriving from further out.
+    return { fromX: c.x - 30, fromY: c.y + 220, toX: c.x, toY: c.y + 54 };
+  }
+
+  private drawBoat(x = 0, y = 0): void {
+    this.boat.clear();
+    if (this.arrival !== "boat") return;
+    const INK = 0x23201c;
+    this.boat.position.set(x, y);
+    this.boat.zIndex = 9999;
+    // little sailboat
+    this.boat.ellipse(0, 6, 4, 2).fill({ color: 0x000000, alpha: 0.18 });
+    this.boat.poly([-18, 0, 18, 0, 12, 10, -12, 10]).fill(0xb5763f).stroke({ width: 3, color: INK });
+    this.boat.roundRect(-16, -2, 32, 4, 2).fill(0xcf9457).stroke({ width: 3, color: INK });
+    this.boat.moveTo(0, -2).lineTo(0, -28).stroke({ width: 3, color: INK });
+    this.boat.poly([0, -28, 0, -6, 15, -10]).fill(0xfff1f0).stroke({ width: 3, color: INK });
   }
 
   // ── Prop updates ────────────────────────────────────────────────
@@ -244,13 +312,112 @@ export class SceneRenderer {
     }
   }
 
+  /** Host two-mode control: enter a zone (key) or return to the world (null). */
+  setCurrentZone(zone: ZoneKey | null): void {
+    if (!this.inited || this.destroyed) return;
+    const target = zone ?? null;
+    if (target === this.currentZone && this.fadePhase === "idle") return;
+    this.pendingZone = target;
+    if (this.opts.reducedMotion) {
+      this.applyMode(target);
+      this.fade.alpha = 0;
+      this.fadePhase = "idle";
+    } else {
+      this.fadePhase = "out";
+    }
+  }
+
+  private applyMode(zone: ZoneKey | null): void {
+    this.currentZone = zone;
+    if (zone) {
+      this.buildInterior(zone);
+      this.interior.visible = true;
+      this.world.visible = false;
+    } else {
+      this.interior.visible = false;
+      this.world.visible = true;
+    }
+  }
+
+  /** Full-screen zone interior stub: themed environment + the player's animal +
+   *  a title. The actual activity gameplay comes later. */
+  private buildInterior(zone: ZoneKey): void {
+    this.interior.removeChildren().forEach((c) => c.destroy({ children: true }));
+    const w = this.app.screen.width;
+    const h = this.app.screen.height;
+    const z = this.zones.find((zz) => zz.key === zone);
+    const { palette } = this.theme;
+
+    // Background wash (zone-flavored).
+    const bg = new Graphics();
+    const top = INTERIOR_BG[zone] ?? palette.skyTop;
+    for (let i = 0; i < 16; i++) {
+      const t = i / 15;
+      bg.rect(0, (h * i) / 16, w, h / 16 + 1).fill(lerpHex(top, shade(top, -0.18), t));
+    }
+    bg.rect(0, h * 0.74, w, h * 0.26).fill({ color: hexNum(shade(top, -0.28)), alpha: 0.5 });
+    this.interior.addChild(bg);
+
+    // The zone's landmark, large in the center.
+    const stage = new Container();
+    stage.position.set(w / 2, h * 0.66);
+    stage.scale.set(2.4);
+    const art = new Graphics();
+    paintZoneStructure(art, zone, palette);
+    stage.addChild(art);
+    this.interior.addChild(stage);
+
+    // The player's animal, standing in the scene.
+    const local = this.localId ? this.avatarViews.get(this.localId) : null;
+    const cfg = local ? this.avatars.find((a) => a.id === local.id)?.config : this.avatars[0]?.config;
+    if (cfg) {
+      const who = buildAvatarSprite(cfg);
+      who.container.scale.set(2.6);
+      who.container.position.set(w / 2, h * 0.78);
+      this.interior.addChild(who.container);
+    }
+
+    if (!this.opts.hideTextLabels) {
+      const title = new Text({
+        text: z?.displayName ?? zone,
+        style: {
+          fontFamily: "system-ui, sans-serif",
+          fontSize: 30,
+          fontWeight: "800",
+          fill: 0xffffff,
+          stroke: { color: INK, width: 5 },
+          align: "center",
+        },
+      });
+      title.anchor.set(0.5, 0);
+      title.position.set(w / 2, 28);
+      this.interior.addChild(title);
+
+      const hint = new Text({
+        text: "Activity coming soon — tap Exit to return to the island",
+        style: { fontFamily: "system-ui, sans-serif", fontSize: 14, fill: 0xffffff },
+      });
+      hint.anchor.set(0.5, 0);
+      hint.alpha = 0.85;
+      hint.position.set(w / 2, 66);
+      this.interior.addChild(hint);
+    }
+  }
+
+  private drawFadeRect(): void {
+    this.fade.clear();
+    this.fade.rect(0, 0, this.app.screen.width, this.app.screen.height).fill(0xfdf6ea);
+  }
+
   resize(): void {
     if (!this.inited || this.destroyed) return;
     this.app.resize();
     this.drawBackdrop();
+    this.drawFadeRect();
     this.updateCamScale();
     this.clampCamera();
     this.applyCamera();
+    if (this.currentZone) this.buildInterior(this.currentZone);
   }
 
   // ── Build ───────────────────────────────────────────────────────
@@ -274,11 +441,11 @@ export class SceneRenderer {
     this.setupCamera();
   }
 
-  /** Soft fireflies drifting near the cave (Worry Hollow) — calm, magical. */
+  /** Soft fireflies drifting by the forest treehouse — calm, magical. */
   private buildFireflies(): void {
     this.fireflies.removeChildren().forEach((c) => c.destroy());
     this.fireflyDots = [];
-    const hollow = this.zones.find((z) => z.key === "worry_hollow");
+    const hollow = this.zones.find((z) => z.key === "treehouse_hideaway");
     if (!hollow) return;
     const c = footprintCenter(hollow.gridPosition, hollow.footprint.w, hollow.footprint.h);
     for (let i = 0; i < 11; i++) {
@@ -398,12 +565,15 @@ export class SceneRenderer {
       (a, b) => depth(a.x, a.y) - depth(b.x, b.y),
     );
 
-    // Coastal foam ring (under the land, hugging the shore).
+    // Coastal foam ring (under the land, hugging the shore) — and remember the
+    // coast cells so the wave overlay can animate them each frame.
+    this.coastCells = [];
     for (const c of cells) {
       if (interior(c.x, c.y)) continue;
+      this.coastCells.push({ x: c.x, y: c.y });
       this.terrain
         .poly(diamondPoly(c.x, c.y))
-        .stroke({ width: 4, color: hexNum(palette.waterShimmer), alpha: 0.35 });
+        .stroke({ width: 4, color: hexNum(palette.waterShimmer), alpha: 0.3 });
     }
 
     for (const c of cells) {
@@ -457,6 +627,27 @@ export class SceneRenderer {
         const fy = ctr.y + (hash(c.y, c.x) - 0.5) * 7;
         this.terrain.circle(fx, fy, 1.1).fill({ color: hexNum(shade(sand, -0.18)), alpha: 0.6 });
       }
+    }
+
+    // Bold cel outline along the outer coast (Wind Waker terrain edge).
+    for (const c of this.coastCells) {
+      this.terrain
+        .poly(diamondPoly(c.x, c.y))
+        .stroke({ width: 2.5, color: INK, alpha: 0.4 });
+    }
+  }
+
+  /** Animated shoreline foam (Wind Waker waves), redrawn each frame. */
+  private drawWaves(): void {
+    this.waves.clear();
+    const { palette } = this.theme;
+    const t = this.elapsed / 600;
+    for (const c of this.coastCells) {
+      const phase = c.x * 0.5 + c.y * 0.7;
+      const a = 0.2 + 0.22 * (0.5 + 0.5 * Math.sin(t + phase));
+      this.waves
+        .poly(diamondPoly(c.x, c.y))
+        .stroke({ width: 3, color: hexNum(palette.waterShimmer), alpha: a });
     }
   }
 
@@ -739,7 +930,13 @@ export class SceneRenderer {
 
   // ── Pointer: tap to act, drag to pan ────────────────────────────
 
+  /** Input is only live on the world map, once arrival + any transition end. */
+  private inputLive(): boolean {
+    return this.currentZone === null && this.fadePhase === "idle" && this.arrival === "done";
+  }
+
   private onPointerDown = (e: FederatedPointerEvent): void => {
+    if (!this.inputLive()) return;
     this.pointerDown = true;
     this.pointerMoved = false;
     this.downX = this.lastX = e.global.x;
@@ -819,16 +1016,22 @@ export class SceneRenderer {
     const dt = Math.min(0.05, ticker.deltaMS / 1000);
     this.elapsed += ticker.deltaMS;
 
+    this.tickTransition(dt);
+    this.tickArrival(dt);
+
     for (const view of this.avatarViews.values()) {
       this.advanceAvatar(view, dt);
     }
-    this.followCamera(dt);
+    if (this.currentZone === null) this.followCamera(dt);
 
     if (this.opts.reducedMotion) {
       this.fireflies.visible = false;
     } else {
-      this.fireflies.visible = true;
-      this.drawShimmer();
+      this.fireflies.visible = this.currentZone === null;
+      if (this.currentZone === null) {
+        this.drawShimmer();
+        this.drawWaves();
+      }
       const t = this.elapsed / 1000;
       for (const f of this.fireflyDots) {
         f.g.position.set(
@@ -839,6 +1042,52 @@ export class SceneRenderer {
       }
     }
   };
+
+  /** Cross-fade between world map and zone interior. */
+  private tickTransition(dt: number): void {
+    if (this.fadePhase === "out") {
+      this.fade.alpha = Math.min(1, this.fade.alpha + dt * 3);
+      if (this.fade.alpha >= 1) {
+        this.applyMode(this.pendingZone);
+        this.fadePhase = "in";
+      }
+    } else if (this.fadePhase === "in") {
+      this.fade.alpha = Math.max(0, this.fade.alpha - dt * 3);
+      if (this.fade.alpha <= 0) this.fadePhase = "idle";
+    }
+  }
+
+  /** Arrival: boat glides to the dock, then the avatar steps off and walks in. */
+  private tickArrival(dt: number): void {
+    if (this.currentZone !== null || this.arrival === "done") return;
+    const seg = this.dockApproach();
+    if (this.arrival === "boat") {
+      this.arrivalT = Math.min(1, this.arrivalT + dt / 2.6);
+      const e = this.arrivalT * this.arrivalT * (3 - 2 * this.arrivalT); // smoothstep
+      this.drawBoat(seg.fromX + (seg.toX - seg.fromX) * e, seg.fromY + (seg.toY - seg.fromY) * e);
+      if (this.arrivalT >= 1) {
+        this.arrival = "step";
+        const local = this.localId ? this.avatarViews.get(this.localId) : null;
+        if (local) {
+          local.container.visible = true;
+          // Step off at the dock's front, then walk inland to the spawn tile.
+          const dock = this.zones.find((z) => z.key === "welcome_dock");
+          const front = dock
+            ? { x: Math.floor(dock.gridPosition.x + dock.footprint.w / 2), y: dock.gridPosition.y + dock.footprint.h - 1 }
+            : this.layout.spawnPoint;
+          const entrance = nearestWalkable(this.grid, front) ?? this.layout.spawnPoint;
+          local.pos = { x: entrance.x, y: entrance.y };
+          this.placeAvatar(local);
+          this.walkView(local, this.layout.spawnPoint);
+        } else {
+          this.arrival = "done";
+        }
+      }
+    } else if (this.arrival === "step") {
+      const local = this.localId ? this.avatarViews.get(this.localId) : null;
+      if (!local || !local.moving) this.arrival = "done";
+    }
+  }
 
   private advanceAvatar(view: AvatarView, dt: number): void {
     if (view.moving) {

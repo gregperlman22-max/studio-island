@@ -19,11 +19,12 @@ export const sproutPack: ThemePackConfig = {
     ink: "#3a2616",
   },
   zoneSkins: {
-    calm_cove: { skinName: "Bubble Cove", decorationHints: ["bubble-rock", "soft-shell"] },
-    build_beach: { skinName: "Sandcastle Shore", decorationHints: ["bucket", "driftwood"] },
-    campfire: { skinName: "Marshmallow Ring", decorationHints: ["log-seat"] },
-    worry_hollow: { skinName: "Whisper Hollow", decorationHints: ["mossy-stone"] },
-    garden: { skinName: "Carrot Patch", decorationHints: ["sprout", "watering-can"] },
-    field_guide_meadow: { skinName: "Clover Meadow", decorationHints: ["clover", "butterfly"] },
+    lighthouse_point: { skinName: "Beacon Point", decorationHints: ["rock", "gull"] },
+    treehouse_hideaway: { skinName: "Treetop Hideaway", decorationHints: ["tree", "rope-ladder"] },
+    campfire_circle: { skinName: "Marshmallow Ring", decorationHints: ["log-seat", "stone"] },
+    art_hut: { skinName: "Paint Cabin", decorationHints: ["easel", "flower"] },
+    arcade_cove: { skinName: "Arcade Cove", decorationHints: ["awning", "lantern"] },
+    welcome_dock: { skinName: "Welcome Dock", decorationHints: ["boat", "plank"] },
+    calm_beach: { skinName: "Calm Beach", decorationHints: ["shell", "starfish"] },
   },
 };

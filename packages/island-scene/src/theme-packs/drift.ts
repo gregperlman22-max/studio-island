@@ -24,11 +24,12 @@ export const driftPack: ThemePackConfig = {
     ink: "#eef2ff",
   },
   zoneSkins: {
-    calm_cove: { skinName: "Moon Cove" },
-    build_beach: { skinName: "Tide Workshop" },
-    campfire: { skinName: "Ember Circle" },
-    worry_hollow: { skinName: "Still Hollow" },
-    garden: { skinName: "Night Garden" },
-    field_guide_meadow: { skinName: "Star Meadow" },
+    lighthouse_point: { skinName: "Moonlit Beacon" },
+    treehouse_hideaway: { skinName: "Owl Treehouse" },
+    campfire_circle: { skinName: "Ember Circle" },
+    art_hut: { skinName: "Lantern Studio" },
+    arcade_cove: { skinName: "Neon Cove" },
+    welcome_dock: { skinName: "Night Dock" },
+    calm_beach: { skinName: "Still Shore" },
   },
 };

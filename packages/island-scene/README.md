@@ -3,18 +3,19 @@
 A 2.5D tap-to-move island world renderer for **Engage Island**. Pure
 presentational React + PixiJS component. The host app owns all data.
 
-> **Status:** Zen-world creative pass — a large, organic open-world island
-> with natural biomes (forest, mountain, meadow, wrapping beach shore),
-> warm golden-hour tone, real per-zone structures (dock, beach hut, cabin,
-> glowing cave, greenhouse, gazebo), fireflies by the cave, and an alive
-> shimmering sea. Characters are **animals** (bunny / fox / bear / frog /
-> cat / deer) — chunky and cute, no human attributes. Eased follow camera +
-> drag-to-pan, A\* tap-to-move, y-sorted depth, live theme swapping. The
-> harness is a full-screen static site for visual review.
+> **Status:** Wind Waker creative pass — bold cel outlines + flat vivid
+> fills everywhere, a two-mode scene system (world map ↔ zone interior with
+> a cross-fade transition), an arrival boat that pulls up to the dock on
+> first load, seven landmark zones (Lighthouse Point, Treehouse Hideaway,
+> Campfire Circle, Art Hut, Arcade Cove, Welcome Dock, Calm Beach), epic
+> trees, landmark-scale structures, and animated shoreline waves. Animal
+> characters (bunny / fox / bear / frog / cat / deer) at Wind Waker scale.
 >
-> **Contract note:** `AvatarConfig` is now the animal shape
-> `{ species, bodyColor, accessoryKey, displayColor }` (was a human
-> layered-sprite shape) — a deliberate creative-direction change.
+> **Contract notes:** `ZoneKey` is now the seven landmark keys above;
+> added `currentZone?: ZoneKey | null` prop (world vs. interior) and
+> `onZoneExit?: () => void`. `AvatarConfig` is the animal shape
+> `{ species, bodyColor, accessoryKey, displayColor }`. All deliberate
+> creative-direction changes.
 
 ---
 

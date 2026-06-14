@@ -1,20 +1,23 @@
 import { Container, Graphics, Text } from "pixi.js";
-import type { ThemePackConfig, ThemePalette, ZoneInstance } from "../types";
+import type { ThemePackConfig, ThemePalette, ZoneInstance, ZoneKey } from "../types";
 import { TILE_H, TILE_W } from "./constants";
 import { hexNum, shade } from "./iso";
 
 /**
- * Per-zone "place" art. Each zone gets a distinct ground patch + a few
- * characterful programmatic props so it reads as somewhere (a pond, an
- * orchard, a campfire) rather than a flat colored square. Programmatic now,
+ * Per-zone landmark art in a Wind Waker register: bold dark outlines, flat
+ * vivid fills with a light highlight + dark shadow (cel shading), and
+ * structures that read as real landmarks (not tiny tokens). Programmatic now,
  * swappable for atlas art later behind the same builder.
  *
- * Local origin (0,0) is the footprint center; art is drawn around it.
+ * Local origin (0,0) is the footprint center; art rises upward (negative y).
  */
 export interface ZoneScene {
   container: Container;
   setHover: (hovered: boolean) => void;
 }
+
+/** Bold cel outline color used across all art. */
+const INK = 0x23201c;
 
 export function buildZoneScene(
   zone: ZoneInstance,
@@ -26,309 +29,182 @@ export function buildZoneScene(
   const halfW = (zone.footprint.w * TILE_W) / 2;
   const halfH = (zone.footprint.h * TILE_H) / 2;
 
-  // Inner art container so hover scaling pivots on the footprint center.
   const art = new Container();
   container.addChild(art);
 
-  const diamond = (g: Graphics, hw: number, hh: number) =>
-    g.poly([0, -hh, hw, 0, 0, hh, -hw, 0]);
-
-  // ── Ground patch (zone-specific) ──
+  // Ground patch with a bold outline, cel-shaded to the biome.
   const ground = new Graphics();
-  const gw = halfW - 4;
+  const gw = halfW - 3;
   const gh = halfH - 2;
-
-  switch (zone.key) {
-    case "calm_cove":
-      paintPond(ground, gw, gh, palette);
-      break;
-    case "build_beach":
-      paintBeach(ground, gw, gh, palette);
-      break;
-    case "campfire":
-      paintCampfire(ground, gw, gh, palette);
-      break;
-    case "worry_hollow":
-      paintHollow(ground, gw, gh, palette);
-      break;
-    case "garden":
-      paintGarden(ground, gw, gh, palette);
-      break;
-    case "field_guide_meadow":
-      paintMeadow(ground, gw, gh, palette);
-      break;
-  }
+  const groundColor = ZONE_GROUND[zone.key](palette);
+  ground.poly([0, -gh, gw, 0, 0, gh, -gw, 0]).fill(groundColor).stroke({ width: 3, color: INK, alpha: 0.5 });
+  ground.poly([0, -gh, gw * 0.5, -gh * 0.5, 0, 0, -gw * 0.5, -gh * 0.5]).fill({ color: hexNum(shade(groundColor, 0.16)), alpha: 0.5 });
   art.addChild(ground);
 
-  // Soft edge ring to seat the patch on the grass.
-  const ring = new Graphics();
-  diamond(ring, gw, gh).stroke({
-    width: 2,
-    color: hexNum(shade(palette.foliage, -0.15)),
-    alpha: 0.3,
-  });
-  art.addChild(ring);
-
-  // ── Structure (a real little building per zone) ──
+  // Landmark structure.
   const structure = new Graphics();
-  buildStructure(structure, zone.key, palette);
+  ZONE_PAINT[zone.key](structure, palette);
   art.addChild(structure);
 
-  // ── Locked state: dim + lock badge ──
   if (!zone.unlocked) {
     art.alpha = 0.6;
     const lock = new Graphics();
-    lock.roundRect(-8, -22, 16, 13, 3).fill({ color: hexNum(palette.ink), alpha: 0.6 });
-    lock.rect(-5, -28, 10, 7).stroke({ width: 2.5, color: hexNum(palette.ink), alpha: 0.6 });
+    lock.roundRect(-9, -24, 18, 14, 3).fill(0xf4d36b).stroke({ width: 3, color: INK });
+    lock.rect(-5, -31, 10, 8).stroke({ width: 3, color: INK });
     art.addChild(lock);
   }
 
-  // ── Name label ──
   if (!hideLabels) {
     const label = new Text({
-      text: zone.unlocked ? zone.skinName : `${zone.skinName} (locked)`,
+      text: zone.unlocked ? zone.displayName : `${zone.displayName} (locked)`,
       style: {
         fontFamily: "system-ui, sans-serif",
-        fontSize: 14,
-        fontWeight: "700",
-        fill: hexNum(palette.ink),
-        stroke: { color: 0xffffff, width: 3 },
+        fontSize: 15,
+        fontWeight: "800",
+        fill: 0xffffff,
+        stroke: { color: INK, width: 4 },
         align: "center",
       },
     });
     label.anchor.set(0.5, 1);
-    label.position.set(0, -halfH - 8);
+    label.position.set(0, -halfH - 10);
     container.addChild(label);
   }
 
   return {
     container,
-    setHover: (hovered: boolean) => {
-      art.scale.set(hovered ? 1.05 : 1);
-    },
+    setHover: (hovered: boolean) => art.scale.set(hovered ? 1.05 : 1),
   };
 }
 
-// ── Per-zone painters ──────────────────────────────────────────────
+// ── Ground tone per zone ────────────────────────────────────────────
+const ZONE_GROUND: Record<ZoneKey, (p: ThemePalette) => number> = {
+  lighthouse_point: (p) => shade(p.landAlt, -0.12),
+  treehouse_hideaway: (p) => shade(p.foliage, -0.1),
+  campfire_circle: () => 0x9a7b52,
+  art_hut: (p) => shade(p.land, 0.08),
+  arcade_cove: (p) => shade(p.landAlt, 0.05),
+  calm_beach: (p) => shade(p.landAlt, 0.08),
+  welcome_dock: (p) => shade(p.water, -0.05),
+};
 
-function paintPond(g: Graphics, hw: number, hh: number, p: ThemePalette) {
-  const water = shade(p.water, -0.05);
-  g.poly([0, -hh, hw, 0, 0, hh, -hw, 0]).fill(water);
-  g.poly([0, -hh, hw, 0, 0, hh, -hw, 0]).fill({ color: hexNum(shade(p.water, 0.18)), alpha: 0.25 });
-  // ripples
-  for (let i = 0; i < 3; i++) {
-    g.ellipse(-hw * 0.2 + i * 6, -hh * 0.1 + i * 5, 10 - i * 2, 4 - i).stroke({
-      width: 1.5, color: hexNum(p.waterShimmer), alpha: 0.5,
-    });
-  }
-  // lily pads
-  for (const [lx, ly] of [[hw * 0.35, hh * 0.1], [-hw * 0.4, hh * 0.3], [hw * 0.05, -hh * 0.35]]) {
-    g.ellipse(lx, ly, 7, 4).fill(hexNum(shade(p.foliage, 0.05)));
-    g.circle(lx + 2, ly - 1, 1.6).fill(hexNum(p.accent));
-  }
-  // reeds
-  for (const rx of [-hw * 0.55, hw * 0.5]) {
-    g.moveTo(rx, hh * 0.1).lineTo(rx, hh * 0.1 - 14).stroke({ width: 2, color: hexNum(shade(p.foliage, -0.1)) });
-    g.moveTo(rx + 4, hh * 0.12).lineTo(rx + 4, hh * 0.12 - 10).stroke({ width: 2, color: hexNum(p.foliage) });
-  }
+// Cel-shaded box helper: flat fill + bold outline + soft top highlight.
+function celBox(g: Graphics, x: number, y: number, w: number, h: number, r: number, color: number | string): void {
+  g.roundRect(x, y, w, h, r).fill(color).stroke({ width: 3, color: INK });
+  g.roundRect(x + 2, y + 2, w - 4, Math.max(2, h * 0.35), r).fill({ color: hexNum(shade(color, 0.2)), alpha: 0.55 });
 }
 
-function paintBeach(g: Graphics, hw: number, hh: number, p: ThemePalette) {
-  const sand = shade(p.landAlt, 0.05);
-  g.poly([0, -hh, hw, 0, 0, hh, -hw, 0]).fill(sand);
-  // speckles
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2;
-    g.circle(Math.cos(a) * hw * 0.5, Math.sin(a) * hh * 0.5, 1.2).fill({ color: hexNum(shade(p.landAlt, -0.2)), alpha: 0.5 });
-  }
-  // sandcastle
-  g.roundRect(-10, -20, 20, 12, 2).fill(hexNum(shade(p.landAlt, -0.12)));
-  g.rect(-10, -26, 5, 7).fill(hexNum(shade(p.landAlt, -0.18)));
-  g.rect(5, -26, 5, 7).fill(hexNum(shade(p.landAlt, -0.18)));
-  g.moveTo(0, -20).lineTo(0, -30).stroke({ width: 1.5, color: hexNum(p.accent) });
-  g.poly([0, -30, 7, -28, 0, -26]).fill(hexNum(p.accent));
-  // bucket + driftwood
-  g.roundRect(hw * 0.45, -6, 7, 7, 1.5).fill(hexNum(p.accent));
-  g.roundRect(-hw * 0.6, 2, 16, 3, 1.5).fill(hexNum(shade(p.land, -0.4)));
+/** Draw a zone's landmark structure (used by both the world map + interior). */
+export function paintZoneStructure(g: Graphics, key: ZoneKey, p: ThemePalette): void {
+  ZONE_PAINT[key](g, p);
 }
 
-function paintCampfire(g: Graphics, hw: number, hh: number, p: ThemePalette) {
-  const dirt = shade("#9a7b52", 0);
-  g.poly([0, -hh, hw, 0, 0, hh, -hw, 0]).fill(dirt);
-  g.poly([0, -hh, hw, 0, 0, hh, -hw, 0]).fill({ color: hexNum(shade("#7a5f3c", 0)), alpha: 0.25 });
-  // stone ring
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * Math.PI * 2;
-    g.ellipse(Math.cos(a) * 16, Math.sin(a) * 8, 4, 3).fill(hexNum(shade(p.landAlt, -0.25)));
-  }
-  // logs
-  g.roundRect(-9, -3, 18, 4, 2).fill(hexNum(shade(p.land, -0.45)));
-  g.roundRect(-3, -10, 4, 12, 2).fill(hexNum(shade(p.land, -0.4)));
-  // flame
-  g.poly([0, -26, 6, -12, -6, -12]).fill(0xff8a3d);
-  g.poly([0, -20, 3.5, -12, -3.5, -12]).fill(0xffd23d);
-  // log seats
-  g.roundRect(hw * 0.45, -2, 9, 5, 2).fill(hexNum(shade(p.land, -0.4)));
-}
+/** Background wash color per zone interior. */
+export const INTERIOR_BG: Record<ZoneKey, string> = {
+  lighthouse_point: "#cfe6f2",
+  treehouse_hideaway: "#c9e8c0",
+  campfire_circle: "#f4d9b0",
+  art_hut: "#f3d6e6",
+  arcade_cove: "#c9d2ff",
+  calm_beach: "#d6f0ee",
+  welcome_dock: "#bfe6ee",
+};
 
-function paintHollow(g: Graphics, hw: number, hh: number, p: ThemePalette) {
-  const moss = shade(p.foliage, -0.18);
-  g.poly([0, -hh, hw, 0, 0, hh, -hw, 0]).fill(moss);
-  g.poly([0, -hh, hw, 0, 0, hh, -hw, 0]).fill({ color: 0x000000, alpha: 0.12 });
-  // smooth stones
-  for (const [sx, sy, r] of [[-hw * 0.35, hh * 0.15, 9], [hw * 0.4, -hh * 0.1, 7], [hw * 0.1, hh * 0.35, 6]]) {
-    g.ellipse(sx, sy + 2, r, r * 0.5).fill({ color: 0x000000, alpha: 0.15 });
-    g.ellipse(sx, sy, r, r * 0.7).fill(hexNum(shade(p.landAlt, -0.3)));
-    g.ellipse(sx - r * 0.3, sy - r * 0.25, r * 0.4, r * 0.3).fill(hexNum(shade(p.landAlt, -0.1)));
-  }
-  // ferns
-  for (const fx of [-hw * 0.5, hw * 0.55]) {
-    for (let k = -2; k <= 2; k++) {
-      g.moveTo(fx, 4).lineTo(fx + k * 3, 4 - 14 + Math.abs(k) * 2).stroke({ width: 1.5, color: hexNum(shade(p.foliage, 0.05)) });
+// ── Landmark painters (large, bold-outlined) ────────────────────────
+const ZONE_PAINT: Record<ZoneKey, (g: Graphics, p: ThemePalette) => void> = {
+  lighthouse_point: (g) => {
+    // Rocky base + tall tapered tower with red/white bands + lantern light.
+    g.ellipse(0, 2, 26, 11).fill(0x8d8475).stroke({ width: 3, color: INK });
+    g.poly([-12, 0, 12, 0, 8, -64, -8, -64]).fill(0xfafafa).stroke({ width: 4, color: INK });
+    // bands
+    g.poly([-11, -6, 11, -6, 10.4, -18, -10.4, -18]).fill(0xe23b3b);
+    g.poly([-9.2, -30, 9.2, -30, 8.6, -42, -8.6, -42]).fill(0xe23b3b);
+    g.poly([-12, 0, 12, 0, 8, -64, -8, -64]).stroke({ width: 4, color: INK });
+    // lantern room
+    celBox(g, -10, -80, 20, 16, 3, 0x4a3b2c);
+    g.roundRect(-7, -78, 14, 11, 2).fill(0xfff1a8).stroke({ width: 2.5, color: INK });
+    g.poly([-12, -80, 12, -80, 0, -92]).fill(0xe23b3b).stroke({ width: 4, color: INK });
+    // beam glow
+    g.ellipse(0, -72, 22, 9).fill({ color: 0xfff1a8, alpha: 0.25 });
+  },
+  treehouse_hideaway: (g, p) => {
+    // Big expressive tree + wooden platform house + ladder.
+    const trunk = 0x7a5230;
+    g.roundRect(-9, -56, 18, 60, 6).fill(trunk).stroke({ width: 4, color: INK });
+    g.roundRect(-5, -52, 5, 52, 3).fill({ color: hexNum(shade(trunk, 0.18)), alpha: 0.5 });
+    // platform + cabin
+    g.roundRect(-26, -60, 52, 8, 3).fill(0x9a6b40).stroke({ width: 4, color: INK });
+    celBox(g, -16, -84, 32, 24, 4, 0xb07a44);
+    g.poly([-20, -84, 20, -84, 0, -100]).fill(shade(p.foliage, -0.2)).stroke({ width: 4, color: INK });
+    g.roundRect(-5, -76, 10, 16, 2).fill(0x4a3b2c).stroke({ width: 2.5, color: INK });
+    g.roundRect(6, -80, 7, 7, 1.5).fill(0xfff1a8).stroke({ width: 2, color: INK });
+    // epic canopy
+    g.circle(0, -52, 30).fill(hexNum(p.foliage)).stroke({ width: 4, color: INK });
+    g.circle(-16, -62, 18).fill(hexNum(p.foliage)).stroke({ width: 4, color: INK });
+    g.circle(17, -60, 17).fill(hexNum(p.foliage)).stroke({ width: 4, color: INK });
+    g.circle(-8, -66, 12).fill({ color: hexNum(shade(p.foliage, 0.22)), alpha: 0.7 });
+    // ladder
+    g.roundRect(10, -52, 4, 50, 1).fill(trunk).stroke({ width: 2, color: INK });
+  },
+  campfire_circle: (g, p) => {
+    // Big stone ring + bold flame.
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2;
+      g.ellipse(Math.cos(a) * 24, Math.sin(a) * 12, 6, 4).fill(shade(p.landAlt, -0.2)).stroke({ width: 2.5, color: INK });
     }
-  }
-}
-
-function paintGarden(g: Graphics, hw: number, hh: number, p: ThemePalette) {
-  const soil = shade("#8a5a36", 0.05);
-  g.poly([0, -hh, hw, 0, 0, hh, -hw, 0]).fill(soil);
-  // tilled rows (parallel to one diamond axis)
-  for (let i = -2; i <= 2; i++) {
-    g.moveTo(-hw * 0.7 + i * 6, i * 4 - hh * 0.1)
-      .lineTo(hw * 0.7 + i * 6, i * 4 + hh * 0.1)
-      .stroke({ width: 2, color: hexNum(shade("#6e4528", 0)), alpha: 0.6 });
-  }
-  // sprouts + carrots
-  for (let i = 0; i < 6; i++) {
-    const sx = -hw * 0.5 + (i % 3) * hw * 0.5;
-    const sy = -hh * 0.2 + Math.floor(i / 3) * hh * 0.4;
-    g.moveTo(sx, sy).lineTo(sx - 2, sy - 6).stroke({ width: 1.5, color: hexNum(p.foliage) });
-    g.moveTo(sx, sy).lineTo(sx + 2, sy - 6).stroke({ width: 1.5, color: hexNum(p.foliage) });
-    if (i % 2 === 0) g.poly([sx, sy + 4, sx - 2, sy, sx + 2, sy]).fill(0xf08a3c);
-  }
-  // a couple flowers
-  for (const [fx, fy] of [[hw * 0.4, -hh * 0.3], [-hw * 0.45, hh * 0.3]]) {
-    flower(g, fx, fy, hexNum(p.accent));
-  }
-}
-
-function paintMeadow(g: Graphics, hw: number, hh: number, p: ThemePalette) {
-  const grass = shade(p.land, 0.08);
-  g.poly([0, -hh, hw, 0, 0, hh, -hw, 0]).fill(grass);
-  // grass tufts
-  for (let i = 0; i < 9; i++) {
-    const a = (i / 9) * Math.PI * 2;
-    const tx = Math.cos(a) * hw * 0.55;
-    const ty = Math.sin(a) * hh * 0.55;
-    g.moveTo(tx, ty).lineTo(tx - 2, ty - 7).stroke({ width: 1.5, color: hexNum(shade(p.foliage, 0.05)) });
-    g.moveTo(tx, ty).lineTo(tx + 2, ty - 7).stroke({ width: 1.5, color: hexNum(shade(p.foliage, -0.05)) });
-  }
-  // flowers
-  const cols = [hexNum(p.accent), 0xfff0a0, 0xffffff, 0xb98aff];
-  for (let i = 0; i < 7; i++) {
-    const fx = -hw * 0.55 + (i / 6) * hw * 1.1;
-    const fy = -hh * 0.3 + Math.sin(i * 1.7) * hh * 0.3;
-    flower(g, fx, fy, cols[i % cols.length]);
-  }
-  // butterfly
-  g.ellipse(hw * 0.3, -hh * 0.5, 3, 2).fill(hexNum(p.accent));
-  g.ellipse(hw * 0.3 + 4, -hh * 0.5, 3, 2).fill(hexNum(p.accent));
-}
-
-function flower(g: Graphics, x: number, y: number, color: number) {
-  for (let k = 0; k < 5; k++) {
-    const a = (k / 5) * Math.PI * 2;
-    g.circle(x + Math.cos(a) * 2.2, y + Math.sin(a) * 2.2, 1.6).fill(color);
-  }
-  g.circle(x, y, 1.4).fill(0xffe14d);
-}
-
-// ── Structures ──────────────────────────────────────────────────────
-// Each zone gets a small, cozy building. Drawn around the footprint center,
-// rising upward (negative y). Warm lit windows where it fits the tone.
-
-function buildStructure(g: Graphics, key: ZoneInstance["key"], p: ThemePalette): void {
-  const wood = "#9a6b40";
-  const woodDark = shade(wood, -0.2);
-  const woodLight = shade(wood, 0.18);
-  const glow = 0xffe07a;
-
-  switch (key) {
-    case "calm_cove": {
-      // Wooden meditation dock over the water.
-      for (let i = 0; i < 5; i++) {
-        g.roundRect(-16 + i * 7, -6, 5, 14, 1).fill(i % 2 ? wood : woodLight);
-      }
-      g.roundRect(-18, -8, 36, 4, 2).fill(woodDark);
-      // posts + a paper lantern
-      g.roundRect(-16, -6, 2.5, 12, 1).fill(woodDark);
-      g.roundRect(14, -6, 2.5, 12, 1).fill(woodDark);
-      g.moveTo(0, -8).lineTo(0, -24).stroke({ width: 2, color: woodDark });
-      g.circle(0, -28, 5).fill(glow);
-      g.circle(0, -28, 5).stroke({ width: 1.2, color: hexNum(p.accent), alpha: 0.7 });
-      break;
+    g.roundRect(-14, -4, 28, 6, 2).fill(0x6e4a2a).stroke({ width: 3, color: INK });
+    g.roundRect(-5, -16, 6, 16, 2).fill(0x7a5230).stroke({ width: 3, color: INK });
+    g.poly([0, -44, 13, -14, -13, -14]).fill(0xff7a2d).stroke({ width: 4, color: INK });
+    g.poly([0, -34, 7, -14, -7, -14]).fill(0xffd23d);
+    g.poly([0, -24, 3.5, -14, -3.5, -14]).fill(0xfff1a8);
+  },
+  art_hut: (g, p) => {
+    // Colorful hut with a propped canvas + warm window.
+    celBox(g, -20, -34, 40, 34, 4, hexNum(p.accent));
+    g.poly([-24, -34, 24, -34, 0, -52]).fill(0x4aa6c9).stroke({ width: 4, color: INK });
+    g.roundRect(-7, -22, 14, 22, 2).fill(0x4a3b2c).stroke({ width: 3, color: INK }); // door
+    g.roundRect(9, -28, 9, 9, 1.5).fill(0xfff1a8).stroke({ width: 2.5, color: INK }); // window
+    // easel + canvas
+    g.moveTo(-26, 2).lineTo(-22, -20).moveTo(-14, 2).lineTo(-18, -20).stroke({ width: 3, color: 0x6e4a2a });
+    celBox(g, -28, -28, 14, 12, 1.5, 0xffffff);
+    g.circle(-23, -23, 2.4).fill(hexNum(p.accent));
+    g.rect(-26, -19, 8, 2).fill(0x4aa6c9);
+  },
+  arcade_cove: (g, p) => {
+    // Bright arcade machines under a striped awning.
+    celBox(g, -16, -34, 13, 34, 2, 0x4a5bd0);
+    celBox(g, 3, -34, 13, 34, 2, 0xe2456b);
+    g.roundRect(-13, -30, 7, 9, 1).fill(0x9be7ff).stroke({ width: 2, color: INK });
+    g.roundRect(6, -30, 7, 9, 1).fill(0xffe14d).stroke({ width: 2, color: INK });
+    // awning
+    for (let i = 0; i < 6; i++) {
+      g.poly([-20 + i * 6.5, -36, -13.5 + i * 6.5, -36, -16.5 + i * 6.5, -45]).fill(i % 2 ? 0xffffff : hexNum(p.accent));
     }
-    case "build_beach": {
-      // Colorful beach hut with a striped awning.
-      g.roundRect(-15, -22, 30, 22, 3).fill(woodLight);
-      g.roundRect(-7, -14, 14, 14, 2).fill(shade(wood, -0.05)); // doorway
-      // striped awning roof
-      for (let i = 0; i < 6; i++) {
-        g.poly([-18 + i * 6, -22, -12 + i * 6, -22, -15 + i * 6, -30]).fill(i % 2 ? hexNum(p.accent) : 0xfff2e0);
-      }
-      g.poly([-18, -22, 18, -22, 14, -30, -14, -30]).stroke({ width: 1, color: woodDark, alpha: 0.4 });
-      g.circle(11, -7, 1.6).fill(glow); // little light
-      break;
+    g.poly([-20, -36, 19, -36, 16, -45, -17, -45]).stroke({ width: 3, color: INK });
+    g.circle(-9.5, -25, 1.6).fill(0xfff1a8);
+    g.circle(9.5, -25, 1.6).fill(0xfff1a8);
+  },
+  calm_beach: (g, p) => {
+    // Quiet sandy cove: umbrella, smooth stones, gentle wave line.
+    g.ellipse(-2, 6, 30, 8).fill({ color: hexNum(p.waterShimmer), alpha: 0.5 });
+    g.moveTo(14, 2).lineTo(14, -26).stroke({ width: 3, color: 0x6e4a2a });
+    g.poly([14, -34, 0, -22, 28, -22]).fill(hexNum(p.accent)).stroke({ width: 4, color: INK });
+    g.poly([14, -34, 14, -22, 28, -22]).fill({ color: 0xffffff, alpha: 0.35 });
+    g.ellipse(-16, 2, 9, 5).fill(0x9a9080).stroke({ width: 3, color: INK });
+    g.ellipse(-6, 6, 6, 3.5).fill(0xb6ac9c).stroke({ width: 2.5, color: INK });
+    g.circle(-20, -2, 2).fill(hexNum(p.accent)); // shell
+  },
+  welcome_dock: (g, p) => {
+    // Wooden dock extending toward the viewer (into the water).
+    const wood = 0x9a6b40;
+    g.poly([-22, -6, 22, -6, 30, 26, -30, 26]).fill(shade(p.water, -0.08)).stroke({ width: 3, color: INK, alpha: 0.4 });
+    for (let i = 0; i < 6; i++) {
+      celBox(g, -20 + i * 7, -8, 6, 32, 1, i % 2 ? wood : shade(wood, 0.1));
     }
-    case "campfire": {
-      // Cozy woodland cabin with warm lit windows.
-      g.roundRect(-17, -24, 34, 24, 3).fill(wood);
-      g.roundRect(-17, -24, 34, 24, 3).stroke({ width: 1, color: woodDark, alpha: 0.5 });
-      g.poly([-20, -24, 20, -24, 0, -40]).fill(woodDark); // roof
-      g.roundRect(-6, -14, 12, 14, 2).fill(shade(wood, -0.25)); // door
-      g.circle(0, -7, 1.4).fill(glow);
-      g.roundRect(-14, -19, 7, 7, 1.5).fill(glow); // lit windows
-      g.roundRect(7, -19, 7, 7, 1.5).fill(glow);
-      g.roundRect(9, -40, 4, 8, 1).fill(woodDark); // chimney
-      break;
-    }
-    case "worry_hollow": {
-      // Gentle cave entrance with soft glowing light inside — safe, not scary.
-      g.ellipse(0, -2, 26, 16).fill(shade(p.landAlt, -0.32)); // mound
-      g.ellipse(0, -3, 24, 15).fill(shade(p.landAlt, -0.24));
-      g.ellipse(0, 2, 13, 13).fill(0x2a2030); // dark opening
-      g.ellipse(0, 4, 9, 8).fill({ color: glow, alpha: 0.5 }); // inner glow
-      g.ellipse(0, 5, 5, 4).fill({ color: glow, alpha: 0.8 });
-      // little stones at the mouth
-      g.ellipse(-13, 7, 4, 2.5).fill(shade(p.landAlt, -0.3));
-      g.ellipse(13, 7, 4, 2.5).fill(shade(p.landAlt, -0.3));
-      break;
-    }
-    case "garden": {
-      // Glass greenhouse with a green frame + flower boxes.
-      g.roundRect(-15, -22, 30, 22, 2).fill({ color: 0xddf3e8, alpha: 0.85 });
-      g.poly([-17, -22, 17, -22, 0, -34]).fill({ color: 0xcdeede, alpha: 0.9 });
-      // frame lines
-      for (let i = -2; i <= 2; i++) g.moveTo(i * 6, -22).lineTo(i * 6, 0).stroke({ width: 1, color: hexNum(p.foliage), alpha: 0.6 });
-      g.moveTo(-15, -11).lineTo(15, -11).stroke({ width: 1, color: hexNum(p.foliage), alpha: 0.6 });
-      g.roundRect(-17, -2, 34, 4, 1).fill(shade(p.foliage, -0.1));
-      flower(g, -11, 1, hexNum(p.accent));
-      flower(g, 11, 1, 0xfff0a0);
-      break;
-    }
-    case "field_guide_meadow": {
-      // Open-air gazebo with a soft roof.
-      g.roundRect(-15, -3, 30, 3, 1).fill(woodLight);
-      g.roundRect(-14, -22, 3, 20, 1).fill(wood);
-      g.roundRect(11, -22, 3, 20, 1).fill(wood);
-      g.roundRect(-2, -22, 3, 20, 1).fill({ color: wood, alpha: 0.5 });
-      g.poly([-19, -22, 19, -22, 0, -36]).fill(hexNum(p.accent));
-      g.poly([-19, -22, 19, -22, 0, -36]).stroke({ width: 1, color: 0xffffff, alpha: 0.4 });
-      g.circle(0, -34, 2).fill(0xfff0a0);
-      // butterflies
-      g.ellipse(-16, -26, 2.5, 1.6).fill(hexNum(p.accent));
-      g.ellipse(-13, -26, 2.5, 1.6).fill(hexNum(p.accent));
-      break;
-    }
-  }
-}
+    g.roundRect(-24, -10, 52, 5, 2).fill(shade(wood, -0.1)).stroke({ width: 3, color: INK });
+    // mooring posts + lantern
+    g.roundRect(-22, -16, 5, 12, 1).fill(0x6e4a2a).stroke({ width: 2.5, color: INK });
+    g.roundRect(17, -16, 5, 12, 1).fill(0x6e4a2a).stroke({ width: 2.5, color: INK });
+    g.circle(-19.5, -20, 4).fill(0xfff1a8).stroke({ width: 2, color: INK });
+  },
+};
