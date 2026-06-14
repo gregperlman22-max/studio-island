@@ -14,6 +14,8 @@ import { hexNum, shade } from "./iso";
 export interface ZoneScene {
   container: Container;
   setHover: (hovered: boolean) => void;
+  /** Gentle idle animation (called each frame with elapsed seconds). */
+  animate?: (t: number) => void;
 }
 
 /** Bold cel outline color used across all art. */
@@ -44,8 +46,57 @@ export function buildZoneScene(
   // Landmark structure — LARGE (dominates its clearing).
   const structure = new Graphics();
   ZONE_PAINT[zone.key](structure, palette);
-  structure.scale.set(STRUCTURE_SCALE[zone.key] ?? 2.7);
+  const s = STRUCTURE_SCALE[zone.key] ?? 2.7;
+  structure.scale.set(s);
   art.addChild(structure);
+
+  // Gentle per-zone idle detail (disabled under reduced motion by the caller).
+  let animate: ((t: number) => void) | undefined;
+  switch (zone.key) {
+    case "lighthouse_point": {
+      const beam = new Graphics();
+      beam.poly([0, 0, 82, -16, 82, 16]).fill({ color: 0xfff3b0, alpha: 0.22 });
+      beam.position.set(0, -86 * s);
+      art.addChildAt(beam, 0); // behind the tower
+      animate = (t) => { beam.rotation = t * 0.7; };
+      break;
+    }
+    case "treehouse_hideaway": {
+      animate = (t) => { structure.rotation = Math.sin(t * 0.5) * 0.025; };
+      break;
+    }
+    case "campfire_circle":
+      break; // flame is animated by the renderer
+    case "art_hut": {
+      const pal = new Graphics();
+      pal.ellipse(0, 0, 4, 3).fill(0xffffff).stroke({ width: 2, color: INK });
+      pal.circle(-1.5, -0.5, 1).fill(hexNum(palette.accent));
+      pal.circle(1.5, 0.5, 1).fill(0x4aa6c9);
+      const px = -23 * s, py = -22 * s;
+      art.addChild(pal);
+      animate = (t) => { pal.position.set(px, py + Math.sin(t * 2.2) * 3); };
+      break;
+    }
+    case "arcade_cove": {
+      const l1 = new Graphics(); l1.circle(0, 0, 2.6).fill(0xfff1a8); l1.position.set(-9.5 * s, -26 * s);
+      const l2 = new Graphics(); l2.circle(0, 0, 2.6).fill(0x9be7ff); l2.position.set(9.5 * s, -26 * s);
+      art.addChild(l1, l2);
+      animate = (t) => { l1.alpha = Math.sin(t * 6) > 0 ? 1 : 0.25; l2.alpha = Math.sin(t * 6 + 1.6) > 0 ? 1 : 0.25; };
+      break;
+    }
+    case "welcome_dock": {
+      const glow = new Graphics();
+      glow.circle(0, 0, 6).fill({ color: 0xfff1a8, alpha: 0.8 });
+      glow.position.set(-19.5 * s, -20 * s);
+      art.addChildAt(glow, 0);
+      animate = (t) => { glow.alpha = 0.4 + 0.4 * (0.5 + 0.5 * Math.sin(t * 5)); };
+      break;
+    }
+    case "calm_beach": {
+      animate = (t) => { structure.rotation = Math.sin(t * 0.6) * 0.03; };
+      break;
+    }
+  }
 
   if (!zone.unlocked) {
     art.alpha = 0.6;
@@ -75,6 +126,7 @@ export function buildZoneScene(
   return {
     container,
     setHover: (hovered: boolean) => art.scale.set(hovered ? 1.05 : 1),
+    animate,
   };
 }
 

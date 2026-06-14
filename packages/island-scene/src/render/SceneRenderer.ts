@@ -43,6 +43,9 @@ const INK = 0x23201c;
 const AVATAR_SCALE = 1.6;
 /** Pointer travel (px) beyond which a press becomes a pan, not a tap. */
 const DRAG_THRESHOLD = 7;
+/** Zoom bounds: 0.5x sees the whole island, 2.5x zooms into a zone. */
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 2.5;
 
 interface AvatarView {
   id: string;
@@ -141,6 +144,10 @@ export class SceneRenderer {
   private localId: string | null = null;
   private grid: WalkGrid = { walkable: () => false };
   private flamePos: { x: number; y: number } | null = null;
+  /** Trees that gently sway. */
+  private swayers: { sprite: Sprite; phase: number }[] = [];
+  /** Per-zone idle animators (lighthouse beam, lantern flicker, etc.). */
+  private zoneAnimators: ((t: number) => void)[] = [];
 
   // ── Camera (zoom + eased follow + drag pan, clamped to world) ──
   private camScale = 1;
@@ -148,6 +155,7 @@ export class SceneRenderer {
   private camY = 0;
   private followEnabled = true;
   private cameraInit = false;
+  private zoomLocked = false;
   private worldBounds = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
 
   // Pointer drag state.
@@ -157,6 +165,9 @@ export class SceneRenderer {
   private downY = 0;
   private lastX = 0;
   private lastY = 0;
+  // Active pointers (for pinch-to-zoom).
+  private pointers = new Map<number, { x: number; y: number }>();
+  private pinchDist = 0;
 
   private inited = false;
   private destroyed = false;
@@ -229,6 +240,8 @@ export class SceneRenderer {
     this.app.stage.on("pointermove", this.onPointerMove);
     this.app.stage.on("pointerup", this.onPointerUp);
     this.app.stage.on("pointerupoutside", this.onPointerUp);
+    // Scroll wheel zoom (centered on the cursor).
+    this.app.canvas.addEventListener("wheel", this.onWheel, { passive: false });
 
     this.opts.onLoadProgress?.(0.2);
     this.textures = new ProgrammaticTextureProvider(this.app.renderer);
@@ -468,19 +481,19 @@ export class SceneRenderer {
     this.flame.clear();
     if (!this.flamePos) return;
     const t = this.elapsed / 1000;
-    const sway = Math.sin(t * 6) * 3;
+    const sway = Math.sin(t * 6) * 1.4;
     const grow = 1 + 0.16 * Math.sin(t * 9 + 1);
     const bx = this.flamePos.x;
-    const by = this.flamePos.y - 6;
-    const H = 64 * grow;
+    const by = this.flamePos.y - 4;
+    const H = 27 * grow; // cozy campfire, ~40% of the old bonfire
     // outer → mid → inner, bold outline on the outer flame.
-    this.flame.poly([bx, by - H, bx + 16, by - 14, bx + sway, by, bx - 16, by - 14])
-      .fill(0xff7a2d).stroke({ width: 3, color: INK });
-    this.flame.poly([bx, by - H * 0.72, bx + 9, by - 12, bx + sway * 0.6, by, bx - 9, by - 12])
+    this.flame.poly([bx, by - H, bx + 7, by - 6, bx + sway, by, bx - 7, by - 6])
+      .fill(0xff7a2d).stroke({ width: 2.5, color: INK });
+    this.flame.poly([bx, by - H * 0.72, bx + 4, by - 5, bx + sway * 0.6, by, bx - 4, by - 5])
       .fill(0xffd23d);
-    this.flame.poly([bx, by - H * 0.45, bx + 4, by - 8, bx, by, bx - 4, by - 8])
+    this.flame.poly([bx, by - H * 0.45, bx + 2, by - 3.5, bx, by, bx - 2, by - 3.5])
       .fill(0xfff1a8);
-    this.flame.ellipse(bx, by + 2, 22, 6).fill({ color: 0xff9a3d, alpha: 0.22 }); // ember glow
+    this.flame.ellipse(bx, by + 2, 11, 3).fill({ color: 0xff9a3d, alpha: 0.22 }); // ember glow
   }
 
   /** Soft fireflies drifting by the forest treehouse — calm, magical. */
@@ -661,8 +674,10 @@ export class SceneRenderer {
   }
 
   private buildZones(): void {
+    this.zoneAnimators = [];
     for (const z of this.zones) {
       const scene = buildZoneScene(z, this.theme, this.opts.hideTextLabels);
+      if (scene.animate) this.zoneAnimators.push(scene.animate);
       const center = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
       scene.container.position.set(center.x, center.y);
       // Zone art y-sorts just behind props/avatars on the same row.
@@ -678,6 +693,7 @@ export class SceneRenderer {
   }
 
   private buildDecorations(): void {
+    this.swayers = [];
     const decos = this.layout.decorations ?? [];
     for (const d of decos) {
       const tex = this.textures.getDecoration(d.kind);
@@ -693,6 +709,11 @@ export class SceneRenderer {
       const shadow = new Graphics();
       shadow.ellipse(c.x, c.y, 12 * (d.scale ?? 1), 5 * (d.scale ?? 1)).fill({ color: 0x000000, alpha: 0.18 });
       shadow.zIndex = sprite.zIndex - 0.01;
+
+      // Trees gently sway their canopy (pivot at the bottom anchor).
+      if (d.kind.toLowerCase().includes("tree")) {
+        this.swayers.push({ sprite, phase: Math.random() * Math.PI * 2 });
+      }
 
       this.entities.addChild(shadow, sprite);
       this.staticEntities.push(shadow, sprite);
@@ -876,9 +897,31 @@ export class SceneRenderer {
   /** Comfortable zoom: enough that the avatar is readable but the island is
    *  bigger than the viewport (you explore rather than see it all). */
   private updateCamScale(): void {
+    if (this.zoomLocked) return; // user has taken control of zoom
     const sw = this.app.screen.width;
     const sh = this.app.screen.height;
     this.camScale = Math.max(0.95, Math.min(1.6, Math.min(sw, sh) / 640));
+  }
+
+  /** Zoom by a factor, keeping the world point under (sx, sy) fixed. */
+  zoomAt(factor: number, sx: number, sy: number): void {
+    if (!this.inited || this.destroyed || this.currentZone !== null) return;
+    const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this.camScale * factor));
+    if (next === this.camScale) return;
+    const wx = (sx - this.camX) / this.camScale;
+    const wy = (sy - this.camY) / this.camScale;
+    this.camScale = next;
+    this.camX = sx - wx * next;
+    this.camY = sy - wy * next;
+    this.zoomLocked = true;
+    this.followEnabled = false; // anchored zoom sticks until the next walk
+    this.clampCamera();
+    this.applyCamera();
+  }
+
+  /** Zoom around the screen center (used by the +/- buttons). */
+  zoomBy(factor: number): void {
+    this.zoomAt(factor, this.app.screen.width / 2, this.app.screen.height / 2);
   }
 
   /** First-time camera placement: zoom, then center on the local avatar. */
@@ -944,8 +987,22 @@ export class SceneRenderer {
     return this.currentZone === null && this.fadePhase === "idle" && this.arrival === "done";
   }
 
+  private onWheel = (e: WheelEvent): void => {
+    if (this.currentZone !== null) return;
+    e.preventDefault();
+    const rect = this.app.canvas.getBoundingClientRect();
+    this.zoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - rect.left, e.clientY - rect.top);
+  };
+
   private onPointerDown = (e: FederatedPointerEvent): void => {
     if (!this.inputLive()) return;
+    this.pointers.set(e.pointerId, { x: e.global.x, y: e.global.y });
+    if (this.pointers.size === 2) {
+      // Begin pinch — cancel any single-pointer pan/tap.
+      this.pointerDown = false;
+      this.pinchDist = this.pointerSpread();
+      return;
+    }
     this.pointerDown = true;
     this.pointerMoved = false;
     this.downX = this.lastX = e.global.x;
@@ -953,6 +1010,17 @@ export class SceneRenderer {
   };
 
   private onPointerMove = (e: FederatedPointerEvent): void => {
+    if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x: e.global.x, y: e.global.y });
+
+    // Pinch-to-zoom takes priority while two fingers are down.
+    if (this.pointers.size >= 2) {
+      const dist = this.pointerSpread();
+      const mid = this.pointerMid();
+      if (this.pinchDist > 0 && dist > 0) this.zoomAt(dist / this.pinchDist, mid.x, mid.y);
+      this.pinchDist = dist;
+      return;
+    }
+
     if (this.pointerDown) {
       const dx = e.global.x - this.lastX;
       const dy = e.global.y - this.lastY;
@@ -968,15 +1036,28 @@ export class SceneRenderer {
       }
       return;
     }
-    // Hover affordance (mouse): highlight the zone under the pointer.
     this.updateHover(e);
   };
 
   private onPointerUp = (e: FederatedPointerEvent): void => {
-    const wasTap = this.pointerDown && !this.pointerMoved;
+    this.pointers.delete(e.pointerId);
+    if (this.pointers.size < 2) this.pinchDist = 0;
+    const wasTap = this.pointerDown && !this.pointerMoved && this.pointers.size === 0;
     this.pointerDown = false;
     if (wasTap) this.tapAt(e);
   };
+
+  private pointerSpread(): number {
+    const pts = [...this.pointers.values()];
+    if (pts.length < 2) return 0;
+    return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  }
+
+  private pointerMid(): { x: number; y: number } {
+    const pts = [...this.pointers.values()];
+    if (pts.length < 2) return { x: this.app.screen.width / 2, y: this.app.screen.height / 2 };
+    return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+  }
 
   private updateHover(e: FederatedPointerEvent): void {
     const p = this.world.toLocal(e.global);
@@ -1040,9 +1121,13 @@ export class SceneRenderer {
       this.fireflies.visible = this.currentZone === null;
       this.flame.visible = this.currentZone === null;
       if (this.currentZone === null) {
+        const t = this.elapsed / 1000;
         this.drawShimmer();
         this.drawWaves();
         this.drawFlame();
+        // Trees sway their canopy; zone landmarks have idle details.
+        for (const s of this.swayers) s.sprite.rotation = Math.sin(t * 0.8 + s.phase) * 0.06;
+        for (const anim of this.zoneAnimators) anim(t);
       }
       const t = this.elapsed / 1000;
       for (const f of this.fireflyDots) {
@@ -1163,6 +1248,7 @@ export class SceneRenderer {
       this.app.stage.off("pointermove", this.onPointerMove);
       this.app.stage.off("pointerup", this.onPointerUp);
       this.app.stage.off("pointerupoutside", this.onPointerUp);
+      this.app.canvas.removeEventListener("wheel", this.onWheel);
     } catch {
       /* ticker/listeners may not be attached */
     }

@@ -16,7 +16,7 @@ export interface Pt {
  * clockwise winding), stitch them into a loop, then Chaikin corner-cut a few
  * times for soft bays and headlands.
  */
-export function islandOutline(landCells: GridPosition[], iterations = 3): Pt[] {
+export function islandOutline(landCells: GridPosition[], iterations = 4): Pt[] {
   const set = new Set(landCells.map((c) => `${c.x},${c.y}`));
   const isLand = (x: number, y: number) => set.has(`${x},${y}`);
   const HW = TILE_W / 2;
@@ -57,7 +57,32 @@ export function islandOutline(landCells: GridPosition[], iterations = 3): Pt[] {
     if (loop.length > best.length) best = loop;
   }
 
-  return best.length >= 4 ? chaikin(best, iterations) : best;
+  // Resample at a coarse, uniform spacing first — this dissolves the tile
+  // staircase into a few big control points — then Chaikin corner-cut several
+  // times for a soft, hand-drawn Animal-Crossing silhouette.
+  const resampled = resample(best, TILE_W * 1.1);
+  return resampled.length >= 4 ? chaikin(resampled, iterations) : best;
+}
+
+/** Uniform-arc-length resample of a closed loop (kills tile-scale zigzag). */
+function resample(loop: Pt[], spacing: number): Pt[] {
+  if (loop.length < 4) return loop;
+  const out: Pt[] = [];
+  let carry = 0;
+  for (let i = 0; i < loop.length; i++) {
+    const a = loop[i];
+    const b = loop[(i + 1) % loop.length];
+    let segLen = Math.hypot(b.x - a.x, b.y - a.y);
+    if (segLen === 0) continue;
+    let d = -carry;
+    while (d + spacing <= segLen) {
+      d += spacing;
+      const t = d / segLen;
+      out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    }
+    carry = segLen - d;
+  }
+  return out.length >= 4 ? out : loop;
 }
 
 function chaikin(pts: Pt[], iterations: number): Pt[] {

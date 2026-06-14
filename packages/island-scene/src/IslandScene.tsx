@@ -123,6 +123,22 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
         data-audio={audioEnabled ? "on" : "off"}
         data-theme={themePack.key}
       >
+        {!inZone && (
+          <div
+            style={{
+              position: "absolute",
+              right: 16,
+              bottom: 16,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            <button type="button" aria-label="Zoom in" style={zoomBtn} onClick={() => rendererRef.current?.zoomBy(1.25)}>+</button>
+            <button type="button" aria-label="Zoom out" style={zoomBtn} onClick={() => rendererRef.current?.zoomBy(0.8)}>−</button>
+          </div>
+        )}
+
         {inZone && (
           <button
             type="button"
@@ -151,3 +167,17 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
     );
   },
 );
+
+const zoomBtn: React.CSSProperties = {
+  width: 48,
+  height: 48,
+  borderRadius: 14,
+  border: "3px solid #23201c",
+  background: "#fff",
+  color: "#23201c",
+  fontSize: 26,
+  fontWeight: 800,
+  lineHeight: 1,
+  cursor: "pointer",
+  boxShadow: "0 4px 0 #23201c",
+};
