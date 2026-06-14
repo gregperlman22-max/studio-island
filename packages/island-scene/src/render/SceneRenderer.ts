@@ -19,7 +19,6 @@ import type {
 import { CLIFF, TILE_H, TILE_W } from "./constants";
 import {
   depth,
-  diamondPoly,
   footprintCenter,
   hexNum,
   lerpHex,
@@ -31,7 +30,7 @@ import {
 import { ProgrammaticTextureProvider } from "./TextureProvider";
 import { buildAvatarSprite, type AvatarSprite } from "./avatar";
 import { biomeAt, landContext } from "./biome";
-import { islandOutline, flatten, type Pt } from "./coast";
+import { islandOutline, flatten, insetLoop, clusterOutline, type Pt } from "./coast";
 import { buildZoneScene, paintZoneStructure, INTERIOR_BG } from "./zones";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 
@@ -482,8 +481,9 @@ export class SceneRenderer {
     this.flame.clear();
     if (!this.flamePos) return;
     const t = this.elapsed / 1000;
-    const sway = Math.sin(t * 6) * 1.4;
-    const grow = 1 + 0.16 * Math.sin(t * 9 + 1);
+    // More energetic flicker: faster sway + a quick secondary tremble.
+    const sway = Math.sin(t * 9) * 2.4 + Math.sin(t * 21) * 1.0;
+    const grow = 1 + 0.28 * Math.sin(t * 13 + 1) + 0.08 * Math.sin(t * 31);
     const bx = this.flamePos.x;
     const by = this.flamePos.y - 4;
     const H = 27 * grow; // cozy campfire, ~40% of the old bonfire
@@ -583,9 +583,7 @@ export class SceneRenderer {
     const loop = this.coastLoop;
 
     // Dramatic per-biome ground tones — each area feels like a different level.
-    const sandWarm = "#f0d98c";   // festive beach (east)
-    const sandCalm = "#dfe9ef";   // calm beach (pale blue, west/south)
-    const beachBase = "#ecdcae";  // generic shore / coastal fringe
+    const beachBase = "#ecdcae";  // smooth sandy coastal fringe
     const forestFloor = lerpHex(palette.land, palette.foliageShadow, 0.66);
     const stone = lerpHex(palette.landAlt, "#8f8a82", 0.78);
     const meadowGrass = lerpHex(palette.land, "#a9e25a", 0.38);
@@ -600,19 +598,6 @@ export class SceneRenderer {
       ctx.isLand(x, y) && ctx.isLand(x + 1, y) && ctx.isLand(x, y + 1) &&
       ctx.isLand(x - 1, y) && ctx.isLand(x, y - 1);
 
-    const groundTone = (gx: number, gy: number, biome: ReturnType<typeof biomeAt>): number => {
-      const n = Math.sin(gx * 0.45 + gy * 0.28) * 0.5 + Math.sin((gx - gy) * 0.6 + 2) * 0.5;
-      switch (biome) {
-        case "beach": {
-          const east = Math.min(1, Math.max(0, gx / grid.w));
-          return shade(lerpHex(sandCalm, sandWarm, east), n * 0.04);
-        }
-        case "forest": return shade(forestFloor, n * 0.05);
-        case "mountain": return shade(stone, n * 0.05);
-        case "meadow": return shade(meadowGrass, n * 0.06);
-        default: return shade(grassBase, n * 0.1);
-      }
-    };
     const flowerCols = [hexNum(palette.accent), 0xfff0a0, 0xffffff, 0xb98aff];
 
     // ── Smooth landmass: cliff band, base fill (sandy fringe), bold coast ──
@@ -624,17 +609,28 @@ export class SceneRenderer {
       this.terrain.poly(flatten(loop)).stroke({ width: 5, color: INK, alpha: 0.9 });
     }
 
-    // Mask so per-tile biome coloring is clipped to the smooth silhouette.
+    // Mask so interior coloring is clipped to the smooth silhouette.
     this.landMask.clear();
     if (loop.length >= 4) this.landMask.poly(flatten(loop)).fill(0xffffff);
 
-    // ── Biome coloring + detail (masked to the coast) ──
+    // ── Biome coloring as smooth ORGANIC blobs (no grid-square edges) ──
+    // Sand fringe = the base terrain showing through; grass = inset blob;
+    // forest / mountain / meadow = smoothed outlines of their cell clusters.
     this.biomeLayer.clear();
-    const cells = [...this.layout.landCells].sort((a, b) => depth(a.x, a.y) - depth(b.x, b.y));
-    for (const c of cells) {
-      const biome = biomeAt(c.x, c.y, ctx);
-      this.biomeLayer.poly(diamondPoly(c.x, c.y)).fill(groundTone(c.x, c.y, biome));
+    if (loop.length >= 4) {
+      this.biomeLayer.poly(flatten(insetLoop(loop, 0.12))).fill(grassBase);
     }
+    const biomeBlob = (b: ReturnType<typeof biomeAt>, color: number | string) => {
+      const cellsB = this.layout.landCells.filter((c) => biomeAt(c.x, c.y, ctx) === b);
+      if (cellsB.length < 8) return;
+      const outline = clusterOutline(cellsB);
+      if (outline.length >= 4) this.biomeLayer.poly(flatten(insetLoop(outline, 0.06))).fill(color);
+    };
+    biomeBlob("forest", forestFloor);
+    biomeBlob("mountain", stone);
+    biomeBlob("meadow", meadowGrass);
+
+    const cells = [...this.layout.landCells];
     for (const c of cells) {
       if (!interior(c.x, c.y)) continue;
       const biome = biomeAt(c.x, c.y, ctx);
@@ -1136,7 +1132,7 @@ export class SceneRenderer {
         this.drawWaves();
         this.drawFlame();
         // Trees sway their canopy; zone landmarks have idle details.
-        for (const s of this.swayers) s.sprite.rotation = Math.sin(t * 1.1 + s.phase) * 0.11;
+        for (const s of this.swayers) s.sprite.rotation = Math.sin(t * 1.3 + s.phase) * 0.22;
         for (const anim of this.zoneAnimators) anim(t);
       }
       const t = this.elapsed / 1000;

@@ -150,6 +150,30 @@ function chaikin(pts: Pt[], iterations: number): Pt[] {
   return p;
 }
 
+/** Chaikin-smooth any closed polygon (shared with interior terrain shapes). */
+export function smoothClosed(pts: Pt[], iterations = 3): Pt[] {
+  return pts.length >= 3 ? chaikin(pts, iterations) : pts;
+}
+
+/** Move a closed loop inward toward its centroid by fraction k (0..1). */
+export function insetLoop(loop: Pt[], k: number): Pt[] {
+  if (loop.length === 0) return loop;
+  let cx = 0;
+  let cy = 0;
+  for (const p of loop) {
+    cx += p.x;
+    cy += p.y;
+  }
+  cx /= loop.length;
+  cy /= loop.length;
+  return loop.map((p) => ({ x: p.x + (cx - p.x) * k, y: p.y + (cy - p.y) * k }));
+}
+
+/** Smooth organic outline of an arbitrary cell cluster (e.g. one biome). */
+export function clusterOutline(cells: GridPosition[]): Pt[] {
+  return islandOutline(cells);
+}
+
 /** Flatten a loop to the number[] form Pixi's poly() wants. */
 export function flatten(loop: Pt[], dx = 0, dy = 0): number[] {
   const out: number[] = [];

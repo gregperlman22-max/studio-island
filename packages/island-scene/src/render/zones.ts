@@ -2,6 +2,7 @@ import { Container, Graphics, Text } from "pixi.js";
 import type { ThemePackConfig, ThemePalette, ZoneInstance, ZoneKey } from "../types";
 import { TILE_H, TILE_W } from "./constants";
 import { hexNum, shade } from "./iso";
+import { smoothClosed, flatten } from "./coast";
 
 /**
  * Per-zone landmark art in a Wind Waker register: bold dark outlines, flat
@@ -34,13 +35,23 @@ export function buildZoneScene(
   const art = new Container();
   container.addChild(art);
 
-  // Ground patch with a bold outline, cel-shaded to the biome.
+  // Ground patch: soft ROUNDED organic footprint (no boxy diamond edges).
   const ground = new Graphics();
   const gw = halfW - 3;
   const gh = halfH - 2;
   const groundColor = ZONE_GROUND[zone.key](palette);
-  ground.poly([0, -gh, gw, 0, 0, gh, -gw, 0]).fill(groundColor).stroke({ width: 3, color: INK, alpha: 0.5 });
-  ground.poly([0, -gh, gw * 0.5, -gh * 0.5, 0, 0, -gw * 0.5, -gh * 0.5]).fill({ color: hexNum(shade(groundColor, 0.16)), alpha: 0.5 });
+  const padFlat = flatten(
+    smoothClosed(
+      [
+        { x: 0, y: -gh }, { x: gw * 0.62, y: -gh * 0.52 }, { x: gw, y: 0 },
+        { x: gw * 0.62, y: gh * 0.52 }, { x: 0, y: gh }, { x: -gw * 0.62, y: gh * 0.52 },
+        { x: -gw, y: 0 }, { x: -gw * 0.62, y: -gh * 0.52 },
+      ],
+      3,
+    ),
+  );
+  ground.poly(padFlat).fill(groundColor).stroke({ width: 3, color: INK, alpha: 0.5 });
+  ground.ellipse(0, -gh * 0.28, gw * 0.5, gh * 0.42).fill({ color: hexNum(shade(groundColor, 0.18)), alpha: 0.4 });
   art.addChild(ground);
 
   // Landmark structure — LARGE (dominates its clearing).
@@ -50,21 +61,22 @@ export function buildZoneScene(
   structure.scale.set(s);
   art.addChild(structure);
 
-  // Gentle per-zone idle detail (disabled under reduced motion by the caller).
-  let animate: ((t: number) => void) | undefined;
+  // Gentle per-zone idle details (all disabled under reduced motion upstream).
+  const fxFns: ((t: number) => void)[] = [];
   switch (zone.key) {
     case "lighthouse_point": {
-      const beam = new Graphics();
-      beam.poly([0, 0, 96, -20, 96, 20]).fill({ color: 0xfff3b0, alpha: 0.4 });
-      beam.position.set(0, -86 * s);
-      art.addChild(beam); // on top so the rotating beam is clearly visible
-      animate = (t) => { beam.rotation = t * 1.1; };
+      // Rotating soft light cone with a brighter core (a real beam sweep).
+      const cone = new Graphics();
+      cone.poly([0, 0, 130, -34, 130, 34]).fill({ color: 0xfff3b0, alpha: 0.3 });
+      cone.poly([0, 0, 136, -12, 136, 12]).fill({ color: 0xffffff, alpha: 0.4 });
+      cone.position.set(0, -86 * s);
+      art.addChild(cone);
+      fxFns.push((t) => { cone.rotation = t * 1.7; });
       break;
     }
-    case "treehouse_hideaway": {
-      animate = (t) => { structure.rotation = Math.sin(t * 0.5) * 0.025; };
+    case "treehouse_hideaway":
+      fxFns.push((t) => { structure.rotation = Math.sin(t * 0.6) * 0.03; });
       break;
-    }
     case "campfire_circle":
       break; // flame is animated by the renderer
     case "art_hut": {
@@ -74,14 +86,14 @@ export function buildZoneScene(
       pal.circle(1.5, 0.5, 1).fill(0x4aa6c9);
       const px = -23 * s, py = -22 * s;
       art.addChild(pal);
-      animate = (t) => { pal.position.set(px, py + Math.sin(t * 2.2) * 3); };
+      fxFns.push((t) => { pal.position.set(px, py + Math.sin(t * 2.2) * 3); });
       break;
     }
     case "arcade_cove": {
       const l1 = new Graphics(); l1.circle(0, 0, 2.6).fill(0xfff1a8); l1.position.set(-9.5 * s, -26 * s);
       const l2 = new Graphics(); l2.circle(0, 0, 2.6).fill(0x9be7ff); l2.position.set(9.5 * s, -26 * s);
       art.addChild(l1, l2);
-      animate = (t) => { l1.alpha = Math.sin(t * 6) > 0 ? 1 : 0.25; l2.alpha = Math.sin(t * 6 + 1.6) > 0 ? 1 : 0.25; };
+      fxFns.push((t) => { l1.alpha = Math.sin(t * 6) > 0 ? 1 : 0.25; l2.alpha = Math.sin(t * 6 + 1.6) > 0 ? 1 : 0.25; });
       break;
     }
     case "welcome_dock": {
@@ -89,13 +101,12 @@ export function buildZoneScene(
       glow.circle(0, 0, 7).fill({ color: 0xfff1a8, alpha: 0.9 });
       glow.position.set(-19.5 * s, -20 * s);
       art.addChild(glow);
-      animate = (t) => { glow.alpha = 0.35 + 0.5 * (0.5 + 0.5 * Math.sin(t * 5)); };
+      fxFns.push((t) => { glow.alpha = 0.35 + 0.5 * (0.5 + 0.5 * Math.sin(t * 5)); });
       break;
     }
-    case "calm_beach": {
-      animate = (t) => { structure.rotation = Math.sin(t * 0.6) * 0.03; };
+    case "calm_beach":
+      fxFns.push((t) => { structure.rotation = Math.sin(t * 0.7) * 0.035; });
       break;
-    }
   }
 
   if (!zone.unlocked) {
@@ -106,27 +117,32 @@ export function buildZoneScene(
     art.addChild(lock);
   }
 
+  // Big, rounded, playful label with a soft drop shadow + a gentle float.
   if (!hideLabels) {
     const label = new Text({
       text: zone.unlocked ? zone.displayName : `${zone.displayName} (locked)`,
       style: {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: 15,
-        fontWeight: "800",
+        fontFamily: '"Trebuchet MS", "Segoe UI", system-ui, sans-serif',
+        fontSize: 22,
+        fontWeight: "900",
         fill: 0xffffff,
-        stroke: { color: INK, width: 4 },
+        stroke: { color: INK, width: 5 },
         align: "center",
+        dropShadow: { color: 0x000000, alpha: 0.35, blur: 4, distance: 3, angle: Math.PI / 2 },
       },
     });
     label.anchor.set(0.5, 1);
-    label.position.set(0, -halfH - 10);
+    const labelY = -halfH - 12;
+    label.position.set(0, labelY);
     container.addChild(label);
+    // Slow 2s bob, ~4px range.
+    fxFns.push((t) => { label.position.y = labelY + Math.sin(t * Math.PI) * 2; });
   }
 
   return {
     container,
     setHover: (hovered: boolean) => art.scale.set(hovered ? 1.05 : 1),
-    animate,
+    animate: fxFns.length ? (t: number) => { for (const f of fxFns) f(t); } : undefined,
   };
 }
 
