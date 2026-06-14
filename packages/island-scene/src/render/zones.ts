@@ -55,10 +55,10 @@ export function buildZoneScene(
   switch (zone.key) {
     case "lighthouse_point": {
       const beam = new Graphics();
-      beam.poly([0, 0, 82, -16, 82, 16]).fill({ color: 0xfff3b0, alpha: 0.22 });
+      beam.poly([0, 0, 96, -20, 96, 20]).fill({ color: 0xfff3b0, alpha: 0.4 });
       beam.position.set(0, -86 * s);
-      art.addChildAt(beam, 0); // behind the tower
-      animate = (t) => { beam.rotation = t * 0.7; };
+      art.addChild(beam); // on top so the rotating beam is clearly visible
+      animate = (t) => { beam.rotation = t * 1.1; };
       break;
     }
     case "treehouse_hideaway": {
@@ -86,10 +86,10 @@ export function buildZoneScene(
     }
     case "welcome_dock": {
       const glow = new Graphics();
-      glow.circle(0, 0, 6).fill({ color: 0xfff1a8, alpha: 0.8 });
+      glow.circle(0, 0, 7).fill({ color: 0xfff1a8, alpha: 0.9 });
       glow.position.set(-19.5 * s, -20 * s);
-      art.addChildAt(glow, 0);
-      animate = (t) => { glow.alpha = 0.4 + 0.4 * (0.5 + 0.5 * Math.sin(t * 5)); };
+      art.addChild(glow);
+      animate = (t) => { glow.alpha = 0.35 + 0.5 * (0.5 + 0.5 * Math.sin(t * 5)); };
       break;
     }
     case "calm_beach": {

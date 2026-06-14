@@ -173,6 +173,7 @@ export class SceneRenderer {
   private destroyed = false;
   private tornDown = false;
   private elapsed = 0;
+  private loggedIdle = false;
 
   constructor(private opts: RendererOptions) {}
 
@@ -1106,6 +1107,15 @@ export class SceneRenderer {
     const dt = Math.min(0.05, ticker.deltaMS / 1000);
     this.elapsed += ticker.deltaMS;
 
+    if (!this.loggedIdle) {
+      this.loggedIdle = true;
+      // One-time diagnostic so the idle-animation wiring is verifiable in the
+      // console (ticker is running if you see this; counts should be > 0).
+      console.info(
+        `[island-scene] idle anim ready — trees: ${this.swayers.length}, zone animators: ${this.zoneAnimators.length}, reducedMotion: ${this.opts.reducedMotion}`,
+      );
+    }
+
     this.tickTransition(dt);
     this.tickArrival(dt);
 
@@ -1126,7 +1136,7 @@ export class SceneRenderer {
         this.drawWaves();
         this.drawFlame();
         // Trees sway their canopy; zone landmarks have idle details.
-        for (const s of this.swayers) s.sprite.rotation = Math.sin(t * 0.8 + s.phase) * 0.06;
+        for (const s of this.swayers) s.sprite.rotation = Math.sin(t * 1.1 + s.phase) * 0.11;
         for (const anim of this.zoneAnimators) anim(t);
       }
       const t = this.elapsed / 1000;

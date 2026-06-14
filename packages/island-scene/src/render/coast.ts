@@ -23,45 +23,94 @@ export function islandOutline(landCells: GridPosition[], iterations = 4): Pt[] {
   const HH = TILE_H / 2;
   const TH = TILE_H;
   const key = (p: Pt) => `${Math.round(p.x)},${Math.round(p.y)}`;
+  const ekey = (e: [Pt, Pt]) => `${key(e[0])}>${key(e[1])}`;
 
-  // startKey -> edge (clockwise around the land).
-  const edges = new Map<string, [Pt, Pt]>();
+  // start key -> list of boundary edges (clockwise around each land cell).
+  // A multimap is essential: at concave corners two edges share a start point,
+  // and a plain map would drop one and chord straight across the bay.
+  const adj = new Map<string, [Pt, Pt][]>();
+  const push = (a: Pt, b: Pt) => {
+    const k = key(a);
+    const list = adj.get(k);
+    if (list) list.push([a, b]);
+    else adj.set(k, [[a, b]]);
+  };
   for (const c of landCells) {
     const { x: cx, y: cy } = tileToScreen(c.x, c.y);
     const T = { x: cx, y: cy };
     const R = { x: cx + HW, y: cy + HH };
     const B = { x: cx, y: cy + TH };
     const L = { x: cx - HW, y: cy + HH };
-    if (!isLand(c.x, c.y - 1)) edges.set(key(T), [T, R]);
-    if (!isLand(c.x + 1, c.y)) edges.set(key(R), [R, B]);
-    if (!isLand(c.x, c.y + 1)) edges.set(key(B), [B, L]);
-    if (!isLand(c.x - 1, c.y)) edges.set(key(L), [L, T]);
+    if (!isLand(c.x, c.y - 1)) push(T, R);
+    if (!isLand(c.x + 1, c.y)) push(R, B);
+    if (!isLand(c.x, c.y + 1)) push(B, L);
+    if (!isLand(c.x - 1, c.y)) push(L, T);
   }
 
-  // Stitch the longest loop.
+  // Walk loops, always taking the most-clockwise unused continuation so the
+  // outer perimeter is traced faithfully through bays and headlands.
   const used = new Set<string>();
   let best: Pt[] = [];
-  for (const startKey of edges.keys()) {
-    if (used.has(startKey)) continue;
-    const loop: Pt[] = [];
-    let k: string | undefined = startKey;
-    for (let i = 0; i <= edges.size; i++) {
-      if (k === undefined || used.has(k)) break;
-      const e = edges.get(k);
-      if (!e) break;
-      used.add(k);
-      loop.push(e[0]);
-      k = key(e[1]);
-      if (k === startKey) break;
+  for (const list of adj.values()) {
+    for (const seed of list) {
+      if (used.has(ekey(seed))) continue;
+      const loop: Pt[] = [];
+      let edge: [Pt, Pt] | undefined = seed;
+      for (let i = 0; edge && i < adj.size * 4 + 8; i++) {
+        if (used.has(ekey(edge))) break;
+        used.add(ekey(edge));
+        loop.push(edge[0]);
+        const from = edge[0];
+        const to = edge[1];
+        const candidates = (adj.get(key(to)) ?? []).filter((c) => !used.has(ekey(c)));
+        if (candidates.length === 0) break;
+        edge = pickClockwise(candidates, { x: to.x - from.x, y: to.y - from.y });
+      }
+      if (loop.length > best.length) best = loop;
     }
-    if (loop.length > best.length) best = loop;
   }
 
-  // Resample at a coarse, uniform spacing first — this dissolves the tile
-  // staircase into a few big control points — then Chaikin corner-cut several
-  // times for a soft, hand-drawn Animal-Crossing silhouette.
+  // Resample to dissolve the tile staircase, Chaikin-smooth, then add a faint
+  // organic wiggle so even genuinely-straight runs read as a hand-drawn coast.
   const resampled = resample(best, TILE_W * 1.1);
-  return resampled.length >= 4 ? chaikin(resampled, iterations) : best;
+  if (resampled.length < 4) return best;
+  return perturb(chaikin(resampled, iterations));
+}
+
+/** Choose the continuation edge that turns most clockwise (hugs the coast). */
+function pickClockwise(candidates: [Pt, Pt][], inDir: { x: number; y: number }): [Pt, Pt] {
+  let best = candidates[0];
+  let bestTurn = Infinity;
+  for (const c of candidates) {
+    const out = { x: c[1].x - c[0].x, y: c[1].y - c[0].y };
+    // Signed turn from inDir to out (screen coords, y-down). Smaller = more CW.
+    const turn = Math.atan2(
+      inDir.x * out.y - inDir.y * out.x,
+      inDir.x * out.x + inDir.y * out.y,
+    );
+    if (turn < bestTurn) {
+      bestTurn = turn;
+      best = c;
+    }
+  }
+  return best;
+}
+
+/** Small low-frequency offset along each point's normal — organic, not noisy. */
+function perturb(loop: Pt[]): Pt[] {
+  const n = loop.length;
+  if (n < 8) return loop;
+  return loop.map((p, i) => {
+    const a = loop[(i - 1 + n) % n];
+    const b = loop[(i + 1) % n];
+    const tx = b.x - a.x;
+    const ty = b.y - a.y;
+    const len = Math.hypot(tx, ty) || 1;
+    const nx = -ty / len;
+    const ny = tx / len;
+    const amp = 3.5 * Math.sin(i * 0.21) + 2.5 * Math.sin(i * 0.07 + 1.3);
+    return { x: p.x + nx * amp, y: p.y + ny * amp };
+  });
 }
 
 /** Uniform-arc-length resample of a closed loop (kills tile-scale zigzag). */
