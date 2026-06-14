@@ -372,6 +372,8 @@ export class SceneRenderer {
   private applyMode(zone: ZoneKey | null): void {
     this.currentZone = zone;
     if (zone) {
+      // Mode 2: hide the entire world map (backdrop + camera-panned world) so
+      // nothing from Mode 1 bleeds through behind the parallax layers.
       this.zoneView.enter(
         zone,
         this.theme.palette,
@@ -380,9 +382,13 @@ export class SceneRenderer {
         this.app.screen.height,
       );
       this.world.visible = false;
+      this.backdrop.visible = false;
+      console.info(`[island-scene] applyMode → Mode 2 (zone view: ${zone})`);
     } else {
       this.zoneView.hide();
       this.world.visible = true;
+      this.backdrop.visible = true;
+      console.info("[island-scene] applyMode → Mode 1 (world map)");
     }
   }
 
@@ -951,9 +957,11 @@ export class SceneRenderer {
   };
 
   private onPointerDown = (e: FederatedPointerEvent): void => {
-    // Mode 2 (zone view): a simple tap-to-walk; no pan/pinch/zoom.
+    // Mode 2 (zone view): a simple tap-to-walk; no pan/pinch/zoom. Accept taps
+    // as soon as the zone view is on screen (don't wait for the fade-in to
+    // finish — that just made early taps feel dead).
     if (this.currentZone !== null) {
-      if (this.fadePhase !== "idle") return;
+      if (!this.zoneView.active) return;
       this.pointerDown = true;
       this.pointerMoved = false;
       this.downX = e.global.x;

@@ -32,6 +32,9 @@ export class ZoneView {
   private ground = new Container();
   private beaconGlow = new Graphics();
   private charLayer = new Container();
+  /** Tap-feedback ripples (screen space, above everything). */
+  private fx = new Container();
+  private ripples: { g: Graphics; age: number }[] = [];
 
   private env!: ZoneEnv;
   private zone: ZoneKey | null = null;
@@ -52,7 +55,9 @@ export class ZoneView {
   private elapsed = 0;
 
   constructor(private opts: ZoneViewOptions) {
-    this.container.addChild(this.sky, this.far, this.mid, this.ground, this.charLayer);
+    // Back → front: sky, far silhouettes, mid landmark, ground strip, character,
+    // then tap-feedback FX on top of all of it.
+    this.container.addChild(this.sky, this.far, this.mid, this.ground, this.charLayer, this.fx);
     this.container.visible = false;
   }
 
@@ -101,6 +106,17 @@ export class ZoneView {
       this.avatar.container.scale.set(this.charScale());
       this.charLayer.addChild(this.avatar.container);
     }
+
+    // Diagnostic: confirm the layers were actually populated. If any child
+    // count is 0 (other than sky, which is a single Graphics), the env builder
+    // didn't draw — surface that loudly rather than failing silently.
+    console.info(
+      `[island-scene] ZoneView.build zone=${this.zone} size=${w}x${h} ` +
+        `worldWidth=${this.env.worldWidth.toFixed(0)} spawnX=${this.env.spawnX.toFixed(0)} ` +
+        `beaconX=${this.env.beacon.x.toFixed(0)} | layer children → ` +
+        `far:${this.far.children.length} mid:${this.mid.children.length} ground:${this.ground.children.length} ` +
+        `char:${this.charLayer.children.length} | visible=${this.container.visible} attached=${!!this.container.parent}`,
+    );
   }
 
   resize(w: number, h: number): void {
@@ -150,19 +166,50 @@ export class ZoneView {
    * Returns the kind of thing tapped so the renderer can react (beacon / exit
    * interactions land in later milestones; M1 just walks).
    */
-  handleTap(sx: number, _sy: number): "move" {
+  handleTap(sx: number, sy: number): "move" {
+    this.spawnRipple(sx, sy);
     const worldX = sx + this.camX; // ground plane scrolls 1:1 with the camera
     const m = 50;
     this.targetX = Math.max(m, Math.min(this.env.worldWidth - m, worldX));
     this.moving = Math.abs(this.targetX - this.charX) > 1;
     if (this.moving) this.facing = this.targetX >= this.charX ? 1 : -1;
+    console.info(
+      `[island-scene] ZoneView.handleTap screen=(${sx.toFixed(0)},${sy.toFixed(0)}) ` +
+        `→ worldX=${worldX.toFixed(0)} target=${this.targetX.toFixed(0)} moving=${this.moving}`,
+    );
     return "move";
+  }
+
+  /** A quick expanding ring at the tap point so taps are visibly registering. */
+  private spawnRipple(sx: number, sy: number): void {
+    const g = new Graphics();
+    g.circle(0, 0, 14).stroke({ width: 3, color: 0xffffff, alpha: 0.95 });
+    g.circle(0, 0, 4).fill({ color: 0xffffff, alpha: 0.9 });
+    g.position.set(sx, sy);
+    this.fx.addChild(g);
+    this.ripples.push({ g, age: 0 });
+  }
+
+  private tickRipples(dt: number): void {
+    for (let i = this.ripples.length - 1; i >= 0; i--) {
+      const r = this.ripples[i];
+      r.age += dt;
+      const t = r.age / 0.55;
+      if (t >= 1) {
+        r.g.destroy();
+        this.ripples.splice(i, 1);
+        continue;
+      }
+      r.g.scale.set(1 + t * 2.4);
+      r.g.alpha = 1 - t;
+    }
   }
 
   /** Advance walk + parallax. dt in seconds. */
   update(dt: number): void {
     if (!this.zone || !this.container.visible) return;
     this.elapsed += dt;
+    this.tickRipples(dt);
 
     if (this.moving) {
       const dx = this.targetX - this.charX;
