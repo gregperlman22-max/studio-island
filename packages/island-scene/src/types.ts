@@ -200,6 +200,10 @@ export interface IslandSceneCallbacks {
   /** Fires when the player leaves a zone interior (Exit affordance). The host
    *  typically responds by clearing `currentZone` back to null (world map). */
   onZoneExit?: () => void;
+  /** Fires when the player reaches and taps a zone's activity beacon in the
+   *  third-person zone view (Mode 2). The host typically responds by launching
+   *  the activity (Mode 3). The zone view shows a brief "You found it!" overlay. */
+  onActivityEnter?: (zoneKey: ZoneKey) => void;
   /** Fires when the user interacts with a non-zone object (decoration, anchor, etc.). */
   onObjectInteract?: (objectId: string, zoneKey: ZoneKey | null) => void;
   /** Fires on arrival at the destination tile (host may broadcast later). */
@@ -245,12 +249,19 @@ export interface IslandSceneProps extends IslandSceneCallbacks {
   avatars: AvatarInstance[];
   mode: SceneMode;
   /**
-   * Two-mode scene control. `null` (or omitted) renders the world map; a
-   * ZoneKey renders that zone's full-screen interior. The host flips this in
-   * response to onZoneTap (enter) and onZoneExit (leave); the renderer plays
-   * the transition between modes.
+   * Scene mode control. `null` (or omitted) renders the world map (Mode 1); a
+   * ZoneKey renders that zone's third-person zone view (Mode 2). The host flips
+   * this in response to onZoneTap (enter) and onZoneExit (leave); the renderer
+   * plays the camera-tilt + cross-fade transition between modes.
    */
   currentZone?: ZoneKey | null;
+  /**
+   * Direct control over the third-person zone view (Mode 2). Defaults to true.
+   * When explicitly set to false, the renderer stays on the world map even if
+   * `currentZone` is set — letting the host suppress Mode 2 without clearing
+   * the active zone.
+   */
+  zoneViewActive?: boolean;
   audioEnabled: boolean;
   /**
    * Reduced motion. When omitted, the renderer reads

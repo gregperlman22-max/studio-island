@@ -90,6 +90,7 @@ export function DemoApp() {
         onLoadProgress={(p) => append(`onLoadProgress(${p.toFixed(2)})`)}
         onZoneTap={(z: ZoneKey) => { append(`onZoneTap(${z}) → enter`); setCurrentZone(z); }}
         onZoneExit={() => { append("onZoneExit → world"); setCurrentZone(null); }}
+        onActivityEnter={(z: ZoneKey) => append(`onActivityEnter(${z})`)}
         onObjectInteract={(id) => append(`onObjectInteract(${id})`)}
         onAvatarMove={(id, p) => append(`onAvatarMove(${id}, ${p.x},${p.y})`)}
         onError={(e) => append(`onError: ${e.message}`)}
@@ -158,6 +159,26 @@ export function DemoApp() {
                   {m}
                 </button>
               ))}
+            </div>
+          </Section>
+
+          <Section title="Zone view (Mode 2)">
+            <p style={{ margin: "0 0 8px", fontSize: 11, color: "#6b5a44" }}>
+              Active: <strong>{currentZone ? `Mode 2 · ${currentZone}` : "Mode 1 · world map"}</strong>
+            </p>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {zones.map((z) => (
+                <button
+                  key={z.key}
+                  onClick={() => { append(`enter zone view → ${z.key}`); setCurrentZone(z.key); }}
+                  style={box(currentZone === z.key)}
+                >
+                  {z.displayName}
+                </button>
+              ))}
+              <button onClick={() => { append("exit zone view → world"); setCurrentZone(null); }} style={box(currentZone === null)}>
+                ← World map
+              </button>
             </div>
           </Section>
 
