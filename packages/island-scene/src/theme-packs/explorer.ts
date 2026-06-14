@@ -19,11 +19,12 @@ export const explorerPack: ThemePackConfig = {
     ink: "#2a1f12",
   },
   zoneSkins: {
-    calm_cove: { skinName: "Lantern Cove", decorationHints: ["lantern", "rope-coil"] },
-    build_beach: { skinName: "Workshop Beach", decorationHints: ["crate", "plank"] },
-    campfire: { skinName: "Trailhead Fire", decorationHints: ["log-pile", "kettle"] },
-    worry_hollow: { skinName: "Quiet Grove", decorationHints: ["fern", "stone-cairn"] },
-    garden: { skinName: "Field Garden", decorationHints: ["trellis", "spade"] },
-    field_guide_meadow: { skinName: "Field Guide Clearing", decorationHints: ["journal-stump", "compass-rose"] },
+    lighthouse_point: { skinName: "Old Beacon Cliff", decorationHints: ["rock", "rope-coil"] },
+    treehouse_hideaway: { skinName: "Ranger Treehouse", decorationHints: ["tree", "lookout"] },
+    campfire_circle: { skinName: "Trailhead Fire", decorationHints: ["log-pile", "kettle"] },
+    art_hut: { skinName: "Maker's Cabin", decorationHints: ["easel", "crate"] },
+    arcade_cove: { skinName: "Boardwalk Cove", decorationHints: ["awning", "lantern"] },
+    welcome_dock: { skinName: "Harbor Dock", decorationHints: ["boat", "barrel"] },
+    calm_beach: { skinName: "Quiet Shore", decorationHints: ["shell", "driftwood"] },
   },
 };

@@ -3,10 +3,19 @@
 A 2.5D tap-to-move island world renderer for **Engage Island**. Pure
 presentational React + PixiJS component. The host app owns all data.
 
-> **Status:** Milestone 1 — scaffold, contract, and demo harness.
-> The PixiJS renderer (terrain, zones, avatar, tap-to-move) lands in
-> Milestones 2–4. The current `IslandScene` is a contract-faithful stub
-> that responds to prop changes and fires every callback.
+> **Status:** Wind Waker creative pass — bold cel outlines + flat vivid
+> fills everywhere, a two-mode scene system (world map ↔ zone interior with
+> a cross-fade transition), an arrival boat that pulls up to the dock on
+> first load, seven landmark zones (Lighthouse Point, Treehouse Hideaway,
+> Campfire Circle, Art Hut, Arcade Cove, Welcome Dock, Calm Beach), epic
+> trees, landmark-scale structures, and animated shoreline waves. Animal
+> characters (bunny / fox / bear / frog / cat / deer) at Wind Waker scale.
+>
+> **Contract notes:** `ZoneKey` is now the seven landmark keys above;
+> added `currentZone?: ZoneKey | null` prop (world vs. interior) and
+> `onZoneExit?: () => void`. `AvatarConfig` is the animal shape
+> `{ species, bodyColor, accessoryKey, displayColor }`. All deliberate
+> creative-direction changes.
 
 ---
 
@@ -207,6 +216,17 @@ Opens a controls panel + live scene preview with theme/mode/audio
 toggles and an event log. The harness mounts the same component the
 host app does — keep it green at every milestone.
 
+### Static preview (GitHub Pages)
+
+Each milestone is reviewable as a browsable URL. The harness builds as a
+static site and deploys via `.github/workflows/pages.yml` on every push
+that touches this package:
+
+```bash
+DEMO_BASE=/studio-island/ npm run build:demo   # -> dist-demo/ (served under /studio-island/)
+npm run build:demo                             # -> dist-demo/ at root base for local preview
+```
+
 ---
 
 ## Build & publish
@@ -223,9 +243,9 @@ types (`dist/index.d.ts`). React and ReactDOM are peer deps.
 
 ## Roadmap
 
-1. ✅ Scaffold + contract + demo harness (this milestone).
-2. Terrain + zones rendered from `layout`, theme-pack palette swap live.
-3. Avatar compositor, tap-to-move with A*, camera follow, y-sort.
+1. ✅ Scaffold + contract + demo harness.
+2. ✅ Terrain + zones rendered from `layout`, theme-pack palette swap live.
+3. ✅ Avatar compositor, tap-to-move with A*, walk/idle animation, y-sort.
 4. Zone interaction + polish (hover, idle, ambient audio, reduced-motion, preloader).
 5. Multi-avatar interpolation + firefly overlay primitive (flag-gated).
 6. Clean npm build, this README finalized, `v0.1.0`.

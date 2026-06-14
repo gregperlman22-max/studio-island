@@ -1,16 +1,14 @@
-import { forwardRef, useImperativeHandle, useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import type { IslandSceneHandle, IslandSceneProps } from "./types";
+import { SceneRenderer } from "./render/SceneRenderer";
 
 /**
- * IslandScene — Milestone 1 stub.
+ * IslandScene — PixiJS renderer wrapper (two-mode: world map + zone interior).
  *
- * The full PixiJS renderer lands in Milestone 2 (terrain + zones) and
- * Milestone 3 (avatar + movement). This stub exists so the contract
- * compiles, the demo harness mounts, and host integration can be wired
- * end-to-end against real props and callbacks.
- *
- * It renders a labelled placeholder that reflects the current theme
- * palette and zone list so changes to props are visible immediately.
+ * Thin lifecycle/prop bridge: it owns no world data. The SceneRenderer (plain
+ * TS) owns the scene graph; props flow in, callbacks out. When `currentZone`
+ * is set the renderer shows that zone's interior and this component overlays an
+ * accessible Exit button that fires `onZoneExit`.
  */
 export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
   function IslandScene(props, ref) {
@@ -20,33 +18,95 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
       layout,
       avatars,
       mode,
+      currentZone,
       audioEnabled,
+      reducedMotion,
+      hideTextLabels,
       onReady,
+      onError,
+      onLoadProgress,
       onZoneTap,
+      onZoneExit,
+      onObjectInteract,
+      onAvatarMove,
       className,
     } = props;
 
     const containerRef = useRef<HTMLDivElement | null>(null);
+    const rendererRef = useRef<SceneRenderer | null>(null);
+
+    const cbRef = useRef({ onReady, onError, onLoadProgress, onZoneTap, onObjectInteract, onAvatarMove });
+    cbRef.current = { onReady, onError, onLoadProgress, onZoneTap, onObjectInteract, onAvatarMove };
+
+    useEffect(() => {
+      const el = containerRef.current;
+      if (!el) return;
+
+      const prefersReduced =
+        reducedMotion ??
+        (typeof window !== "undefined" &&
+          window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) ??
+        false;
+
+      const renderer = new SceneRenderer({
+        container: el,
+        reducedMotion: prefersReduced,
+        hideTextLabels: !!hideTextLabels,
+        onReady: () => cbRef.current.onReady?.(),
+        onError: (e) => cbRef.current.onError?.(e),
+        onLoadProgress: (p) => cbRef.current.onLoadProgress?.(p),
+        onZoneTap: (k) => cbRef.current.onZoneTap?.(k),
+        onObjectInteract: (id, z) => cbRef.current.onObjectInteract?.(id, z),
+        onAvatarMove: (id, p) => cbRef.current.onAvatarMove?.(id, p),
+      });
+      rendererRef.current = renderer;
+
+      renderer
+        .init(themePack, layout, zones, avatars, currentZone ?? null)
+        .catch((e) => cbRef.current.onError?.(e as Error));
+
+      const ro = new ResizeObserver(() => renderer.resize());
+      ro.observe(el);
+
+      return () => {
+        ro.disconnect();
+        renderer.destroy();
+        rendererRef.current = null;
+      };
+      // Mount once — reducedMotion/hideTextLabels are read at init time.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+      rendererRef.current?.setTheme(themePack);
+    }, [themePack]);
+    useEffect(() => {
+      rendererRef.current?.setZones(zones);
+    }, [zones]);
+    useEffect(() => {
+      rendererRef.current?.setLayout(layout);
+    }, [layout]);
+    useEffect(() => {
+      rendererRef.current?.setAvatars(avatars);
+    }, [avatars]);
+    useEffect(() => {
+      rendererRef.current?.setCurrentZone(currentZone ?? null);
+    }, [currentZone]);
 
     useImperativeHandle(
       ref,
       (): IslandSceneHandle => ({
+        // Audio lands in a later milestone; these stay no-ops until then.
         setVolume: () => {},
         duck: () => {},
-        walkLocalAvatarTo: () => {},
-        resize: () => {},
+        walkLocalAvatarTo: (position) =>
+          rendererRef.current?.walkLocalAvatarTo(position),
+        resize: () => rendererRef.current?.resize(),
       }),
       [],
     );
 
-    useEffect(() => {
-      // Milestone 1: no real preload yet — fire onReady on next tick
-      // so host integration code paths can be exercised.
-      const id = window.setTimeout(() => onReady?.(), 0);
-      return () => window.clearTimeout(id);
-    }, [onReady]);
-
-    const { palette } = themePack;
+    const inZone = !!currentZone;
 
     return (
       <div
@@ -56,69 +116,68 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
           position: "relative",
           width: "100%",
           height: "100%",
-          background: `linear-gradient(180deg, ${palette.skyTop} 0%, ${palette.skyBottom} 60%, ${palette.water} 100%)`,
-          color: palette.ink,
           overflow: "hidden",
-          fontFamily: "inherit",
         }}
         data-mode={mode}
+        data-zone={currentZone ?? ""}
         data-audio={audioEnabled ? "on" : "off"}
         data-theme={themePack.key}
       >
-        <div
-          style={{
-            position: "absolute",
-            inset: 16,
-            display: "grid",
-            gridTemplateColumns: `repeat(${Math.min(zones.length, 3)}, 1fr)`,
-            gap: 12,
-            alignContent: "center",
-          }}
-        >
-          {zones.map((z) => (
-            <button
-              key={z.key}
-              onClick={() => onZoneTap?.(z.key)}
-              disabled={!z.unlocked}
-              style={{
-                background: palette.land,
-                border: `2px solid ${palette.foliage}`,
-                borderRadius: 16,
-                padding: "18px 14px",
-                textAlign: "left",
-                cursor: z.unlocked ? "pointer" : "not-allowed",
-                opacity: z.unlocked ? 1 : 0.55,
-                color: palette.ink,
-                boxShadow: `0 4px 0 ${palette.foliageShadow}`,
-              }}
-            >
-              <div style={{ fontSize: 12, opacity: 0.7, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                {z.displayName}
-              </div>
-              <div style={{ fontWeight: 700, fontSize: 18, marginTop: 4 }}>{z.skinName}</div>
-              <div style={{ fontSize: 11, marginTop: 6, opacity: 0.7 }}>
-                {z.unlocked ? "Tap to visit" : "Locked"}
-              </div>
-            </button>
-          ))}
-        </div>
+        {!inZone && (
+          <div
+            style={{
+              position: "absolute",
+              right: 16,
+              bottom: 16,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            <button type="button" aria-label="Zoom in" style={zoomBtn} onClick={() => rendererRef.current?.zoomBy(1.25)}>+</button>
+            <button type="button" aria-label="Zoom out" style={zoomBtn} onClick={() => rendererRef.current?.zoomBy(0.8)}>−</button>
+          </div>
+        )}
 
-        <div
-          style={{
-            position: "absolute",
-            left: 12,
-            bottom: 12,
-            fontSize: 11,
-            padding: "4px 8px",
-            borderRadius: 999,
-            background: "rgba(255,255,255,0.6)",
-            color: palette.ink,
-          }}
-        >
-          island-scene · M1 stub · {themePack.displayName} · {avatars.length} avatar
-          {avatars.length === 1 ? "" : "s"} · grid {layout.grid.w}×{layout.grid.h}
-        </div>
+        {inZone && (
+          <button
+            type="button"
+            onClick={() => onZoneExit?.()}
+            aria-label="Exit to island"
+            style={{
+              position: "absolute",
+              top: 16,
+              right: 16,
+              padding: "10px 18px",
+              borderRadius: 999,
+              border: "3px solid #23201c",
+              background: "#fff",
+              color: "#23201c",
+              fontFamily: "system-ui, sans-serif",
+              fontSize: 16,
+              fontWeight: 800,
+              cursor: "pointer",
+              boxShadow: "0 4px 0 #23201c",
+            }}
+          >
+            ← Exit
+          </button>
+        )}
       </div>
     );
   },
 );
+
+const zoomBtn: React.CSSProperties = {
+  width: 48,
+  height: 48,
+  borderRadius: 14,
+  border: "3px solid #23201c",
+  background: "#fff",
+  color: "#23201c",
+  fontSize: 26,
+  fontWeight: 800,
+  lineHeight: 1,
+  cursor: "pointer",
+  boxShadow: "0 4px 0 #23201c",
+};

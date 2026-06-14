@@ -1,0 +1,73 @@
+name: Deploy island-scene demo to Pages
+
+# Builds the packages/island-scene demo harness as a static site and publishes
+# it to GitHub Pages, so each milestone is reviewable as a browsable URL.
+on:
+  push:
+    branches:
+      - main
+      - claude/nice-edison-vy5bqp
+    paths:
+      - "packages/island-scene/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+# GitHub Pages serves a project site at https://<owner>.github.io/<repo>/,
+# so the demo must be built with this base path.
+env:
+  DEMO_BASE: /studio-island/
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; cancel in-progress runs on new pushes.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/island-scene
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+        with:
+          # Auto-enable Pages (source = GitHub Actions) on first run so the
+          # repo owner doesn't have to flip it in Settings manually.
+          enablement: true
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build demo
+        run: bun run build:demo
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/island-scene/dist-demo
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

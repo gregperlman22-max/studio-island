@@ -17,7 +17,8 @@
   "sideEffects": false,
   "scripts": {
     "dev": "vite",
-    "build": "vite build && tsc -p tsconfig.build.json",
+    "build": "BUILD_TARGET=lib vite build && tsc -p tsconfig.build.json",
+    "build:demo": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
@@ -29,6 +30,7 @@
     "pixi.js": "^8.6.0"
   },
   "devDependencies": {
+    "@types/node": "^25.9.3",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.0",

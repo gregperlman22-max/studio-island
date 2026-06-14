@@ -71,14 +71,15 @@ export interface ZoneSkin {
 // Zones
 // ──────────────────────────────────────────────────────────────────
 
-/** The fixed set of six zones present in every island, every theme pack. */
+/** The set of landmark zones on the island (every island, every theme pack). */
 export type ZoneKey =
-  | "calm_cove"
-  | "build_beach"
-  | "campfire"
-  | "worry_hollow"
-  | "garden"
-  | "field_guide_meadow";
+  | "lighthouse_point"
+  | "treehouse_hideaway"
+  | "campfire_circle"
+  | "art_hut"
+  | "arcade_cove"
+  | "welcome_dock"
+  | "calm_beach";
 
 /** Coarse grid coordinates in island-space (not pixels). */
 export interface GridPosition {
@@ -94,7 +95,7 @@ export interface GridFootprint {
 
 export interface ZoneInstance {
   key: ZoneKey;
-  /** Human-facing label (host controls localization / non-reader mode). */
+  /** Player-facing label (host controls localization / non-reader mode). */
   displayName: string;
   /** Theme-pack skin name surfaced for tooltips. */
   skinName: string;
@@ -141,16 +142,31 @@ export interface DecorationPlacement {
 // ──────────────────────────────────────────────────────────────────
 
 /**
- * Layered 2D sprite system. The compositor stacks layers in this order:
- *   body → outfit → hair → accessory → displayColor tint.
- * Keys are validated against the TextureProvider's registered ids.
+ * Renderable avatar option sets — the single source of truth shared by the
+ * animal compositor (what it can draw) and the host's avatar editor (what it
+ * may offer). The package OWNS this set: the host enumerates these arrays to
+ * build its picker UI, and cannot author an option the compositor can't draw.
+ *
+ * Characters are ANIMALS only — cute, chunky, big-headed creatures. There are
+ * deliberately no human attributes anywhere (no skin tones, no hair, no
+ * gender indicators). The therapist and child avatars are both animals.
+ */
+export const SPECIES = ["bunny", "fox", "bear", "frog", "cat", "deer"] as const;
+export const ACCESSORY_KEYS = ["none", "hat", "bow", "scarf", "backpack"] as const;
+
+export type Species = (typeof SPECIES)[number];
+export type AccessoryKey = (typeof ACCESSORY_KEYS)[number];
+
+/**
+ * Animal character config. The compositor draws a chunky creature of the given
+ * `species`, tinted by a soft pastel `bodyColor`, with an optional `accessory`,
+ * and a `displayColor` used for the name tag + selection ring.
  */
 export interface AvatarConfig {
-  bodyTone: "warm-light" | "warm-mid" | "warm-deep" | "cool-light" | "cool-mid" | "cool-deep";
-  hairStyle: "tuft" | "braid" | "swoop";
-  hairColor: string;
-  outfitKey: "stripes" | "overalls" | "tunic" | "raincoat";
-  accessoryKey: "none" | "satchel" | "headband" | "scarf";
+  species: Species;
+  /** Soft pastel body tint (free-form hex). */
+  bodyColor: string;
+  accessoryKey: AccessoryKey;
   /** Display color used for the name tag and selection ring. */
   displayColor: string;
 }
@@ -178,8 +194,12 @@ export interface AvatarInstance {
 export type SceneMode = "studio" | "play" | "session";
 
 export interface IslandSceneCallbacks {
-  /** Fires after the local avatar has walked to the zone's entrance. */
+  /** Fires after the local avatar has walked to a zone's entrance — the host
+   *  typically responds by setting `currentZone` to enter the zone interior. */
   onZoneTap?: (zoneKey: ZoneKey) => void;
+  /** Fires when the player leaves a zone interior (Exit affordance). The host
+   *  typically responds by clearing `currentZone` back to null (world map). */
+  onZoneExit?: () => void;
   /** Fires when the user interacts with a non-zone object (decoration, anchor, etc.). */
   onObjectInteract?: (objectId: string, zoneKey: ZoneKey | null) => void;
   /** Fires on arrival at the destination tile (host may broadcast later). */
@@ -224,6 +244,13 @@ export interface IslandSceneProps extends IslandSceneCallbacks {
   /** Array from day one even though Phase 1 typically passes one. */
   avatars: AvatarInstance[];
   mode: SceneMode;
+  /**
+   * Two-mode scene control. `null` (or omitted) renders the world map; a
+   * ZoneKey renders that zone's full-screen interior. The host flips this in
+   * response to onZoneTap (enter) and onZoneExit (leave); the renderer plays
+   * the transition between modes.
+   */
+  currentZone?: ZoneKey | null;
   audioEnabled: boolean;
   /**
    * Reduced motion. When omitted, the renderer reads
