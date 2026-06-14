@@ -9,6 +9,7 @@ import {
   type Ticker,
 } from "pixi.js";
 import type {
+  AvatarConfig,
   AvatarInstance,
   GridPosition,
   LayoutConfig,
@@ -31,8 +32,9 @@ import { ProgrammaticTextureProvider } from "./TextureProvider";
 import { buildAvatarSprite, type AvatarSprite } from "./avatar";
 import { biomeAt, landContext } from "./biome";
 import { islandOutline, flatten, insetLoop, clusterOutline, type Pt } from "./coast";
-import { buildZoneScene, paintZoneStructure, INTERIOR_BG } from "./zones";
+import { buildZoneScene } from "./zones";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
+import { ZoneView } from "./ZoneView";
 
 /** Walk speed in grid tiles per second. */
 const WALK_SPEED = 4.5;
@@ -73,6 +75,8 @@ export interface RendererCallbacks {
   onZoneTap?: (zoneKey: ZoneKey) => void;
   onObjectInteract?: (objectId: string, zoneKey: ZoneKey | null) => void;
   onAvatarMove?: (avatarId: string, position: GridPosition) => void;
+  /** Fires when the player reaches + taps the zone's activity beacon (Mode 2). */
+  onActivityEnter?: (zoneKey: ZoneKey) => void;
 }
 
 export interface RendererOptions extends RendererCallbacks {
@@ -115,8 +119,8 @@ export class SceneRenderer {
   }[] = [];
   /** Arrival boat (world space). */
   private boat = new Graphics();
-  /** Mode 2 — full-screen zone interior (screen space). */
-  private interior = new Container();
+  /** Mode 2 — third-person zone view (parallax, screen space). */
+  private zoneView!: ZoneView;
   /** Transition fade overlay (screen space, on top of everything). */
   private fade = new Graphics();
 
@@ -207,9 +211,11 @@ export class SceneRenderer {
       return;
     }
 
+    this.zoneView = new ZoneView({ reducedMotion: this.opts.reducedMotion });
+
     this.app.canvas.style.display = "block";
     this.opts.container.appendChild(this.app.canvas);
-    this.app.stage.addChild(this.backdrop, this.world, this.interior, this.fade);
+    this.app.stage.addChild(this.backdrop, this.world, this.zoneView.container, this.fade);
     this.backdrop.addChild(this.sky, this.shimmer);
     this.world.addChild(
       this.terrain,
@@ -223,7 +229,6 @@ export class SceneRenderer {
     );
     this.biomeLayer.mask = this.landMask;
     this.entities.sortableChildren = true;
-    this.interior.visible = false;
     this.fade.eventMode = "none";
 
     // Arrival: reduced motion skips straight to "landed"; otherwise the boat
@@ -307,6 +312,9 @@ export class SceneRenderer {
     this.app.renderer.background.color = hexNum(theme.palette.water);
     this.textures.refresh(theme.palette);
     this.rebuild();
+    if (this.currentZone && this.zoneView.active) {
+      this.zoneView.restyle(theme.palette, this.localCfg());
+    }
   }
 
   setZones(zones: ZoneInstance[]): void {
@@ -325,6 +333,9 @@ export class SceneRenderer {
     if (!this.inited || this.destroyed) return;
     this.avatars = avatars;
     this.rebuild();
+    if (this.currentZone && this.zoneView.active) {
+      this.zoneView.restyle(this.theme.palette, this.localCfg());
+    }
   }
 
   /** Host imperative: walk the local avatar to a grid cell (pathfinds there). */
@@ -361,78 +372,26 @@ export class SceneRenderer {
   private applyMode(zone: ZoneKey | null): void {
     this.currentZone = zone;
     if (zone) {
-      this.buildInterior(zone);
-      this.interior.visible = true;
+      this.zoneView.enter(
+        zone,
+        this.theme.palette,
+        this.localCfg(),
+        this.app.screen.width,
+        this.app.screen.height,
+      );
       this.world.visible = false;
     } else {
-      this.interior.visible = false;
+      this.zoneView.hide();
       this.world.visible = true;
     }
   }
 
-  /** Full-screen zone interior stub: themed environment + the player's animal +
-   *  a title. The actual activity gameplay comes later. */
-  private buildInterior(zone: ZoneKey): void {
-    this.interior.removeChildren().forEach((c) => c.destroy({ children: true }));
-    const w = this.app.screen.width;
-    const h = this.app.screen.height;
-    const z = this.zones.find((zz) => zz.key === zone);
-    const { palette } = this.theme;
-
-    // Background wash (zone-flavored).
-    const bg = new Graphics();
-    const top = INTERIOR_BG[zone] ?? palette.skyTop;
-    for (let i = 0; i < 16; i++) {
-      const t = i / 15;
-      bg.rect(0, (h * i) / 16, w, h / 16 + 1).fill(lerpHex(top, shade(top, -0.18), t));
-    }
-    bg.rect(0, h * 0.74, w, h * 0.26).fill({ color: hexNum(shade(top, -0.28)), alpha: 0.5 });
-    this.interior.addChild(bg);
-
-    // The zone's landmark, large in the center.
-    const stage = new Container();
-    stage.position.set(w / 2, h * 0.66);
-    stage.scale.set(2.4);
-    const art = new Graphics();
-    paintZoneStructure(art, zone, palette);
-    stage.addChild(art);
-    this.interior.addChild(stage);
-
-    // The player's animal, standing in the scene.
-    const local = this.localId ? this.avatarViews.get(this.localId) : null;
-    const cfg = local ? this.avatars.find((a) => a.id === local.id)?.config : this.avatars[0]?.config;
-    if (cfg) {
-      const who = buildAvatarSprite(cfg);
-      who.container.scale.set(2.6);
-      who.container.position.set(w / 2, h * 0.78);
-      this.interior.addChild(who.container);
-    }
-
-    if (!this.opts.hideTextLabels) {
-      const title = new Text({
-        text: z?.displayName ?? zone,
-        style: {
-          fontFamily: "system-ui, sans-serif",
-          fontSize: 30,
-          fontWeight: "800",
-          fill: 0xffffff,
-          stroke: { color: INK, width: 5 },
-          align: "center",
-        },
-      });
-      title.anchor.set(0.5, 0);
-      title.position.set(w / 2, 28);
-      this.interior.addChild(title);
-
-      const hint = new Text({
-        text: "Activity coming soon — tap Exit to return to the island",
-        style: { fontFamily: "system-ui, sans-serif", fontSize: 14, fill: 0xffffff },
-      });
-      hint.anchor.set(0.5, 0);
-      hint.alpha = 0.85;
-      hint.position.set(w / 2, 66);
-      this.interior.addChild(hint);
-    }
+  /** The local avatar's config (used to draw the same animal in Mode 2). */
+  private localCfg(): AvatarConfig | null {
+    const a = this.localId
+      ? this.avatars.find((x) => x.id === this.localId)
+      : this.avatars[0];
+    return a?.config ?? null;
   }
 
   private drawFadeRect(): void {
@@ -448,7 +407,7 @@ export class SceneRenderer {
     this.updateCamScale();
     this.clampCamera();
     this.applyCamera();
-    if (this.currentZone) this.buildInterior(this.currentZone);
+    if (this.currentZone) this.zoneView.resize(this.app.screen.width, this.app.screen.height);
   }
 
   // ── Build ───────────────────────────────────────────────────────
@@ -992,6 +951,15 @@ export class SceneRenderer {
   };
 
   private onPointerDown = (e: FederatedPointerEvent): void => {
+    // Mode 2 (zone view): a simple tap-to-walk; no pan/pinch/zoom.
+    if (this.currentZone !== null) {
+      if (this.fadePhase !== "idle") return;
+      this.pointerDown = true;
+      this.pointerMoved = false;
+      this.downX = e.global.x;
+      this.downY = e.global.y;
+      return;
+    }
     if (!this.inputLive()) return;
     this.pointers.set(e.pointerId, { x: e.global.x, y: e.global.y });
     if (this.pointers.size === 2) {
@@ -1007,6 +975,13 @@ export class SceneRenderer {
   };
 
   private onPointerMove = (e: FederatedPointerEvent): void => {
+    // In a zone, only distinguish tap from drag (so a scroll doesn't walk).
+    if (this.currentZone !== null) {
+      if (this.pointerDown && Math.hypot(e.global.x - this.downX, e.global.y - this.downY) > DRAG_THRESHOLD) {
+        this.pointerMoved = true;
+      }
+      return;
+    }
     if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x: e.global.x, y: e.global.y });
 
     // Pinch-to-zoom takes priority while two fingers are down.
@@ -1037,6 +1012,12 @@ export class SceneRenderer {
   };
 
   private onPointerUp = (e: FederatedPointerEvent): void => {
+    if (this.currentZone !== null) {
+      const wasZoneTap = this.pointerDown && !this.pointerMoved;
+      this.pointerDown = false;
+      if (wasZoneTap) this.zoneView.handleTap(e.global.x, e.global.y);
+      return;
+    }
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinchDist = 0;
     const wasTap = this.pointerDown && !this.pointerMoved && this.pointers.size === 0;
@@ -1119,6 +1100,7 @@ export class SceneRenderer {
       this.advanceAvatar(view, dt);
     }
     if (this.currentZone === null) this.followCamera(dt);
+    else this.zoneView.update(dt);
 
     if (this.opts.reducedMotion) {
       this.fireflies.visible = false;

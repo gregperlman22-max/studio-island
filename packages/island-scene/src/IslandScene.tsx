@@ -19,6 +19,7 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
       avatars,
       mode,
       currentZone,
+      zoneViewActive,
       audioEnabled,
       reducedMotion,
       hideTextLabels,
@@ -27,16 +28,20 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
       onLoadProgress,
       onZoneTap,
       onZoneExit,
+      onActivityEnter,
       onObjectInteract,
       onAvatarMove,
       className,
     } = props;
 
+    // Mode 2 shows when a zone is active and not explicitly suppressed.
+    const effectiveZone = zoneViewActive === false ? null : currentZone ?? null;
+
     const containerRef = useRef<HTMLDivElement | null>(null);
     const rendererRef = useRef<SceneRenderer | null>(null);
 
-    const cbRef = useRef({ onReady, onError, onLoadProgress, onZoneTap, onObjectInteract, onAvatarMove });
-    cbRef.current = { onReady, onError, onLoadProgress, onZoneTap, onObjectInteract, onAvatarMove };
+    const cbRef = useRef({ onReady, onError, onLoadProgress, onZoneTap, onActivityEnter, onObjectInteract, onAvatarMove });
+    cbRef.current = { onReady, onError, onLoadProgress, onZoneTap, onActivityEnter, onObjectInteract, onAvatarMove };
 
     useEffect(() => {
       const el = containerRef.current;
@@ -56,13 +61,14 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
         onError: (e) => cbRef.current.onError?.(e),
         onLoadProgress: (p) => cbRef.current.onLoadProgress?.(p),
         onZoneTap: (k) => cbRef.current.onZoneTap?.(k),
+        onActivityEnter: (k) => cbRef.current.onActivityEnter?.(k),
         onObjectInteract: (id, z) => cbRef.current.onObjectInteract?.(id, z),
         onAvatarMove: (id, p) => cbRef.current.onAvatarMove?.(id, p),
       });
       rendererRef.current = renderer;
 
       renderer
-        .init(themePack, layout, zones, avatars, currentZone ?? null)
+        .init(themePack, layout, zones, avatars, effectiveZone)
         .catch((e) => cbRef.current.onError?.(e as Error));
 
       const ro = new ResizeObserver(() => renderer.resize());
@@ -90,8 +96,8 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
       rendererRef.current?.setAvatars(avatars);
     }, [avatars]);
     useEffect(() => {
-      rendererRef.current?.setCurrentZone(currentZone ?? null);
-    }, [currentZone]);
+      rendererRef.current?.setCurrentZone(effectiveZone);
+    }, [effectiveZone]);
 
     useImperativeHandle(
       ref,
@@ -106,7 +112,7 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
       [],
     );
 
-    const inZone = !!currentZone;
+    const inZone = !!effectiveZone;
 
     return (
       <div
@@ -119,7 +125,7 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
           overflow: "hidden",
         }}
         data-mode={mode}
-        data-zone={currentZone ?? ""}
+        data-zone={effectiveZone ?? ""}
         data-audio={audioEnabled ? "on" : "off"}
         data-theme={themePack.key}
       >
