@@ -293,7 +293,7 @@ export class SceneRenderer {
   /** Position the boat off-shore and hide the avatar for the arrival walk-on. */
   private setupArrival(): void {
     this.boat.visible = this.arrival === "boat";
-    this.boat.scale.set(2.2); // a clearly-readable boat with a visible sail
+    this.boat.scale.set(3.6); // a proper, character-scale boat with a visible sail
     const local = this.localId ? this.avatarViews.get(this.localId) : null;
     if (this.arrival === "boat" && local) local.container.visible = false;
     this.arrivalT = 0;
