@@ -13,8 +13,19 @@ import {
   type SceneMode,
   type Species,
   type ThemePackKey,
+  type WeeklyQuest,
   type ZoneKey,
 } from "../src";
+
+// ── Sample weekly quest data (M3 quest card will display this) ────────────────
+const SAMPLE_WEEKLY_QUEST: WeeklyQuest = {
+  starsEarnedThisWeek: 3,
+  featuredGames: [
+    { id: "worry-box",    label: "Worry Box",       starReward: 2, completed: true  },
+    { id: "calm-island",  label: "Calm Island",     starReward: 3, completed: false },
+    { id: "star-journal", label: "Star Journal",    starReward: 2, completed: false },
+  ],
+};
 
 /**
  * Demo harness. The island is full-screen (the child-facing product view).
@@ -30,6 +41,8 @@ export function DemoApp() {
   const [hideTextLabels, setHideTextLabels] = useState(false);
   const [lockLighthouse, setLockLighthouse] = useState(false);
   const [currentZone, setCurrentZone] = useState<ZoneKey | null>(null);
+  // Incrementing this key remounts IslandScene, replaying the arrival cinematic.
+  const [replayKey, setReplayKey] = useState(0);
 
   const [avatarCfg, setAvatarCfg] = useState<AvatarConfig>({
     species: "bunny",
@@ -75,7 +88,7 @@ export function DemoApp() {
   return (
     <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
       <IslandScene
-        key={reducedMotion ? "rm" : "full"}
+        key={`${reducedMotion ? "rm" : "full"}-${replayKey}`}
         ref={sceneRef}
         themePack={themePack}
         zones={zones}
@@ -86,6 +99,7 @@ export function DemoApp() {
         audioEnabled={audioEnabled}
         reducedMotion={reducedMotion}
         hideTextLabels={hideTextLabels}
+        weeklyQuest={SAMPLE_WEEKLY_QUEST}
         onReady={() => append("onReady")}
         onLoadProgress={(p) => append(`onLoadProgress(${p.toFixed(2)})`)}
         onZoneTap={(z: ZoneKey) => { append(`onZoneTap(${z}) → enter`); setCurrentZone(z); }}
@@ -94,6 +108,8 @@ export function DemoApp() {
         onObjectInteract={(id) => append(`onObjectInteract(${id})`)}
         onAvatarMove={(id, p) => append(`onAvatarMove(${id}, ${p.x},${p.y})`)}
         onError={(e) => append(`onError: ${e.message}`)}
+        onArrivalComplete={() => append("onArrivalComplete ✓")}
+        onQuestReopen={() => append("onQuestReopen")}
       />
 
       {/* Floating dev-tools toggle — the only chrome over the scene. */}
@@ -196,6 +212,15 @@ export function DemoApp() {
             <Toggle label="Reduced motion" checked={reducedMotion} onChange={setReducedMotion} />
             <Toggle label="Hide text labels" checked={hideTextLabels} onChange={setHideTextLabels} />
             <Toggle label="Lock Lighthouse" checked={lockLighthouse} onChange={setLockLighthouse} />
+          </Section>
+
+          <Section title="Arrival">
+            <button
+              onClick={() => { setCurrentZone(null); setReplayKey((k) => k + 1); append("replay arrival"); }}
+              style={{ ...btn, fontWeight: 700, background: "#fff8e8", width: "100%" }}
+            >
+              ▶ Replay arrival cinematic
+            </button>
           </Section>
 
           <Section title="Imperative handle">

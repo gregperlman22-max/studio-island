@@ -214,6 +214,17 @@ export interface IslandSceneCallbacks {
   onError?: (err: Error) => void;
   /** Optional progress hook during initial preload (0..1). */
   onLoadProgress?: (progress: number) => void;
+  /**
+   * Fires when the arrival cinematic + world-map cross-fade complete and the
+   * child can freely explore. Under reduced motion, fires immediately on ready.
+   * M3 will delay this until the child dismisses the quest card.
+   */
+  onArrivalComplete?: () => void;
+  /**
+   * Fires when the child taps the companion on the dock to re-read the quest
+   * message (M4). Not fired until M4 is built; reserved here for host wiring.
+   */
+  onQuestReopen?: () => void;
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -240,6 +251,20 @@ export interface IslandSceneHandle {
 // ──────────────────────────────────────────────────────────────────
 // Top-level component props
 // ──────────────────────────────────────────────────────────────────
+
+/**
+ * The week's featured games shown on the companion's quest card (M3).
+ * When absent the quest card is skipped but the arrival still plays.
+ */
+export interface WeeklyQuest {
+  featuredGames: {
+    id: string;
+    label: string;
+    starReward: number;
+    completed: boolean;
+  }[];
+  starsEarnedThisWeek: number;
+}
 
 export interface IslandSceneProps extends IslandSceneCallbacks {
   themePack: ThemePackConfig;
@@ -277,6 +302,8 @@ export interface IslandSceneProps extends IslandSceneCallbacks {
   flags?: {
     fireflyOverlay?: boolean;
   };
+  /** Weekly quest data for the companion's message card (M3). */
+  weeklyQuest?: WeeklyQuest;
   /** Optional className applied to the wrapper div. */
   className?: string;
 }

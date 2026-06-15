@@ -31,6 +31,8 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
       onActivityEnter,
       onObjectInteract,
       onAvatarMove,
+      onArrivalComplete,
+      onQuestReopen,
       className,
     } = props;
 
@@ -40,8 +42,14 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
     const containerRef = useRef<HTMLDivElement | null>(null);
     const rendererRef = useRef<SceneRenderer | null>(null);
 
-    const cbRef = useRef({ onReady, onError, onLoadProgress, onZoneTap, onActivityEnter, onZoneExit, onObjectInteract, onAvatarMove });
-    cbRef.current = { onReady, onError, onLoadProgress, onZoneTap, onActivityEnter, onZoneExit, onObjectInteract, onAvatarMove };
+    const cbRef = useRef({
+      onReady, onError, onLoadProgress, onZoneTap, onActivityEnter, onZoneExit,
+      onObjectInteract, onAvatarMove, onArrivalComplete, onQuestReopen,
+    });
+    cbRef.current = {
+      onReady, onError, onLoadProgress, onZoneTap, onActivityEnter, onZoneExit,
+      onObjectInteract, onAvatarMove, onArrivalComplete, onQuestReopen,
+    };
 
     useEffect(() => {
       const el = containerRef.current;
@@ -65,6 +73,8 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
         onZoneExit: () => cbRef.current.onZoneExit?.(),
         onObjectInteract: (id, z) => cbRef.current.onObjectInteract?.(id, z),
         onAvatarMove: (id, p) => cbRef.current.onAvatarMove?.(id, p),
+        onArrivalComplete: () => cbRef.current.onArrivalComplete?.(),
+        onQuestReopen: () => cbRef.current.onQuestReopen?.(),
       });
       rendererRef.current = renderer;
 

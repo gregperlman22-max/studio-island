@@ -35,6 +35,7 @@ import { islandOutline, flatten, insetLoop, clusterOutline, type Pt } from "./co
 import { buildZoneScene } from "./zones";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
+import { ArrivalView } from "./ArrivalView";
 
 /** Walk speed in grid tiles per second. */
 const WALK_SPEED = 4.5;
@@ -81,6 +82,10 @@ export interface RendererCallbacks {
   onActivityEnter?: (zoneKey: ZoneKey) => void;
   /** Fires when the player taps the in-scene exit path in the zone view (Mode 2). */
   onZoneExit?: () => void;
+  /** Fires when the arrival cinematic + world-map fade-in complete. */
+  onArrivalComplete?: () => void;
+  /** Reserved for M4: fires when the companion is tapped to re-read the quest. */
+  onQuestReopen?: () => void;
 }
 
 export interface RendererOptions extends RendererCallbacks {
@@ -121,8 +126,6 @@ export class SceneRenderer {
   private fireflyDots: {
     g: Graphics; cx: number; cy: number; rx: number; ry: number; phase: number; speed: number;
   }[] = [];
-  /** Arrival boat (world space). */
-  private boat = new Graphics();
   /** Mode 2 — third-person zone view (parallax, screen space). */
   private zoneView!: ZoneView;
   /** Optional flash overlay kept for reduced-motion / safety (screen space). */
@@ -146,8 +149,11 @@ export class SceneRenderer {
   } | null = null;
 
   // Arrival sequence state.
-  private arrival: "boat" | "step" | "done" = "boat";
-  private arrivalT = 0;
+  private arrival: "cinematic" | "fadein" | "done" = "done";
+  /** Ground-level cinematic shown before the world map. */
+  private arrivalView: ArrivalView | null = null;
+  /** Cross-fade progress (0→1) during the "fadein" phase. */
+  private arrivalFadeT = 0;
 
   private textures!: ProgrammaticTextureProvider;
   private theme!: ThemePackConfig;
@@ -244,16 +250,13 @@ export class SceneRenderer {
       this.entities,
       this.flame,
       this.fireflies,
-      this.boat,
     );
     this.biomeLayer.mask = this.landMask;
     this.entities.sortableChildren = true;
     this.fade.eventMode = "none";
 
-    // Arrival: reduced motion skips straight to "landed"; otherwise the boat
-    // pulls up to the dock on first load. If the host starts inside a zone,
-    // there's no world arrival to play.
-    this.arrival = this.opts.reducedMotion || initialZone ? "done" : "boat";
+    // Arrival cinematic: reduced motion and zone-starts skip straight to "done".
+    this.arrival = this.opts.reducedMotion || initialZone ? "done" : "cinematic";
 
     // Unified pointer handling on the stage: press + release without travel is
     // a tap (walk / zone / object); press + drag pans the camera. Zones and
@@ -276,7 +279,7 @@ export class SceneRenderer {
     this.drawFadeRect();
     this.fade.alpha = 0;
 
-    // Boat starts off-shore; the local avatar is hidden until it steps off.
+    // Set up the arrival cinematic (or skip it under reduced motion / zone-start).
     this.setupArrival();
     // Start inside a zone if the host asked for it.
     if (initialZone) this.applyMode(initialZone);
@@ -290,37 +293,39 @@ export class SceneRenderer {
     this.opts.onReady?.();
   }
 
-  /** Position the boat off-shore and hide the avatar for the arrival walk-on. */
+  /**
+   * Build the ArrivalView cinematic and hide the local avatar until the
+   * world map cross-fade completes. Under reduced motion / zone-start the
+   * avatar is already visible at the spawn point — nothing to hide.
+   */
   private setupArrival(): void {
-    this.boat.visible = this.arrival === "boat";
-    this.boat.scale.set(3.6); // a proper, character-scale boat with a visible sail
+    if (this.arrival !== "cinematic") {
+      // Reduced motion or zone-start: skip, fire onArrivalComplete immediately.
+      this.opts.onArrivalComplete?.();
+      return;
+    }
+
+    // Hide the local avatar until the cinematic ends and the world map fades in.
     const local = this.localId ? this.avatarViews.get(this.localId) : null;
-    if (this.arrival === "boat" && local) local.container.visible = false;
-    this.arrivalT = 0;
-    this.drawBoat();
-  }
+    if (local) local.container.visible = false;
 
-  private dockApproach(): { fromX: number; fromY: number; toX: number; toY: number } {
-    const dock = this.zones.find((z) => z.key === "welcome_dock");
-    const c = dock
-      ? footprintCenter(dock.gridPosition, dock.footprint.w, dock.footprint.h)
-      : tileCenter(this.layout.spawnPoint.x, this.layout.spawnPoint.y);
-    // Boat docks just in front (down-screen) of the dock, arriving from further out.
-    return { fromX: c.x - 30, fromY: c.y + 220, toX: c.x, toY: c.y + 54 };
-  }
-
-  private drawBoat(x = 0, y = 0): void {
-    this.boat.clear();
-    if (this.arrival !== "boat") return;
-    const INK = 0x23201c;
-    this.boat.position.set(x, y);
-    this.boat.zIndex = 9999;
-    // little sailboat
-    this.boat.ellipse(0, 6, 4, 2).fill({ color: 0x000000, alpha: 0.18 });
-    this.boat.poly([-18, 0, 18, 0, 12, 10, -12, 10]).fill(0xb5763f).stroke({ width: 3, color: INK });
-    this.boat.roundRect(-16, -2, 32, 4, 2).fill(0xcf9457).stroke({ width: 3, color: INK });
-    this.boat.moveTo(0, -2).lineTo(0, -28).stroke({ width: 3, color: INK });
-    this.boat.poly([0, -28, 0, -6, 15, -10]).fill(0xfff1f0).stroke({ width: 3, color: INK });
+    this.arrivalView = new ArrivalView(
+      { reducedMotion: this.opts.reducedMotion },
+      () => {
+        // Cinematic done → start the cream cross-fade to the world map.
+        this.arrival = "fadein";
+        this.arrivalFadeT = 0;
+      },
+    );
+    // The ArrivalView sits on top of everything in screen space.
+    this.app.stage.addChild(this.arrivalView.container);
+    this.arrivalView.build(
+      this.app.screen.width,
+      this.app.screen.height,
+      this.theme.palette,
+      this.localCfg(),
+    );
+    console.info("[island-scene] ArrivalView built — cinematic starting");
   }
 
   // ── Prop updates ────────────────────────────────────────────────
@@ -523,6 +528,9 @@ export class SceneRenderer {
     this.clampCamera();
     this.applyCamera();
     if (this.currentZone) this.zoneView.resize(this.app.screen.width, this.app.screen.height);
+    if (this.arrival !== "done") {
+      this.arrivalView?.resize(this.app.screen.width, this.app.screen.height);
+    }
   }
 
   // ── Build ───────────────────────────────────────────────────────
@@ -1261,35 +1269,54 @@ export class SceneRenderer {
     }
   };
 
-  /** Arrival: boat glides to the dock, then the avatar steps off and walks in. */
+  /**
+   * Drive the arrival sequence each frame.
+   *
+   * "cinematic" — delegates to ArrivalView (ground-level parallax cinematic).
+   * "fadein"    — cross-fades from the ArrivalView to the world map:
+   *               fade overlay 0→1, hide ArrivalView, reveal world map, fade 1→0.
+   * "done"      — nothing to do; input is live.
+   */
   private tickArrival(dt: number): void {
-    if (this.currentZone !== null || this.arrival === "done") return;
-    const seg = this.dockApproach();
-    if (this.arrival === "boat") {
-      this.arrivalT = Math.min(1, this.arrivalT + dt / 2.6);
-      const e = this.arrivalT * this.arrivalT * (3 - 2 * this.arrivalT); // smoothstep
-      this.drawBoat(seg.fromX + (seg.toX - seg.fromX) * e, seg.fromY + (seg.toY - seg.fromY) * e);
-      if (this.arrivalT >= 1) {
-        this.arrival = "step";
-        const local = this.localId ? this.avatarViews.get(this.localId) : null;
-        if (local) {
-          local.container.visible = true;
-          // Step off at the dock's front, then walk inland to the spawn tile.
-          const dock = this.zones.find((z) => z.key === "welcome_dock");
-          const front = dock
-            ? { x: Math.floor(dock.gridPosition.x + dock.footprint.w / 2), y: dock.gridPosition.y + dock.footprint.h - 1 }
-            : this.layout.spawnPoint;
-          const entrance = nearestWalkable(this.grid, front) ?? this.layout.spawnPoint;
-          local.pos = { x: entrance.x, y: entrance.y };
-          this.placeAvatar(local);
-          this.walkView(local, this.layout.spawnPoint);
-        } else {
-          this.arrival = "done";
+    if (this.arrival === "done") return;
+
+    if (this.arrival === "cinematic") {
+      this.arrivalView?.update(dt);
+      return;
+    }
+
+    if (this.arrival === "fadein") {
+      const FADE_DUR = 0.85; // seconds total for the cross-fade
+      this.arrivalFadeT = Math.min(1, this.arrivalFadeT + dt / FADE_DUR);
+      const t = this.arrivalFadeT;
+
+      if (t < 0.42) {
+        // First half: fade to cream
+        this.fade.alpha = t / 0.42;
+      } else if (t < 0.58) {
+        // At peak cream: swap from ArrivalView to world map
+        this.fade.alpha = 1;
+        if (this.arrivalView?.container.visible) {
+          this.arrivalView.hide();
+          // Place the local avatar at the spawn point and make it visible
+          const local = this.localId ? this.avatarViews.get(this.localId) : null;
+          if (local) {
+            local.pos = { x: this.layout.spawnPoint.x, y: this.layout.spawnPoint.y };
+            local.container.visible = true;
+            this.placeAvatar(local);
+          }
         }
+      } else {
+        // Second half: fade out cream to reveal world map
+        this.fade.alpha = 1 - (t - 0.58) / 0.42;
       }
-    } else if (this.arrival === "step") {
-      const local = this.localId ? this.avatarViews.get(this.localId) : null;
-      if (!local || !local.moving) this.arrival = "done";
+
+      if (t >= 1) {
+        this.fade.alpha = 0;
+        this.arrival = "done";
+        console.info("[island-scene] arrival complete → world map live");
+        this.opts.onArrivalComplete?.();
+      }
     }
   }
 
@@ -1359,6 +1386,8 @@ export class SceneRenderer {
     } catch {
       /* ticker/listeners may not be attached */
     }
+    this.arrivalView?.destroy();
+    this.arrivalView = null;
     this.textures?.destroy();
     try {
       this.app.destroy({ removeView: true }, { children: true });
