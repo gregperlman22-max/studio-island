@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - claude/vibrant-hopper-k3bjol
     paths:
       - "packages/island-scene/**"
       - ".github/workflows/pages.yml"
