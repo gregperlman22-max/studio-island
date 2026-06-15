@@ -6,7 +6,6 @@ on:
   push:
     branches:
       - main
-      - claude/nice-edison-vy5bqp
     paths:
       - "packages/island-scene/**"
       - ".github/workflows/pages.yml"
