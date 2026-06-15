@@ -47,6 +47,8 @@ const DRAG_THRESHOLD = 7;
 /** Zoom bounds: 0.5x sees the whole island, 2.5x zooms into a zone. */
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2.5;
+/** Mode 1 ↔ Mode 2 camera-tilt + cross-fade duration (seconds). */
+const TILT_DURATION = 1.0;
 
 interface AvatarView {
   id: string;
@@ -77,6 +79,8 @@ export interface RendererCallbacks {
   onAvatarMove?: (avatarId: string, position: GridPosition) => void;
   /** Fires when the player reaches + taps the zone's activity beacon (Mode 2). */
   onActivityEnter?: (zoneKey: ZoneKey) => void;
+  /** Fires when the player taps the in-scene exit path in the zone view (Mode 2). */
+  onZoneExit?: () => void;
 }
 
 export interface RendererOptions extends RendererCallbacks {
@@ -121,13 +125,25 @@ export class SceneRenderer {
   private boat = new Graphics();
   /** Mode 2 — third-person zone view (parallax, screen space). */
   private zoneView!: ZoneView;
-  /** Transition fade overlay (screen space, on top of everything). */
+  /** Optional flash overlay kept for reduced-motion / safety (screen space). */
   private fade = new Graphics();
 
-  // Two-mode + transition state.
+  // Mode + transition state.
   private currentZone: ZoneKey | null = null;
-  private pendingZone: ZoneKey | null = null;
-  private fadePhase: "idle" | "out" | "in" = "idle";
+  /**
+   * Active Mode 1↔2 transition. The world map tilts toward a low horizon angle
+   * and zooms onto the zone landmark while it cross-fades (its alpha) over the
+   * parallax zone view beneath it. `enter` runs tilt 0→1, `exit` runs 1→0.
+   */
+  private trans: {
+    dir: "enter" | "exit";
+    zone: ZoneKey;
+    t: number;
+    pivotX: number; pivotY: number;
+    anchor0X: number; anchor0Y: number;
+    anchor1X: number; anchor1Y: number;
+    scale0: number; scale1: number;
+  } | null = null;
 
   // Arrival sequence state.
   private arrival: "boat" | "step" | "done" = "boat";
@@ -215,7 +231,10 @@ export class SceneRenderer {
 
     this.app.canvas.style.display = "block";
     this.opts.container.appendChild(this.app.canvas);
-    this.app.stage.addChild(this.backdrop, this.world, this.zoneView.container, this.fade);
+    // The zone view sits BELOW the world map so the enter transition can fade
+    // the (tilting) world out to reveal the parallax beneath, and the exit
+    // transition can fade the world back in over it.
+    this.app.stage.addChild(this.backdrop, this.zoneView.container, this.world, this.fade);
     this.backdrop.addChild(this.sky, this.shimmer);
     this.world.addChild(
       this.terrain,
@@ -354,19 +373,60 @@ export class SceneRenderer {
     }
   }
 
-  /** Host two-mode control: enter a zone (key) or return to the world (null). */
+  /** Host mode control: enter a zone (key) or return to the world (null). */
   setCurrentZone(zone: ZoneKey | null): void {
     if (!this.inited || this.destroyed) return;
     const target = zone ?? null;
-    if (target === this.currentZone && this.fadePhase === "idle") return;
-    this.pendingZone = target;
+    if (target === this.currentZone && !this.trans) return;
+    // Already animating toward this same destination — ignore the re-fire.
+    if (this.trans && (this.trans.dir === "enter") === (target !== null)) return;
+
     if (this.opts.reducedMotion) {
+      this.trans = null;
       this.applyMode(target);
       this.fade.alpha = 0;
-      this.fadePhase = "idle";
-    } else {
-      this.fadePhase = "out";
+      return;
     }
+    if (target) this.beginTransition("enter", target);
+    else if (this.currentZone) this.beginTransition("exit", this.currentZone);
+    else this.applyMode(null);
+  }
+
+  /** Kick off the 1s camera-tilt + cross-fade between Mode 1 and Mode 2. */
+  private beginTransition(dir: "enter" | "exit", zone: ZoneKey): void {
+    if (dir === "enter") {
+      // Build the parallax zone view beneath the world map; the world stays on
+      // top and tilts + fades to reveal it.
+      this.zoneView.enter(
+        zone, this.theme.palette, this.localCfg(),
+        this.app.screen.width, this.app.screen.height,
+      );
+    } else {
+      // The world map reappears on top and fades in over the zone view as it
+      // un-tilts; re-enable follow so it settles on the avatar by the zone.
+      this.followEnabled = true;
+    }
+    this.world.visible = true;
+    this.backdrop.visible = true;
+    this.world.alpha = 1;
+
+    const z = this.zones.find((zz) => zz.key === zone);
+    const c = z
+      ? footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h)
+      : tileCenter(this.layout.spawnPoint.x, this.layout.spawnPoint.y);
+    const sw = this.app.screen.width;
+    const sh = this.app.screen.height;
+    this.trans = {
+      dir, zone, t: 0,
+      pivotX: c.x, pivotY: c.y,
+      // tilt=0 reproduces the current world map exactly (no jump on start/finish)
+      anchor0X: c.x * this.camScale + this.camX,
+      anchor0Y: c.y * this.camScale + this.camY,
+      // tilt=1 frames the zone centered, dropped toward the horizon
+      anchor1X: sw / 2, anchor1Y: sh * 0.52,
+      scale0: this.camScale, scale1: this.camScale * 2.2,
+    };
+    console.info(`[island-scene] beginTransition ${dir} → ${zone}`);
   }
 
   private applyMode(zone: ZoneKey | null): void {
@@ -398,6 +458,55 @@ export class SceneRenderer {
       ? this.avatars.find((x) => x.id === this.localId)
       : this.avatars[0];
     return a?.config ?? null;
+  }
+
+  /** Advance the camera-tilt transition + cross-fade (M3 / M5). */
+  private tickZoneTransition(dt: number): void {
+    const tr = this.trans;
+    if (!tr) return;
+    tr.t = Math.min(1, tr.t + dt / TILT_DURATION);
+    const p = tr.t * tr.t * (3 - 2 * tr.t); // smoothstep
+    // tilt: 0 = overhead iso (world untouched), 1 = flat horizon, zoomed on zone
+    const tiltP = tr.dir === "enter" ? p : 1 - p;
+    this.applyTilt(tiltP, tr);
+    // The parallax beneath keeps animating across the whole transition.
+    if (this.zoneView.active) this.zoneView.update(dt);
+    if (tr.t >= 1) this.finishTransition(tr);
+  }
+
+  /** Squash + zoom + fade the world toward the zone for tilt progress [0..1]. */
+  private applyTilt(tiltP: number, tr: NonNullable<SceneRenderer["trans"]>): void {
+    this.world.pivot.set(tr.pivotX, tr.pivotY);
+    const S = tr.scale0 + (tr.scale1 - tr.scale0) * tiltP;
+    this.world.scale.x = S;
+    this.world.scale.y = S * (1 - 0.5 * tiltP); // vertical squash fakes the tilt
+    this.world.position.x = tr.anchor0X + (tr.anchor1X - tr.anchor0X) * tiltP;
+    this.world.position.y = tr.anchor0Y + (tr.anchor1Y - tr.anchor0Y) * tiltP;
+    // Fade the world out as it flattens so the parallax reads through.
+    const k = Math.max(0, Math.min(1, (tiltP - 0.3) / 0.55));
+    this.world.alpha = 1 - k * k * (3 - 2 * k);
+  }
+
+  private finishTransition(tr: NonNullable<SceneRenderer["trans"]>): void {
+    // Restore a clean world transform regardless of which way we went.
+    this.world.pivot.set(0, 0);
+    this.world.alpha = 1;
+    this.world.scale.set(this.camScale);
+    if (tr.dir === "enter") {
+      this.currentZone = tr.zone;
+      this.world.visible = false;
+      this.backdrop.visible = false;
+      console.info(`[island-scene] transition done → Mode 2 (${tr.zone})`);
+    } else {
+      this.currentZone = null;
+      this.zoneView.hide();
+      this.world.visible = true;
+      this.backdrop.visible = true;
+      this.followEnabled = true;
+      this.applyCamera();
+      console.info("[island-scene] transition done → Mode 1 (world map)");
+    }
+    this.trans = null;
   }
 
   private drawFadeRect(): void {
@@ -946,7 +1055,7 @@ export class SceneRenderer {
 
   /** Input is only live on the world map, once arrival + any transition end. */
   private inputLive(): boolean {
-    return this.currentZone === null && this.fadePhase === "idle" && this.arrival === "done";
+    return this.currentZone === null && !this.trans && this.arrival === "done";
   }
 
   private onWheel = (e: WheelEvent): void => {
@@ -961,7 +1070,7 @@ export class SceneRenderer {
     // as soon as the zone view is on screen (don't wait for the fade-in to
     // finish — that just made early taps feel dead).
     if (this.currentZone !== null) {
-      if (!this.zoneView.active) return;
+      if (!this.zoneView.active || this.trans) return; // no taps mid-transition
       this.pointerDown = true;
       this.pointerMoved = false;
       this.downX = e.global.x;
@@ -1021,9 +1130,18 @@ export class SceneRenderer {
 
   private onPointerUp = (e: FederatedPointerEvent): void => {
     if (this.currentZone !== null) {
-      const wasZoneTap = this.pointerDown && !this.pointerMoved;
+      const wasZoneTap = this.pointerDown && !this.pointerMoved && !this.trans;
       this.pointerDown = false;
-      if (wasZoneTap) this.zoneView.handleTap(e.global.x, e.global.y);
+      if (wasZoneTap) {
+        const kind = this.zoneView.handleTap(e.global.x, e.global.y);
+        if (kind === "exit") {
+          console.info("[island-scene] in-scene exit tapped → onZoneExit");
+          this.opts.onZoneExit?.();
+        } else if (kind === "activity" && this.currentZone) {
+          console.info(`[island-scene] onActivityEnter(${this.currentZone})`);
+          this.opts.onActivityEnter?.(this.currentZone);
+        }
+      }
       return;
     }
     this.pointers.delete(e.pointerId);
@@ -1101,22 +1219,29 @@ export class SceneRenderer {
       );
     }
 
-    this.tickTransition(dt);
+    this.tickZoneTransition(dt);
     this.tickArrival(dt);
 
     for (const view of this.avatarViews.values()) {
       this.advanceAvatar(view, dt);
     }
-    if (this.currentZone === null) this.followCamera(dt);
-    else this.zoneView.update(dt);
+    // During a transition the world transform + zone view are driven by
+    // tickZoneTransition; otherwise follow the avatar (Mode 1) or tick the
+    // parallax (Mode 2).
+    if (!this.trans) {
+      if (this.currentZone === null) this.followCamera(dt);
+      else this.zoneView.update(dt);
+    }
 
     if (this.opts.reducedMotion) {
       this.fireflies.visible = false;
       this.flame.visible = false;
     } else {
-      this.fireflies.visible = this.currentZone === null;
-      this.flame.visible = this.currentZone === null;
-      if (this.currentZone === null) {
+      // Animate the world map whenever it's on screen — including while it
+      // tilts/fades through a transition.
+      this.fireflies.visible = this.world.visible;
+      this.flame.visible = this.world.visible;
+      if (this.world.visible) {
         const t = this.elapsed / 1000;
         this.drawShimmer();
         this.drawWaves();
@@ -1135,20 +1260,6 @@ export class SceneRenderer {
       }
     }
   };
-
-  /** Cross-fade between world map and zone interior. */
-  private tickTransition(dt: number): void {
-    if (this.fadePhase === "out") {
-      this.fade.alpha = Math.min(1, this.fade.alpha + dt * 3);
-      if (this.fade.alpha >= 1) {
-        this.applyMode(this.pendingZone);
-        this.fadePhase = "in";
-      }
-    } else if (this.fadePhase === "in") {
-      this.fade.alpha = Math.max(0, this.fade.alpha - dt * 3);
-      if (this.fade.alpha <= 0) this.fadePhase = "idle";
-    }
-  }
 
   /** Arrival: boat glides to the dock, then the avatar steps off and walks in. */
   private tickArrival(dt: number): void {

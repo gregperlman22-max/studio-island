@@ -44,6 +44,11 @@ export interface ZoneEnv {
   /** Activity beacon, in ground-plane world coords (where the character walks
    *  to). `r` is the glow radius used for the proximity test in later phases. */
   beacon: { x: number; y: number; r: number };
+  /** The beacon glow's x in MID-layer-local px, so the renderer can map it to a
+   *  live screen position (beaconMidX + mid.position.x) for tap hit-testing. */
+  beaconMidX: number;
+  /** Zone-appropriate warm colour for the "You found it!" discovery overlay. */
+  tint: number;
   /** Exit path/door, ground-plane world-x (left edge). */
   exitX: number;
   /** Per-frame idle animation: elapsed seconds + beacon proximity (0..1). */
@@ -283,6 +288,8 @@ function campfire(
     worldWidth,
     spawnX: g.spawnX,
     beacon: { x: g.beaconX, y: beaconY, r: 130 },
+    beaconMidX: mx,
+    tint: 0xff9a3d,
     exitX: g.exitX,
     animate: (t, prox) => {
       drawCampFlame(flame, mx, fireY, ringScale, t, 1 + prox * 0.5);
@@ -399,7 +406,7 @@ function treehouse(L: EnvLayers, w: number, h: number, p: ThemePalette, g: EnvGe
   drawGlow(0, 0);
   return {
     worldWidth, spawnX: g.spawnX, exitX: g.exitX,
-    beacon: { x: g.beaconX, y: doorY, r: 130 },
+    beacon: { x: g.beaconX, y: doorY, r: 130 }, beaconMidX: doorX, tint: 0xffcf6e,
     animate: (t, prox) => {
       tree.rotation = Math.sin(t * 0.5) * 0.012; // gentle canopy sway
       drawGlow(t, prox);
@@ -478,7 +485,7 @@ function lighthouse(L: EnvLayers, w: number, h: number, p: ThemePalette, g: EnvG
   drawGlow(0, 0);
   return {
     worldWidth, spawnX: g.spawnX, exitX: g.exitX,
-    beacon: { x: g.beaconX, y: doorY, r: 130 },
+    beacon: { x: g.beaconX, y: doorY, r: 130 }, beaconMidX: doorX, tint: 0xffe79a,
     animate: (t, prox) => { beam.rotation = t * 1.4; drawGlow(t, prox); },
   };
 }
@@ -565,7 +572,7 @@ function artHut(L: EnvLayers, w: number, h: number, p: ThemePalette, g: EnvGeom)
   drawGlow(0, 0);
   return {
     worldWidth, spawnX: g.spawnX, exitX: g.exitX,
-    beacon: { x: g.beaconX, y: ey, r: 130 },
+    beacon: { x: g.beaconX, y: ey, r: 130 }, beaconMidX: ex, tint: hexNum(p.accent),
     animate: (t, prox) => { drawGlow(t, prox); },
   };
 }
@@ -640,7 +647,7 @@ function arcadeCove(L: EnvLayers, w: number, h: number, p: ThemePalette, g: EnvG
   draw(0, 0);
   return {
     worldWidth, spawnX: g.spawnX, exitX: g.exitX,
-    beacon: { x: g.beaconX, y: by, r: 130 },
+    beacon: { x: g.beaconX, y: by, r: 130 }, beaconMidX: bx, tint: 0x6affc0,
     animate: (t, prox) => { drawWaves(waves, farW, horizonY - 4, "#ffe0b0", t, 3, 10, 1.4); draw(t, prox); },
   };
 }
@@ -721,7 +728,7 @@ function welcomeDock(L: EnvLayers, w: number, h: number, p: ThemePalette, g: Env
   drawGlow(0, 0);
   return {
     worldWidth, spawnX: g.spawnX, exitX: g.exitX,
-    beacon: { x: g.beaconX, y: sy, r: 130 },
+    beacon: { x: g.beaconX, y: sy, r: 130 }, beaconMidX: sx, tint: 0xffe6a0,
     animate: (t, prox) => {
       drawWaves(waves, farW, horizonY - 4, "#dff4f7", t, 2, 7, 0.9);
       boat.rotation = Math.sin(t * 1.1) * 0.04; // gentle moored bob
@@ -791,7 +798,7 @@ function calmBeach(L: EnvLayers, w: number, h: number, p: ThemePalette, g: EnvGe
   drawGlow(0, 0);
   return {
     worldWidth, spawnX: g.spawnX, exitX: g.exitX,
-    beacon: { x: g.beaconX, y: circleY, r: 130 },
+    beacon: { x: g.beaconX, y: circleY, r: 130 }, beaconMidX: mx, tint: 0xbfe6ff,
     animate: (t, prox) => { drawWaves(waves, farW, horizonY - 4, "#eafaff", t, 2, 5, 0.6); drawGlow(t, prox); },
   };
 }
@@ -832,6 +839,8 @@ function generic(
     worldWidth,
     spawnX: g.spawnX,
     beacon: { x: g.beaconX, y: beaconY, r: 130 },
+    beaconMidX: mx,
+    tint: hexNum(p.accent),
     exitX: g.exitX,
     animate: (t, prox) => {
       glow.clear();

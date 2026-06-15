@@ -1,4 +1,4 @@
-import { Container, Graphics } from "pixi.js";
+import { Container, Graphics, Text } from "pixi.js";
 import type { AvatarConfig, ZoneKey, ThemePalette } from "../types";
 import { buildAvatarSprite, type AvatarSprite } from "./avatar";
 import { buildZoneEnv, PARALLAX, type EnvLayers, type ZoneEnv } from "./zoneEnv";
@@ -16,6 +16,11 @@ import { buildZoneEnv, PARALLAX, type EnvLayers, type ZoneEnv } from "./zoneEnv"
 
 /** Ground-plane walk speed (px/sec). */
 const WALK_SPEED = 320;
+/** How close (world-x) the character must be to the beacon to discover it. */
+const BEACON_REACH = 150;
+
+/** What a tap resolved to, so the renderer can fire the right callback. */
+export type ZoneTap = "move" | "exit" | "activity";
 
 export interface ZoneViewOptions {
   reducedMotion: boolean;
@@ -32,9 +37,15 @@ export class ZoneView {
   private ground = new Container();
   private beaconGlow = new Graphics();
   private charLayer = new Container();
+  /** Left-edge exit affordance (screen-fixed). */
+  private exitUI = new Container();
   /** Tap-feedback ripples (screen space, above everything). */
   private fx = new Container();
   private ripples: { g: Graphics; age: number }[] = [];
+  /** "You found it!" discovery overlay (screen-fixed, topmost). */
+  private overlayUI = new Container();
+  private overlayAge = 0;
+  private overlayActive = false;
 
   private env!: ZoneEnv;
   private zone: ZoneKey | null = null;
@@ -56,8 +67,12 @@ export class ZoneView {
 
   constructor(private opts: ZoneViewOptions) {
     // Back → front: sky, far silhouettes, mid landmark, ground strip, character,
-    // then tap-feedback FX on top of all of it.
-    this.container.addChild(this.sky, this.far, this.mid, this.ground, this.charLayer, this.fx);
+    // the left-edge exit, tap-feedback FX, then the discovery overlay on top.
+    this.container.addChild(
+      this.sky, this.far, this.mid, this.ground, this.charLayer,
+      this.exitUI, this.fx, this.overlayUI,
+    );
+    this.overlayUI.visible = false;
     this.container.visible = false;
   }
 
@@ -106,6 +121,12 @@ export class ZoneView {
       this.avatar.container.scale.set(this.charScale());
       this.charLayer.addChild(this.avatar.container);
     }
+
+    this.drawExitUI();
+    // Drop any overlay from a previous zone.
+    this.overlayUI.removeChildren().forEach((c) => c.destroy());
+    this.overlayUI.visible = false;
+    this.overlayActive = false;
 
     // Diagnostic: confirm the layers were actually populated. If any child
     // count is 0 (other than sky, which is a single Graphics), the env builder
@@ -162,22 +183,95 @@ export class ZoneView {
   }
 
   /**
-   * Handle a tap at screen (sx, sy): walk toward that point on the ground plane.
-   * Returns the kind of thing tapped so the renderer can react (beacon / exit
-   * interactions land in later milestones; M1 just walks).
+   * Resolve a tap at screen (sx, sy):
+   *  - lower-left exit affordance → "exit"
+   *  - the beacon while within reach → "activity" (shows "You found it!")
+   *  - the beacon while still far    → walk toward it ("move")
+   *  - anywhere else                 → walk toward that ground point ("move")
    */
-  handleTap(sx: number, sy: number): "move" {
+  handleTap(sx: number, sy: number): ZoneTap {
     this.spawnRipple(sx, sy);
-    const worldX = sx + this.camX; // ground plane scrolls 1:1 with the camera
+
+    // M5 exit: the path/arrow tucked into the lower-left corner.
+    if (sx < this.w * 0.13 && sy > this.h * 0.45) return "exit";
+
+    // M4 beacon: hit-test against the glow's live screen position.
+    const beaconScreenX = this.env.beaconMidX + this.mid.position.x;
+    const tappedBeacon = Math.hypot(sx - beaconScreenX, sy - this.env.beacon.y) < 100;
+    if (tappedBeacon) {
+      if (this.inBeaconReach()) {
+        this.showFound();
+        return "activity";
+      }
+      this.walkTo(this.env.beacon.x); // not there yet — walk over to it
+      return "move";
+    }
+
+    this.walkTo(sx + this.camX); // ground plane scrolls 1:1 with the camera
+    return "move";
+  }
+
+  /** True when the character is close enough to the beacon to discover it. */
+  private inBeaconReach(): boolean {
+    return Math.abs(this.charX - this.env.beacon.x) < BEACON_REACH;
+  }
+
+  private walkTo(worldX: number): void {
     const m = 50;
     this.targetX = Math.max(m, Math.min(this.env.worldWidth - m, worldX));
     this.moving = Math.abs(this.targetX - this.charX) > 1;
     if (this.moving) this.facing = this.targetX >= this.charX ? 1 : -1;
-    console.info(
-      `[island-scene] ZoneView.handleTap screen=(${sx.toFixed(0)},${sy.toFixed(0)}) ` +
-        `→ worldX=${worldX.toFixed(0)} target=${this.targetX.toFixed(0)} moving=${this.moving}`,
-    );
-    return "move";
+  }
+
+  /** Build the left-edge exit affordance: a glowing footpath + a back chevron. */
+  private drawExitUI(): void {
+    this.exitUI.removeChildren().forEach((c) => c.destroy());
+    const g = new Graphics();
+    const cy = this.h * 0.6;
+    // soft glowing path on the ground heading off the left edge
+    g.poly([0, this.h, this.w * 0.2, this.h, this.w * 0.11, this.h * 0.64, 0, this.h * 0.64])
+      .fill({ color: 0xfff3d0, alpha: 0.12 });
+    // rounded back tab hugging the edge
+    g.roundRect(-34, cy - 36, 70, 72, 18).fill({ color: 0x23201c, alpha: 0.55 }).stroke({ width: 3, color: 0xffffff, alpha: 0.9 });
+    g.moveTo(20, cy - 15).lineTo(2, cy).lineTo(20, cy + 15).stroke({ width: 6, color: 0xffffff, alpha: 0.95 });
+    this.exitUI.addChild(g);
+    const label = new Text({
+      text: "Exit",
+      style: { fontFamily: "system-ui, sans-serif", fontSize: 13, fontWeight: "800", fill: 0xffffff },
+    });
+    label.anchor.set(0.5, 0);
+    label.position.set(2, cy + 40);
+    this.exitUI.addChild(label);
+  }
+
+  /** Show the warm "You found it!" overlay (zone-tinted, fades after ~2s). */
+  private showFound(): void {
+    this.overlayUI.removeChildren().forEach((c) => c.destroy());
+    const fontSize = Math.max(26, Math.min(48, this.h * 0.062));
+    const text = new Text({
+      text: "You found it!",
+      style: {
+        fontFamily: '"Trebuchet MS", "Segoe UI", system-ui, sans-serif',
+        fontSize, fontWeight: "900", fill: 0xffffff,
+        stroke: { color: 0x23201c, width: 6 }, align: "center",
+      },
+    });
+    text.anchor.set(0.5);
+    const padX = 34, padY = 22;
+    const pw = text.width + padX * 2, ph = text.height + padY * 2;
+    const panel = new Graphics();
+    panel.roundRect(-pw / 2, -ph / 2, pw, ph, 22).fill({ color: this.env.tint, alpha: 0.92 }).stroke({ width: 5, color: 0x23201c });
+    panel.roundRect(-pw / 2 + 4, -ph / 2 + 4, pw - 8, ph * 0.4, 18).fill({ color: 0xffffff, alpha: 0.18 });
+    const spark = new Text({ text: "✨", style: { fontSize: fontSize * 0.9 } });
+    spark.anchor.set(0.5);
+    spark.position.set(0, -ph / 2 - 12);
+    this.overlayUI.addChild(panel, spark, text);
+    this.overlayUI.position.set(this.w / 2, this.h * 0.4);
+    this.overlayUI.alpha = 1;
+    this.overlayUI.visible = true;
+    this.overlayAge = 0;
+    this.overlayActive = true;
+    console.info(`[island-scene] discovery → "You found it!" (${this.zone})`);
   }
 
   /** A quick expanding ring at the tap point so taps are visibly registering. */
@@ -210,6 +304,9 @@ export class ZoneView {
     if (!this.zone || !this.container.visible) return;
     this.elapsed += dt;
     this.tickRipples(dt);
+    this.tickOverlay(dt);
+    // Gently breathe the exit affordance so it reads as interactive.
+    this.exitUI.alpha = this.opts.reducedMotion ? 1 : 0.8 + 0.2 * (0.5 + 0.5 * Math.sin(this.elapsed * 2.4));
 
     if (this.moving) {
       const dx = this.targetX - this.charX;
@@ -235,11 +332,29 @@ export class ZoneView {
     this.layout();
 
     // Beacon proximity (0 far → 1 at the beacon) drives the glow + flame pulse.
-    if (!this.opts.reducedMotion && this.env.animate) {
+    // Within reach it snaps near-full so the beacon visibly brightens to invite
+    // the discovery tap. Under reduced motion we still draw it once (lit).
+    if (this.env.animate) {
       const d = Math.abs(this.charX - this.env.beacon.x);
-      const prox = Math.max(0, 1 - d / (this.env.beacon.r * 2.4));
-      this.env.animate(this.elapsed, prox);
+      let prox = Math.max(0, 1 - d / (this.env.beacon.r * 2.4));
+      if (this.inBeaconReach()) prox = Math.max(prox, 0.9);
+      this.env.animate(this.opts.reducedMotion ? 0 : this.elapsed, prox);
     }
+  }
+
+  /** Hold then fade the "You found it!" overlay (~2s total), with a soft pop-in. */
+  private tickOverlay(dt: number): void {
+    if (!this.overlayActive) return;
+    this.overlayAge += dt;
+    const life = 2.0;
+    if (this.overlayAge >= life) {
+      this.overlayActive = false;
+      this.overlayUI.visible = false;
+      return;
+    }
+    this.overlayUI.alpha = this.overlayAge < 1.2 ? 1 : 1 - (this.overlayAge - 1.2) / 0.8;
+    const pop = this.opts.reducedMotion ? 1 : Math.min(1, this.overlayAge / 0.18);
+    this.overlayUI.scale.set(0.82 + 0.18 * pop);
   }
 
   /** Apply the parallax offsets + character placement for the current frame. */
