@@ -1,35 +1,5 @@
 {
   "placements": {
-    "lighthouse_point": {
-      "gridPosition": {
-        "x": 30,
-        "y": 4
-      },
-      "footprint": {
-        "w": 4,
-        "h": 4
-      }
-    },
-    "art_hut": {
-      "gridPosition": {
-        "x": 28,
-        "y": 25
-      },
-      "footprint": {
-        "w": 4,
-        "h": 4
-      }
-    },
-    "treehouse_hideaway": {
-      "gridPosition": {
-        "x": 8,
-        "y": 12
-      },
-      "footprint": {
-        "w": 5,
-        "h": 5
-      }
-    },
     "campfire_circle": {
       "gridPosition": {
         "x": 15,
@@ -37,16 +7,6 @@
       },
       "footprint": {
         "w": 4,
-        "h": 4
-      }
-    },
-    "arcade_cove": {
-      "gridPosition": {
-        "x": 38,
-        "y": 26
-      },
-      "footprint": {
-        "w": 5,
         "h": 4
       }
     },
@@ -67,6 +27,46 @@
       },
       "footprint": {
         "w": 6,
+        "h": 4
+      }
+    },
+    "art_hut": {
+      "gridPosition": {
+        "x": 28,
+        "y": 20
+      },
+      "footprint": {
+        "w": 4,
+        "h": 4
+      }
+    },
+    "arcade_cove": {
+      "gridPosition": {
+        "x": 42,
+        "y": 24
+      },
+      "footprint": {
+        "w": 5,
+        "h": 4
+      }
+    },
+    "treehouse_hideaway": {
+      "gridPosition": {
+        "x": 4,
+        "y": 20
+      },
+      "footprint": {
+        "w": 5,
+        "h": 5
+      }
+    },
+    "lighthouse_point": {
+      "gridPosition": {
+        "x": 26,
+        "y": 11
+      },
+      "footprint": {
+        "w": 4,
         "h": 4
       }
     }
