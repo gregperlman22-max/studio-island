@@ -1,0 +1,15 @@
+import sharp from 'sharp';
+const src = 'source/home-island-raw.png';
+const { data, info } = await sharp(src).raw().toBuffer({ resolveWithObject: true });
+const { width: W, height: H, channels: C } = info;
+console.log('size', W, H, 'channels', C);
+const at = (x,y) => { const i=(y*W+x)*C; return [data[i],data[i+1],data[i+2], C>3?data[i+3]:255]; };
+const fmt = p => p.map(v=>String(v).padStart(3)).join(',');
+const cy = Math.floor(H/2);
+console.log(`\n-- horizontal scan y=${cy} (every 48px) --`);
+for (let x=0; x<W; x+=48) console.log(`x=${String(x).padStart(4)}  ${fmt(at(x,cy))}`);
+const cx = Math.floor(W/2);
+console.log(`\n-- vertical scan x=${cx} (every 40px) --`);
+for (let y=0; y<H; y+=40) console.log(`y=${String(y).padStart(4)}  ${fmt(at(cx,y))}`);
+console.log('\n-- corners & edges --');
+for (const [x,y] of [[2,2],[W-3,2],[2,H-3],[W-3,H-3],[Math.floor(W/2),2],[Math.floor(W/2),H-3]]) console.log(`(${x},${y}) ${fmt(at(x,y))}`);
