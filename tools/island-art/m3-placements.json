@@ -1,0 +1,78 @@
+{
+  "placements": {
+    "campfire_circle": {
+      "gridPosition": {
+        "x": 24,
+        "y": 15
+      },
+      "footprint": {
+        "w": 4,
+        "h": 4
+      }
+    },
+    "lighthouse_point": {
+      "gridPosition": {
+        "x": 30,
+        "y": 4
+      },
+      "footprint": {
+        "w": 4,
+        "h": 4
+      }
+    },
+    "treehouse_hideaway": {
+      "gridPosition": {
+        "x": 14,
+        "y": 19
+      },
+      "footprint": {
+        "w": 5,
+        "h": 5
+      }
+    },
+    "arcade_cove": {
+      "gridPosition": {
+        "x": 38,
+        "y": 26
+      },
+      "footprint": {
+        "w": 5,
+        "h": 4
+      }
+    },
+    "art_hut": {
+      "gridPosition": {
+        "x": 18,
+        "y": 13
+      },
+      "footprint": {
+        "w": 4,
+        "h": 4
+      }
+    },
+    "calm_beach": {
+      "gridPosition": {
+        "x": 5,
+        "y": 31
+      },
+      "footprint": {
+        "w": 6,
+        "h": 4
+      }
+    },
+    "welcome_dock": {
+      "gridPosition": {
+        "x": 43,
+        "y": 37
+      },
+      "footprint": {
+        "w": 6,
+        "h": 4
+      }
+    }
+  },
+  "spawn": {
+    "x": 44,
+    "y": 33
+  }
+}
