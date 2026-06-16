@@ -1,21 +1,12 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 const reg=JSON.parse(readFileSync('m2-grid.json','utf8'));
+const cls=JSON.parse(readFileSync('m3-class.json','utf8'));
 const {GRID_W,GRID_H,ART_SCALE,SPRITE_WORLD_X,SPRITE_WORLD_Y,cells}=reg;
 const landSet=new Set(cells.map(c=>`${c.x},${c.y}`));
-
-// row-range encode landCells
-const rows=[];
-for(let y=0;y<GRID_H;y++){
-  const xs=[];for(let x=0;x<GRID_W;x++)if(landSet.has(`${x},${y}`))xs.push(x);
-  if(!xs.length)continue;
-  const ranges=[];let s=xs[0],p=xs[0];
-  for(let i=1;i<xs.length;i++){if(xs[i]===p+1){p=xs[i];}else{ranges.push([s,p]);s=p=xs[i];}}
-  ranges.push([s,p]);
-  rows.push([y,ranges]);
-}
-// picture frame anchor: a central land cell
-let cx=0,cy=0;for(const c of cells){cx+=c.x;cy+=c.y;}cx=Math.round(cx/cells.length);cy=Math.round(cy/cells.length);
-if(!landSet.has(`${cx},${cy}`)){outer:for(let r=1;r<6;r++)for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++)if(landSet.has(`${cx+dx},${cy+dy}`)){cx+=dx;cy+=dy;break outer;}}
+const at=(x,y)=>cls[`${x},${y}`];
+const land=(x,y)=>landSet.has(`${x},${y}`);
+const treeRock=(x,y)=>{const c=at(x,y);return c==='T'||c==='o';};
+const MIN_CLUSTER=3; // block tree/rock masses >= this many cells; smaller specks stay walkable
 
 const ZONES=[
   ['lighthouse_point','Lighthouse Point','Beacon Point',30,4,4,4],
@@ -28,7 +19,36 @@ const ZONES=[
 ];
 const SPAWN={x:44,y:33};
 
-const rowsLit=rows.map(([y,r])=>`  [${y}, [${r.map(([a,b])=>`[${a},${b}]`).join(', ')}]],`).join('\n');
+// ── obstacle cells: tree/rock masses, never under a zone (+halo) or the spawn ──
+const zoneHalo=new Set();
+for(const[,,,x,y,w,h]of ZONES)for(let dx=-1;dx<=w;dx++)for(let dy=-1;dy<=h;dy++)zoneHalo.add(`${x+dx},${y+dy}`);
+const candSet=new Set();
+for(const c of cells){if(!treeRock(c.x,c.y))continue;const k=`${c.x},${c.y}`;if(zoneHalo.has(k))continue;if(c.x===SPAWN.x&&c.y===SPAWN.y)continue;candSet.add(k);}
+const seen=new Set();const blocked=new Set();
+for(const k0 of candSet){if(seen.has(k0))continue;const[sx,sy]=k0.split(',').map(Number);const st=[[sx,sy]];seen.add(k0);const comp=[];
+  while(st.length){const[x,y]=st.pop();comp.push([x,y]);for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){if(!dx&&!dy)continue;const k=`${x+dx},${y+dy}`;if(candSet.has(k)&&!seen.has(k)){seen.add(k);st.push([x+dx,y+dy]);}}}
+  if(comp.length>=MIN_CLUSTER)for(const[x,y]of comp)blocked.add(`${x},${y}`);}
+
+// ── connectivity guard (mirror of SceneRenderer.buildGrid + pathfind) ──
+const zoneFoot=new Set();for(const[,,,x,y,w,h]of ZONES)for(let dx=0;dx<w;dx++)for(let dy=0;dy<h;dy++)zoneFoot.add(`${x+dx},${y+dy}`);
+const walkable=(x,y)=>land(x,y)&&!blocked.has(`${x},${y}`)&&!zoneFoot.has(`${x},${y}`);
+const nearestWalkable=(tx,ty,maxR=14)=>{if(walkable(tx,ty))return[tx,ty];for(let r=1;r<=maxR;r++)for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){if(Math.abs(dx)!==r&&Math.abs(dy)!==r)continue;if(walkable(tx+dx,ty+dy))return[tx+dx,ty+dy];}return null;};
+const bfs=(sx,sy)=>{const s=new Set([`${sx},${sy}`]);const q=[[sx,sy]];while(q.length){const[x,y]=q.shift();for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,ny=y+dy,k=`${nx},${ny}`;if(walkable(nx,ny)&&!s.has(k)){s.add(k);q.push([nx,ny]);}}}return s;};
+const reach=bfs(SPAWN.x,SPAWN.y);
+let allReach=true;
+for(const[key,,,x,y,w,h]of ZONES){const e=nearestWalkable(Math.floor(x+w/2),Math.floor(y+h/2));const ok=e&&reach.has(`${e[0]},${e[1]}`);if(!ok){allReach=false;console.error(`UNREACHABLE: ${key}`);}}
+const df=nearestWalkable(46,40);if(!(df&&reach.has(`${df[0]},${df[1]}`))){allReach=false;console.error('UNREACHABLE: dock_front');}
+if(!allReach)throw new Error('connectivity check failed — adjust MIN_CLUSTER/blocking');
+
+// row-range encoder
+const enc=(set)=>{const rows=[];for(let y=0;y<GRID_H;y++){const xs=[];for(let x=0;x<GRID_W;x++)if(set.has(`${x},${y}`))xs.push(x);if(!xs.length)continue;const r=[];let s=xs[0],p=xs[0];for(let i=1;i<xs.length;i++){if(xs[i]===p+1)p=xs[i];else{r.push([s,p]);s=p=xs[i];}}r.push([s,p]);rows.push([y,r]);}return rows;};
+const landRows=enc(landSet);
+const obsRows=enc(blocked);
+
+let cx=0,cy=0;for(const c of cells){cx+=c.x;cy+=c.y;}cx=Math.round(cx/cells.length);cy=Math.round(cy/cells.length);
+if(!landSet.has(`${cx},${cy}`)){outer:for(let r=1;r<6;r++)for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++)if(landSet.has(`${cx+dx},${cy+dy}`)){cx+=dx;cy+=dy;break outer;}}
+
+const fmtRows=(rows)=>rows.map(([y,r])=>`  [${y}, [${r.map(([a,b])=>`[${a},${b}]`).join(', ')}]],`).join('\n');
 const zonesLit=ZONES.map(([k,dn,sn,x,y,w,h])=>`  { key: "${k}", displayName: "${dn}", skinName: "${sn}", gridPosition: { x: ${x}, y: ${y} }, footprint: { w: ${w}, h: ${h} }, unlocked: true },`).join('\n');
 
 const out=`import type { GridPosition, LayoutConfig, ZoneInstance } from "./types";
@@ -40,26 +60,42 @@ const out=`import type { GridPosition, LayoutConfig, ZoneInstance } from "./type
  * registration math: grid cell (gx,gy) projects to world pixels via iso.ts,
  * and the art sprite is pinned with the same ART_SCALE + world origin so the
  * invisible walk-grid lines up with the painted coastline.
+ *
+ * Generated by tools/island-art/gen-layout.mjs — do not hand-edit the LAND_ROWS
+ * / OBSTACLE_ROWS tables.
  */
 
 const GRID_W = ${GRID_W};
 const GRID_H = ${GRID_H};
 
-// Land footprint as per-row inclusive x-ranges, derived by sampling the painted
-// island's opacity through the iso projection (tools/island-art/derive-grid.mjs).
-const LAND_ROWS: Array<[number, Array<[number, number]>]> = [
-${rowsLit}
-];
-
-const landCells: GridPosition[] = (() => {
-  const cells: GridPosition[] = [];
-  for (const [y, ranges] of LAND_ROWS) {
+// Per-row inclusive x-ranges, expanded into cell lists below.
+const expand = (rows: Array<[number, Array<[number, number]>]>): GridPosition[] => {
+  const out: GridPosition[] = [];
+  for (const [y, ranges] of rows) {
     for (const [x0, x1] of ranges) {
-      for (let x = x0; x <= x1; x++) cells.push({ x, y });
+      for (let x = x0; x <= x1; x++) out.push({ x, y });
     }
   }
-  return cells;
-})();
+  return out;
+};
+
+// Land footprint, derived by sampling the painted island's opacity through the
+// iso projection (tools/island-art/derive-grid.mjs).
+const LAND_ROWS: Array<[number, Array<[number, number]>]> = [
+${fmtRows(landRows)}
+];
+
+// Tree/rock masses to keep the avatar OUT of — derived from the art's painted
+// foliage/boulders (classifier in tools/island-art). Only clusters of >= ${MIN_CLUSTER}
+// cells are blocked, so big tree masses and boulders are impassable while small
+// scattered bushes/pebbles stay walkable. Verified: spawn still connects to all
+// seven zones and the dock approach.
+const OBSTACLE_ROWS: Array<[number, Array<[number, number]>]> = [
+${fmtRows(obsRows)}
+];
+
+const landCells: GridPosition[] = expand(LAND_ROWS);
+const obstacleCells: GridPosition[] = expand(OBSTACLE_ROWS);
 
 // Seven landmark zones, snapped onto open clearings in the illustration.
 export const sampleZones: ZoneInstance[] = [
@@ -73,6 +109,7 @@ const spawnPoint: GridPosition = { x: ${SPAWN.x}, y: ${SPAWN.y} };
 export const sampleLayout: LayoutConfig = {
   grid: { w: GRID_W, h: GRID_H },
   landCells,
+  obstacleCells,
   spawnPoint,
   // Reserved invisible anchor (future picture-frame video dock).
   pictureFrameAnchor: { x: ${cx}, y: ${cy} },
@@ -88,5 +125,5 @@ export const sampleLayout: LayoutConfig = {
 };
 `;
 writeFileSync('../../packages/island-scene/src/defaultLayout.ts', out);
-console.log(`wrote defaultLayout.ts: ${cells.length} land cells, ${rows.length} rows, pictureFrameAnchor (${cx},${cy})`);
-console.log(`registration: ART_SCALE=${ART_SCALE} origin=(${SPRITE_WORLD_X},${SPRITE_WORLD_Y})`);
+let walk=0;for(const c of cells)if(walkable(c.x,c.y))walk++;
+console.log(`wrote defaultLayout.ts: ${cells.length} land, ${blocked.size} blocked, ${walk} walkable; connectivity OK`);

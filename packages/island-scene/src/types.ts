@@ -114,6 +114,14 @@ export interface LayoutConfig {
   grid: { w: number; h: number };
   /** Island silhouette as a list of grid cells that are land (vs water). */
   landCells: GridPosition[];
+  /**
+   * Land cells the avatar cannot stand on or walk through — e.g. tree masses
+   * and boulders painted into the terrain illustration. Treated like water by
+   * pathfinding (the avatar routes around them), but they remain part of the
+   * island silhouette. Small scattered foliage is intentionally omitted so
+   * movement isn't chopped into narrow lanes.
+   */
+  obstacleCells?: GridPosition[];
   /** Decoration placements the renderer should honor (trees, rocks, etc.). */
   decorations?: DecorationPlacement[];
   /**

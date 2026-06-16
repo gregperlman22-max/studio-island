@@ -607,6 +607,10 @@ export class SceneRenderer {
   private buildGrid(): void {
     const land = new Set(this.layout.landCells.map((c) => `${c.x},${c.y}`));
     const blocked = new Set<string>();
+    // Painted tree/rock masses: impassable, so the avatar walks around them.
+    for (const o of this.layout.obstacleCells ?? []) {
+      blocked.add(`${o.x},${o.y}`);
+    }
     for (const d of this.layout.decorations ?? []) {
       blocked.add(`${d.position.x},${d.position.y}`);
     }
