@@ -40,9 +40,7 @@ const art=place("art_hut",4,4, snap(31,21,4,4,openGround,8));
 const arc=place('arcade_cove',5,4, snap(44,25,5,4,openGround,9));
 const tree5=place('treehouse_hideaway',5,5, snap(10,19,5,5,forestPocket,8));
 // lighthouse: upper-right INLAND grass clearing (gy in 5..12), else keep coastal point
-const lhValid=(gx,gy,w,h)=>gy>=9&&gy<=15&&gx>=22&&grassClearing(gx,gy,w,h);
-let lh=snap(28,7,4,4,lhValid,12),lhFallback=false;
-if(!lh){lh={x:30,y:4};lhFallback=true;}
+const lh={x:30,y:4}; // original coastal headland (approved)
 place('lighthouse_point',4,4,lh);
 
 const spawn={x:44,y:33};
@@ -50,7 +48,6 @@ const order=['lighthouse_point','treehouse_hideaway','art_hut','campfire_circle'
 console.log('=== placements ===');
 for(const k of order){const v=P[k];if(!v){console.log(`${k} -> NONE`);continue;}const{x,y}=v.gridPosition,{w,h}=v.footprint;
   console.log(`${k.padEnd(20)} pos=(${x},${y}) ${w}x${h} center=(${(x+(w-1)/2).toFixed(1)},${(y+(h-1)/2).toFixed(1)}) grass=${gN(x,y,w,h)} trees=${tN(x,y,w,h)} rock=${rN(x,y,w,h)}`);}
-console.log('lighthouse fallback?',lhFallback);
 let mind=1e9,mp='';const cen=k=>({x:P[k].gridPosition.x+P[k].footprint.w/2,y:P[k].gridPosition.y+P[k].footprint.h/2});
 for(let i=0;i<order.length;i++)for(let j=i+1;j<order.length;j++){const a=cen(order[i]),b=cen(order[j]);const d=Math.hypot(a.x-b.x,a.y-b.y);if(d<mind){mind=d;mp=`${order[i]}<->${order[j]}`;}}
 console.log(`closest pair: ${mp} = ${mind.toFixed(1)}`);

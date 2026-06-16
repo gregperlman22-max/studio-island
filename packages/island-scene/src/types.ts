@@ -124,6 +124,20 @@ export interface LayoutConfig {
   pictureFrameAnchor?: GridPosition;
   /** Avatar spawn point when no position is supplied. */
   spawnPoint: GridPosition;
+  /**
+   * Optional finished terrain illustration. When present, the renderer pins
+   * this image into the world as the ground sprite (replacing the procedural
+   * terrain blob) and skips drawing the code terrain layers. The art is placed
+   * so that art-pixel (0,0) lands at world pixel (originX, originY) and one art
+   * pixel spans `scale` world pixels — the same registration used to derive
+   * `landCells`, so the painted coastline lines up with the walk-grid.
+   */
+  terrainImage?: {
+    url: string;
+    originX: number;
+    originY: number;
+    scale: number;
+  };
 }
 
 export interface DecorationPlacement {

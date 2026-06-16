@@ -1,11 +1,13 @@
 import {
   Application,
+  Assets,
   Container,
   type FederatedPointerEvent,
   Graphics,
   Rectangle,
   Sprite,
   Text,
+  type Texture,
   type Ticker,
 } from "pixi.js";
 import type {
@@ -106,6 +108,9 @@ export class SceneRenderer {
   private shimmer = new Graphics();
   /** Camera-panned world (Mode 1 — world map). */
   private world = new Container();
+  /** Finished illustrated ground sprite (replaces the procedural terrain when
+   *  layout.terrainImage is set); pinned into world space via the registration. */
+  private ground?: Sprite;
   /** Smooth island blob (base fill + cliff + bold coast outline). */
   private terrain = new Graphics();
   /** Per-tile biome coloring, masked to the smooth coastline. */
@@ -271,6 +276,8 @@ export class SceneRenderer {
     this.textures = new ProgrammaticTextureProvider(this.app.renderer);
     this.textures.refresh(theme.palette);
     this.opts.onLoadProgress?.(0.6);
+
+    await this.loadGround();
 
     this.rebuild();
     this.drawFadeRect();
@@ -648,9 +655,51 @@ export class SceneRenderer {
     this.sky.ellipse(w / 2, h / 2, vig * 0.62, vig * 0.62).fill({ color: 0xffd98a, alpha: 0.05 });
   }
 
+  /** Load the finished terrain illustration and pin it into the world. */
+  private async loadGround(): Promise<void> {
+    const img = this.layout.terrainImage;
+    if (!img) return;
+    let tex: Texture;
+    try {
+      tex = (await Assets.load(img.url)) as Texture;
+    } catch (err) {
+      // Fall back to the procedural terrain if the art fails to load.
+      console.warn("[island-scene] terrainImage failed to load; using code terrain", err);
+      return;
+    }
+    if (this.destroyed) return;
+    const spr = new Sprite(tex);
+    spr.anchor.set(0, 0);
+    spr.eventMode = "none";
+    this.ground = spr;
+    // Sits at the very bottom of the world so props/avatars draw on top.
+    this.world.addChildAt(spr, 0);
+    this.positionGround();
+  }
+
+  /** Pin the ground sprite so art-pixel (0,0) → world (originX, originY). */
+  private positionGround(): void {
+    const img = this.layout.terrainImage;
+    if (!this.ground || !img) return;
+    this.ground.position.set(img.originX, img.originY);
+    this.ground.scale.set(img.scale);
+  }
+
   private drawTerrain(): void {
     const { palette } = this.theme;
     const grid = this.layout.grid;
+
+    // Finished illustration in use: it IS the ground. Skip the procedural
+    // terrain/biome/coast layers entirely (and the painted waves, which key off
+    // coastLoop) — the engine still renders its animated sky/sea backdrop.
+    if (this.layout.terrainImage && this.ground) {
+      this.terrain.clear();
+      this.biomeLayer.clear();
+      this.landMask.clear();
+      this.coastLoop = [];
+      this.positionGround();
+      return;
+    }
 
     // The island as one smooth organic blob (no grid steps at the coast).
     this.coastLoop = islandOutline(this.layout.landCells);
