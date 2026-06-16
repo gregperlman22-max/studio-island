@@ -12,8 +12,8 @@
     },
     "art_hut": {
       "gridPosition": {
-        "x": 24,
-        "y": 15
+        "x": 28,
+        "y": 25
       },
       "footprint": {
         "w": 4,
@@ -32,8 +32,8 @@
     },
     "campfire_circle": {
       "gridPosition": {
-        "x": 28,
-        "y": 25
+        "x": 15,
+        "y": 21
       },
       "footprint": {
         "w": 4,

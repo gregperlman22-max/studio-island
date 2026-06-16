@@ -15,9 +15,9 @@ const landN=(gx,gy,w,h)=>{let n=0;for(let dx=0;dx<w;dx++)for(let dy=0;dy<h;dy++)
 // the two coastal features intentionally overhang the waterline).
 const placements = {
   lighthouse_point:   { gridPosition:{x:30,y:4},  footprint:{w:4,h:4} }, // top point
-  art_hut:            { gridPosition:{x:24,y:15}, footprint:{w:4,h:4} }, // upper-center clearing
+  art_hut:            { gridPosition:{x:28,y:25}, footprint:{w:4,h:4} }, // center of the island (old campfire spot)
   treehouse_hideaway: { gridPosition:{x:8,y:12}, footprint:{w:5,h:5} }, // tucked in the dense top-left forest canopy
-  campfire_circle:    { gridPosition:{x:28,y:25}, footprint:{w:4,h:4} }, // lower-center meadow hub
+  campfire_circle:    { gridPosition:{x:15,y:21}, footprint:{w:4,h:4} }, // left-center clearing
   arcade_cove:        { gridPosition:{x:38,y:26}, footprint:{w:5,h:4} }, // lower-right cove
   calm_beach:         { gridPosition:{x:5,y:31},  footprint:{w:6,h:4} }, // west shore
   welcome_dock:       { gridPosition:{x:43,y:37}, footprint:{w:6,h:4} }, // front prow
