@@ -114,6 +114,14 @@ export interface LayoutConfig {
   grid: { w: number; h: number };
   /** Island silhouette as a list of grid cells that are land (vs water). */
   landCells: GridPosition[];
+  /**
+   * Land cells the avatar cannot stand on or walk through — e.g. tree masses
+   * and boulders painted into the terrain illustration. Treated like water by
+   * pathfinding (the avatar routes around them), but they remain part of the
+   * island silhouette. Small scattered foliage is intentionally omitted so
+   * movement isn't chopped into narrow lanes.
+   */
+  obstacleCells?: GridPosition[];
   /** Decoration placements the renderer should honor (trees, rocks, etc.). */
   decorations?: DecorationPlacement[];
   /**
@@ -124,6 +132,20 @@ export interface LayoutConfig {
   pictureFrameAnchor?: GridPosition;
   /** Avatar spawn point when no position is supplied. */
   spawnPoint: GridPosition;
+  /**
+   * Optional finished terrain illustration. When present, the renderer pins
+   * this image into the world as the ground sprite (replacing the procedural
+   * terrain blob) and skips drawing the code terrain layers. The art is placed
+   * so that art-pixel (0,0) lands at world pixel (originX, originY) and one art
+   * pixel spans `scale` world pixels — the same registration used to derive
+   * `landCells`, so the painted coastline lines up with the walk-grid.
+   */
+  terrainImage?: {
+    url: string;
+    originX: number;
+    originY: number;
+    scale: number;
+  };
 }
 
 export interface DecorationPlacement {
