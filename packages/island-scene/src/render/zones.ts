@@ -63,6 +63,18 @@ export function buildZoneScene(
 
   // Gentle per-zone idle details (all disabled under reduced motion upstream).
   const fxFns: ((t: number) => void)[] = [];
+
+  // Soft beacon glow at the base of every zone — a slow, warm invitation to
+  // tap. Never blinks; phase-offset per zone so the island doesn't pulse in
+  // unison. (Under reduced motion the fx never runs, leaving a faint static
+  // glow.)
+  const beacon = new Graphics();
+  beacon.ellipse(0, gh * 0.22, gw * 0.78, gh * 0.6).fill({ color: 0xfff0bf, alpha: 0.2 });
+  beacon.ellipse(0, gh * 0.22, gw * 0.46, gh * 0.36).fill({ color: 0xfff7e0, alpha: 0.2 });
+  art.addChildAt(beacon, 1); // above the ground patch, below the structure
+  const beaconPhase = [...zone.key].reduce((a, c) => a + c.charCodeAt(0), 0) % 7;
+  fxFns.push((t) => { beacon.alpha = 0.55 + 0.45 * Math.sin(t * 0.7 + beaconPhase); });
+
   switch (zone.key) {
     case "lighthouse_point": {
       // Rotating soft light cone with a brighter core (a real beam sweep).
@@ -71,7 +83,8 @@ export function buildZoneScene(
       cone.poly([0, 0, 136, -12, 136, 12]).fill({ color: 0xffffff, alpha: 0.4 });
       cone.position.set(0, -86 * s);
       art.addChild(cone);
-      fxFns.push((t) => { cone.rotation = t * 1.7; });
+      // Slow, calm sweep — about one rotation every ~13 seconds.
+      fxFns.push((t) => { cone.rotation = t * 0.48; });
       break;
     }
     case "treehouse_hideaway":
@@ -86,14 +99,18 @@ export function buildZoneScene(
       pal.circle(1.5, 0.5, 1).fill(0x4aa6c9);
       const px = -23 * s, py = -22 * s;
       art.addChild(pal);
-      fxFns.push((t) => { pal.position.set(px, py + Math.sin(t * 2.2) * 3); });
+      fxFns.push((t) => { pal.position.set(px, py + Math.sin(t * 1.2) * 2.5); });
       break;
     }
     case "arcade_cove": {
       const l1 = new Graphics(); l1.circle(0, 0, 2.6).fill(0xfff1a8); l1.position.set(-9.5 * s, -26 * s);
       const l2 = new Graphics(); l2.circle(0, 0, 2.6).fill(0x9be7ff); l2.position.set(9.5 * s, -26 * s);
       art.addChild(l1, l2);
-      fxFns.push((t) => { l1.alpha = Math.sin(t * 6) > 0 ? 1 : 0.25; l2.alpha = Math.sin(t * 6 + 1.6) > 0 ? 1 : 0.25; });
+      // Soft cross-fading glow (no hard blink/flash — soothing space for kids).
+      fxFns.push((t) => {
+        l1.alpha = 0.55 + 0.35 * Math.sin(t * 1.1);
+        l2.alpha = 0.55 + 0.35 * Math.sin(t * 1.1 + 1.8);
+      });
       break;
     }
     case "welcome_dock": {
@@ -101,7 +118,24 @@ export function buildZoneScene(
       glow.circle(0, 0, 7).fill({ color: 0xfff1a8, alpha: 0.9 });
       glow.position.set(-19.5 * s, -20 * s);
       art.addChild(glow);
-      fxFns.push((t) => { glow.alpha = 0.35 + 0.5 * (0.5 + 0.5 * Math.sin(t * 5)); });
+      // Slow lantern breathing (was a fast pulse).
+      fxFns.push((t) => { glow.alpha = 0.4 + 0.35 * (0.5 + 0.5 * Math.sin(t * 1.2)); });
+
+      // A little moored rowboat just off the dock front, bobbing on the swell.
+      const boat = new Graphics();
+      boat.ellipse(0, 5, 12, 3.5).fill({ color: 0x000000, alpha: 0.14 });   // water shadow
+      boat.poly([-12, 0, 12, 0, 9, 8, -9, 8]).fill(0xb5763f).stroke({ width: 2.5, color: INK });
+      boat.roundRect(-11, -2, 22, 3.5, 1.5).fill(0xcf9457).stroke({ width: 2.5, color: INK });
+      boat.moveTo(0, -2).lineTo(0, -17).stroke({ width: 2.5, color: INK });   // mast
+      boat.poly([0, -17, 0, -4, 10, -8]).fill(0xfff1f0).stroke({ width: 2.5, color: INK }); // sail
+      boat.scale.set(1.5);
+      const boatY = halfH + 10;
+      boat.position.set(2, boatY);
+      art.addChild(boat);
+      fxFns.push((t) => {
+        boat.position.y = boatY + Math.sin(t * 1.1) * 1.8;
+        boat.rotation = Math.sin(t * 1.1 + 0.6) * 0.045;
+      });
       break;
     }
     case "calm_beach":

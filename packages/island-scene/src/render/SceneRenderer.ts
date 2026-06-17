@@ -40,6 +40,8 @@ import { ZoneView } from "./ZoneView";
 
 /** Walk speed in grid tiles per second. */
 const WALK_SPEED = 4.5;
+/** Duration (seconds) of a gentle idle hop. */
+const HOP_DUR = 0.5;
 /** Bold cel outline color, matching the Wind Waker art register. */
 const INK = 0x23201c;
 /** Avatar art scale — chunky + readable relative to the tiles. */
@@ -70,6 +72,11 @@ interface AvatarView {
   moving: boolean;
   phase: number;
   onArrive?: () => void;
+  /** Idle-hop state (local avatar only): time since last hop, when the next
+   *  hop is due, and the remaining hop animation time. */
+  idleClock: number;
+  nextHopAt: number;
+  hopT: number;
 }
 
 export interface RendererCallbacks {
@@ -565,12 +572,15 @@ export class SceneRenderer {
     this.flame.clear();
     if (!this.flamePos) return;
     const t = this.elapsed / 1000;
-    // More energetic flicker: faster sway + a quick secondary tremble.
-    const sway = Math.sin(t * 9) * 2.4 + Math.sin(t * 21) * 1.0;
-    const grow = 1 + 0.28 * Math.sin(t * 13 + 1) + 0.08 * Math.sin(t * 31);
+    // Gentle, unhurried flicker: slow primary sway + a small soft tremble.
+    const sway = Math.sin(t * 3.2) * 1.6 + Math.sin(t * 6.5) * 0.6;
+    const grow = 1 + 0.12 * Math.sin(t * 2.4 + 1) + 0.05 * Math.sin(t * 5.5);
     const bx = this.flamePos.x;
     const by = this.flamePos.y - 4;
     const H = 27 * grow; // cozy campfire, ~40% of the old bonfire
+    // Soft warm glow pulse pooling around the base (drawn first, behind flame).
+    const gp = 0.5 + 0.5 * Math.sin(t * 1.2);
+    this.flame.ellipse(bx, by - 4, 18 + gp * 4, 11 + gp * 2).fill({ color: 0xffb24d, alpha: 0.08 + 0.05 * gp });
     // outer → mid → inner, bold outline on the outer flame.
     this.flame.poly([bx, by - H, bx + 7, by - 6, bx + sway, by, bx - 7, by - 6])
       .fill(0xff7a2d).stroke({ width: 2.5, color: INK });
@@ -697,13 +707,15 @@ export class SceneRenderer {
     const grid = this.layout.grid;
 
     // Finished illustration in use: it IS the ground. Skip the procedural
-    // terrain/biome/coast layers entirely (and the painted waves, which key off
-    // coastLoop) — the engine still renders its animated sky/sea backdrop.
+    // terrain/biome layers entirely — the engine still renders its animated
+    // sky/sea backdrop. We DO keep a coast loop (derived from the same grid the
+    // art was registered to) purely so drawWaves can lap a soft water shimmer
+    // just off the painted shore.
     if (this.layout.terrainImage && this.ground) {
       this.terrain.clear();
       this.biomeLayer.clear();
       this.landMask.clear();
-      this.coastLoop = [];
+      this.coastLoop = islandOutline(this.layout.landCells);
       this.positionGround();
       return;
     }
@@ -794,6 +806,19 @@ export class SceneRenderer {
     const loop = this.coastLoop;
     if (loop.length < 4) return;
     const { palette } = this.theme;
+
+    // Painted island: a single, very soft shimmer just OUTSIDE the painted
+    // shore (in the water), gently breathing. Subtle so it never competes with
+    // the illustration's own warm foam ring.
+    if (this.layout.terrainImage) {
+      const off = insetLoop(loop, -0.03); // ~3% outward, into the sea
+      const a = 0.08 + 0.05 * (0.5 + 0.5 * Math.sin(this.elapsed / 1300));
+      this.waves.poly(flatten(off)).stroke({ width: 3, color: hexNum(palette.waterShimmer), alpha: a });
+      const a2 = 0.05 + 0.04 * (0.5 + 0.5 * Math.sin(this.elapsed / 1300 + 1.6));
+      this.waves.poly(flatten(insetLoop(loop, -0.06))).stroke({ width: 2, color: hexNum(palette.waterShimmer), alpha: a2 });
+      return;
+    }
+
     const a = 0.3 + 0.25 * (0.5 + 0.5 * Math.sin(this.elapsed / 700));
     this.waves.poly(flatten(loop)).stroke({ width: 5, color: hexNum(palette.waterShimmer), alpha: a });
     const a2 = 0.2 + 0.18 * (0.5 + 0.5 * Math.sin(this.elapsed / 700 + 1.4));
@@ -951,6 +976,9 @@ export class SceneRenderer {
       pathIndex: 0,
       moving: false,
       phase: Math.random() * Math.PI * 2,
+      idleClock: 0,
+      nextHopAt: 4 + Math.random() * 5,
+      hopT: 0,
     };
   }
 
@@ -964,12 +992,16 @@ export class SceneRenderer {
     view.onArrive = onArrive;
   }
 
-  /** Position an avatar container at its current cell with a soft bob. */
+  /** Position an avatar container at its current cell with a soft bob, plus an
+   *  occasional gentle idle hop (local avatar only). */
   private placeAvatar(view: AvatarView): void {
     const c = tileCenter(view.pos.x, view.pos.y);
     const amp = this.opts.reducedMotion ? 0 : view.moving ? 2.6 : 1.1;
     const bob = Math.abs(Math.sin(view.phase)) * amp;
-    view.container.position.set(c.x, c.y - bob);
+    // Hop arc: a soft half-sine, ~7px peak, over HOP_DUR seconds.
+    const hop =
+      view.hopT > 0 ? Math.sin((1 - view.hopT / HOP_DUR) * Math.PI) * 7 : 0;
+    view.container.position.set(c.x, c.y - bob - hop);
     view.container.zIndex = depth(view.pos.x, view.pos.y) + 0.3;
   }
 
@@ -1379,6 +1411,24 @@ export class SceneRenderer {
     }
     // Advance the bob phase (faster cadence while walking).
     view.phase += dt * (view.moving ? 11 : 2.2);
+
+    // Occasional gentle idle hop — local avatar only, frozen under reduced
+    // motion. Never while walking, so it can't disturb pathing.
+    if (view.isLocal && !this.opts.reducedMotion) {
+      if (view.hopT > 0) {
+        view.hopT = Math.max(0, view.hopT - dt);
+      } else if (!view.moving) {
+        view.idleClock += dt;
+        if (view.idleClock >= view.nextHopAt) {
+          view.hopT = HOP_DUR;
+          view.idleClock = 0;
+          view.nextHopAt = 5 + Math.random() * 6; // 5–11s between hops
+        }
+      } else {
+        view.idleClock = 0;
+      }
+    }
+
     this.placeAvatar(view);
   }
 
