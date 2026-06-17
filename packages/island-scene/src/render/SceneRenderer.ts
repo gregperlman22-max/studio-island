@@ -371,7 +371,10 @@ export class SceneRenderer {
     if (!view) return;
     const goal = this.grid.walkable(position.x, position.y)
       ? position
-      : nearestWalkable(this.grid, position);
+      : nearestWalkable(this.grid, position, 12, {
+          x: Math.round(view.pos.x),
+          y: Math.round(view.pos.y),
+        });
     if (goal) {
       this.followEnabled = true;
       this.walkView(view, goal, () =>
@@ -980,7 +983,12 @@ export class SceneRenderer {
       x: Math.floor(zone.gridPosition.x + zone.footprint.w / 2),
       y: Math.floor(zone.gridPosition.y + zone.footprint.h / 2),
     };
-    const entrance = nearestWalkable(this.grid, center);
+    const entrance = nearestWalkable(
+      this.grid,
+      center,
+      12,
+      local ? { x: Math.round(local.pos.x), y: Math.round(local.pos.y) } : undefined,
+    );
     if (local && entrance) {
       this.walkView(local, entrance, () => this.opts.onZoneTap?.(zone.key));
     } else {

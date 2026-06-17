@@ -114,7 +114,6 @@ const OBSTACLE_ROWS: Array<[number, Array<[number, number]>]> = [
 ];
 
 const landCells: GridPosition[] = expand(LAND_ROWS);
-const obstacleCells: GridPosition[] = expand(OBSTACLE_ROWS);
 
 // Seven landmark zones, snapped onto open clearings in the illustration.
 export const sampleZones: ZoneInstance[] = [
@@ -130,6 +129,65 @@ export const sampleZones: ZoneInstance[] = [
 // Spawn just inland (up-screen) of the welcome dock — the arrival sequence
 // drops the avatar here after the boat pulls up.
 const spawnPoint: GridPosition = { x: 44, y: 33 };
+
+// Obstacle set = the painted tree/rock masses, with their frayed edges shaved.
+// The classifier dilates each mass slightly, leaving thin 1-cell tendrils that
+// poke into clearings and make the avatar detour around invisible padding. We
+// drop any obstacle cell with >= 3 walkable orthogonal neighbours: such a cell
+// is a protrusion spike (obstacle on at most one orthogonal side), so removing
+// it tightens the boundary to the painted foliage without ever exposing a mass
+// interior. The single pass is evaluated against the raw set so it cannot
+// cascade inward and erode a mass body — big clusters stay fully blocked, and
+// the avatar never appears to walk over a painted boulder, tree, or structure.
+const obstacleCells: GridPosition[] = (() => {
+  const raw = expand(OBSTACLE_ROWS);
+  const landSet = new Set(landCells.map((c) => `${c.x},${c.y}`));
+  const rawSet = new Set(raw.map((c) => `${c.x},${c.y}`));
+  const zoneSet = new Set<string>();
+  for (const z of sampleZones) {
+    for (let dx = 0; dx < z.footprint.w; dx++) {
+      for (let dy = 0; dy < z.footprint.h; dy++) {
+        zoneSet.add(`${z.gridPosition.x + dx},${z.gridPosition.y + dy}`);
+      }
+    }
+  }
+  const isOpen = (x: number, y: number) =>
+    landSet.has(`${x},${y}`) && !rawSet.has(`${x},${y}`) && !zoneSet.has(`${x},${y}`);
+  const shaved = raw.filter((c) => {
+    let open = 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      if (isOpen(c.x + dx, c.y + dy)) open++;
+    }
+    return open < 3; // keep mass bodies/edges; shave the frayed protrusion tips
+  });
+  // Shaving a tendril can leave a lone cell behind; drop tiny (<= 2 cell)
+  // components so no isolated block sits in a clearing. Real masses are far
+  // larger and are untouched.
+  const shavedSet = new Set(shaved.map((c) => `${c.x},${c.y}`));
+  const seen = new Set<string>();
+  const N8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] as const;
+  const keep: GridPosition[] = [];
+  for (const c of shaved) {
+    const k0 = `${c.x},${c.y}`;
+    if (seen.has(k0)) continue;
+    const comp: GridPosition[] = [];
+    const stack = [c];
+    seen.add(k0);
+    while (stack.length) {
+      const p = stack.pop()!;
+      comp.push(p);
+      for (const [dx, dy] of N8) {
+        const k = `${p.x + dx},${p.y + dy}`;
+        if (shavedSet.has(k) && !seen.has(k)) {
+          seen.add(k);
+          stack.push({ x: p.x + dx, y: p.y + dy });
+        }
+      }
+    }
+    if (comp.length > 2) keep.push(...comp);
+  }
+  return keep;
+})();
 
 export const sampleLayout: LayoutConfig = {
   grid: { w: GRID_W, h: GRID_H },
