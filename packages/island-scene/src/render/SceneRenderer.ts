@@ -136,6 +136,10 @@ export class SceneRenderer {
   }[] = [];
   /** Mode 2 — third-person zone view (parallax, screen space). */
   private zoneView!: ZoneView;
+  /** Zone name labels — SCREEN space, clamped into the viewport so a tall
+   *  landmark can never push its label off-screen or sit in front of it. */
+  private zoneLabels = new Container();
+  private zoneLabelItems: { text: Text; zone: ZoneInstance }[] = [];
   /** Optional flash overlay kept for reduced-motion / safety (screen space). */
   private fade = new Graphics();
 
@@ -253,7 +257,8 @@ export class SceneRenderer {
     // The zone view sits BELOW the world map so the enter transition can fade
     // the (tilting) world out to reveal the parallax beneath, and the exit
     // transition can fade the world back in over it.
-    this.app.stage.addChild(this.backdrop, this.zoneView.container, this.world, this.fade);
+    this.app.stage.addChild(this.backdrop, this.zoneView.container, this.world, this.zoneLabels, this.fade);
+    this.zoneLabels.eventMode = "none";
     this.backdrop.addChild(this.sky, this.shimmer);
     this.world.addChild(
       this.terrain,
@@ -344,8 +349,10 @@ export class SceneRenderer {
     const local = this.localId ? this.avatarViews.get(this.localId) : null;
     if (!local) return;
     const dock = this.zones.find((z) => z.key === "welcome_dock");
+    // One row up from the dock's front edge so the avatar stands ON the planks
+    // (mid-deck) and still y-sorts in front of the dock art.
     const spot = dock
-      ? { x: Math.floor(dock.gridPosition.x + dock.footprint.w / 2), y: dock.gridPosition.y + dock.footprint.h - 1 }
+      ? { x: Math.floor(dock.gridPosition.x + dock.footprint.w / 2), y: dock.gridPosition.y + dock.footprint.h - 2 }
       : (nearestWalkable(this.grid, this.layout.spawnPoint) ?? this.layout.spawnPoint);
     local.pos = { x: spot.x, y: spot.y };
     local.lastPropPos = { x: spot.x, y: spot.y };
@@ -877,9 +884,7 @@ export class SceneRenderer {
   private buildZones(): void {
     this.zoneAnimators = [];
     for (const z of this.zones) {
-      const scene = buildZoneScene(
-        z, this.theme, this.opts.hideTextLabels, this.landmarkTextures.get(z.key),
-      );
+      const scene = buildZoneScene(z, this.theme, this.landmarkTextures.get(z.key));
       if (scene.animate) this.zoneAnimators.push(scene.animate);
       const center = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
       scene.container.position.set(center.x, center.y);
@@ -892,6 +897,63 @@ export class SceneRenderer {
       this.entities.addChild(scene.container);
       this.staticEntities.push(scene.container);
       this.zoneScenes.set(z.key, { setHover: scene.setHover });
+    }
+    this.buildZoneLabels();
+  }
+
+  /** (Re)create the screen-space zone name labels. Positioned every frame by
+   *  positionZoneLabels (projected from world + clamped into the viewport). */
+  private buildZoneLabels(): void {
+    this.zoneLabels.removeChildren().forEach((c) => c.destroy());
+    this.zoneLabelItems = [];
+    if (this.opts.hideTextLabels) return;
+    for (const z of this.zones) {
+      const text = new Text({
+        text: z.unlocked ? z.displayName : `${z.displayName} (locked)`,
+        style: {
+          fontFamily: '"Trebuchet MS", "Segoe UI", system-ui, sans-serif',
+          fontSize: 22,
+          fontWeight: "900",
+          fill: 0xffffff,
+          stroke: { color: INK, width: 5 },
+          align: "center",
+          dropShadow: { color: 0x000000, alpha: 0.35, blur: 4, distance: 3, angle: Math.PI / 2 },
+        },
+      });
+      text.anchor.set(0.5, 1);
+      this.zoneLabels.addChild(text);
+      this.zoneLabelItems.push({ text, zone: z });
+    }
+  }
+
+  /** Project each zone's label to screen space (above its sprite) and clamp it
+   *  into the viewport so it's always readable — never off the top edge, never
+   *  behind the (taller) landmark art. */
+  private positionZoneLabels(): void {
+    const show =
+      this.world.visible && this.currentZone === null && !this.trans && this.arrival === "done";
+    this.zoneLabels.visible = show;
+    if (!show) return;
+    const sw = this.app.screen.width;
+    const sh = this.app.screen.height;
+    const padX = 60;
+    const topMargin = 22;
+    for (const { text, zone } of this.zoneLabelItems) {
+      const cfg = LANDMARK_ART[zone.key];
+      const center = footprintCenter(zone.gridPosition, zone.footprint.w, zone.footprint.h);
+      // Only label landmarks whose base is actually on screen (so labels for
+      // panned-away zones don't pile up against the viewport edges).
+      const baseSx = center.x * this.camScale + this.camX;
+      const baseSy = center.y * this.camScale + this.camY;
+      const onScreen = baseSx > -80 && baseSx < sw + 80 && baseSy > -40 && baseSy < sh + 80;
+      text.visible = onScreen;
+      if (!onScreen) continue;
+      // Place above the sprite's painted top, clamped into the viewport so a tall
+      // landmark can't push its label off the top edge.
+      const worldY = center.y - cfg.contentH * cfg.scale - 14;
+      const sx = Math.max(padX, Math.min(sw - padX, baseSx));
+      const sy = Math.max(topMargin, Math.min(sh - 12, worldY * this.camScale + this.camY));
+      text.position.set(sx, sy);
     }
   }
 
@@ -1382,6 +1444,7 @@ export class SceneRenderer {
       if (this.currentZone === null) this.followCamera(dt);
       else this.zoneView.update(dt);
     }
+    this.positionZoneLabels();
 
     if (this.opts.reducedMotion) {
       this.fireflies.visible = false;

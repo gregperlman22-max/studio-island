@@ -119,9 +119,12 @@ export class ArrivalView {
     }
   }
 
-  /** Feet height for the seated rider: low in the hull (just above the waterline)
-   *  so, drawn behind the boat, only the upper body shows above the gunwale. */
-  private riderOffsetY(): number { return -this.boat.height * 0.1; }
+  /** Feet height for the seated rider: set so the avatar's head & shoulders sit
+   *  clearly above the hull gunwale while its lower body stays tucked behind the
+   *  rim (split between the earlier too-high and too-low takes). */
+  private riderOffsetY(): number { return -this.boat.height * 0.27; }
+  /** Seat the rider slightly toward the stern so the sail doesn't cover it. */
+  private riderOffsetX(): number { return -this.boat.width * 0.06; }
 
   update(dt: number): void {
     if (!this.container.visible || this._done) return;
@@ -139,8 +142,8 @@ export class ArrivalView {
     const disT = t - SAIL;
     if (this.avatar) {
       if (disT <= 0) {
-        // Riding in the boat — track the boat layer.
-        this.charLayer.position.set(bx, this.waterY() + bob + this.riderOffsetY());
+        // Riding in the boat — track the boat layer (seated toward the stern).
+        this.charLayer.position.set(bx + this.riderOffsetX(), this.waterY() + bob + this.riderOffsetY());
         this.avatar.container.scale.x = Math.abs(this.avatar.container.scale.x);
       } else {
         // Climbing out: lift the avatar in front of the boat for the hop.
@@ -148,7 +151,7 @@ export class ArrivalView {
         // Hop out onto the sandy shore with a gentle arc.
         const d = Math.min(1, disT / HOP);
         const ed = d * d * (3 - 2 * d);
-        const fromX = this.boatBerthX();
+        const fromX = this.boatBerthX() + this.riderOffsetX();
         const fromY = this.waterY() + this.riderOffsetY();
         const toX = this.shoreX();
         const toY = this.shoreY();

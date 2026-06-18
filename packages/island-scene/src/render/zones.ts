@@ -1,6 +1,5 @@
-import { Container, Graphics, Sprite, Text, type Texture } from "pixi.js";
+import { Container, Graphics, Sprite, type Texture } from "pixi.js";
 import type { ThemePackConfig, ThemePalette, ZoneInstance, ZoneKey } from "../types";
-import { TILE_H, TILE_W } from "./constants";
 import { hexNum, shade } from "./iso";
 
 /**
@@ -72,12 +71,10 @@ export const ARRIVAL_BG_URL = landmarkUrl("arrival-bg");
 export function buildZoneScene(
   zone: ZoneInstance,
   theme: ThemePackConfig,
-  hideLabels: boolean,
   texture?: Texture,
 ): ZoneScene {
   const { palette } = theme;
   const container = new Container();
-  const halfH = (zone.footprint.h * TILE_H) / 2;
 
   const art = new Container();
   container.addChild(art);
@@ -85,9 +82,6 @@ export function buildZoneScene(
   const cfg = LANDMARK_ART[zone.key];
   // Gentle per-zone idle details (all disabled under reduced motion upstream).
   const fxFns: ((t: number) => void)[] = [];
-  // Default label position (above the old code structure); overridden to sit
-  // above the taller PNG art when a sprite is placed.
-  let labelY = -halfH - 12;
 
   if (texture) {
     // ── Finished illustrated landmark (Mode 1) ──
@@ -97,8 +91,6 @@ export function buildZoneScene(
     sprite.anchor.set(cfg.anchorX, cfg.anchorY);
     sprite.scale.set(cfg.scale);
     art.addChild(sprite);
-    // Label tracks the art top: contentH (art px) × scale above the base.
-    labelY = -(cfg.contentH * cfg.scale + 14);
 
     switch (zone.key) {
       case "lighthouse_point":
@@ -137,26 +129,8 @@ export function buildZoneScene(
     art.addChild(lock);
   }
 
-  // Big, rounded, playful label with a soft drop shadow + a gentle float.
-  if (!hideLabels) {
-    const label = new Text({
-      text: zone.unlocked ? zone.displayName : `${zone.displayName} (locked)`,
-      style: {
-        fontFamily: '"Trebuchet MS", "Segoe UI", system-ui, sans-serif',
-        fontSize: 22,
-        fontWeight: "900",
-        fill: 0xffffff,
-        stroke: { color: INK, width: 5 },
-        align: "center",
-        dropShadow: { color: 0x000000, alpha: 0.35, blur: 4, distance: 3, angle: Math.PI / 2 },
-      },
-    });
-    label.anchor.set(0.5, 1);
-    label.position.set(0, labelY);
-    container.addChild(label);
-    // Slow 2s bob, ~4px range.
-    fxFns.push((t) => { label.position.y = labelY + Math.sin(t * Math.PI) * 2; });
-  }
+  // Zone name labels are drawn by SceneRenderer in a screen-space overlay (so a
+  // tall landmark can never push its label off-screen or occlude it).
 
   return {
     container,
