@@ -39,7 +39,10 @@ export class ArrivalView {
   private _done = false;
 
   constructor(private reducedMotion: boolean) {
-    this.container.addChild(this.bg, this.boatLayer, this.charLayer);
+    // Avatar sits BEHIND the boat so the hull's front rim overlaps its lower
+    // body (reads as seated IN the boat). It's lifted in front of the boat only
+    // when it hops out onto the sand.
+    this.container.addChild(this.bg, this.charLayer, this.boatLayer);
     this.boatLayer.addChild(this.boat);
     this.container.visible = false;
     this.boat.anchor.set(0.4892, 0.9027); // hull waterline (matches BOAT_ART)
@@ -80,7 +83,8 @@ export class ArrivalView {
   private shoreX(): number { return this.w * 0.8; }       // avatar's landing spot on the sand
   private shoreY(): number { return this.h * 0.58; }
   private boatScale(): number { return (this.h * 0.34) / (this.boatTex?.height ?? 1254); }
-  private avatarScale(): number { return Math.max(2.4, Math.min(3.6, this.h / 230)); }
+  // Small enough to ride seated inside the hull (~55% of the earlier size).
+  private avatarScale(): number { return Math.max(1.3, Math.min(2.0, this.h / 420)); }
 
   private build(w: number, h: number): void {
     this.w = w;
@@ -115,8 +119,9 @@ export class ArrivalView {
     }
   }
 
-  /** Where the rider sits in the boat (relative to the boat layer origin). */
-  private riderOffsetY(): number { return -this.boat.height * 0.42; }
+  /** Feet height for the seated rider: low in the hull (just above the waterline)
+   *  so, drawn behind the boat, only the upper body shows above the gunwale. */
+  private riderOffsetY(): number { return -this.boat.height * 0.1; }
 
   update(dt: number): void {
     if (!this.container.visible || this._done) return;
@@ -138,6 +143,8 @@ export class ArrivalView {
         this.charLayer.position.set(bx, this.waterY() + bob + this.riderOffsetY());
         this.avatar.container.scale.x = Math.abs(this.avatar.container.scale.x);
       } else {
+        // Climbing out: lift the avatar in front of the boat for the hop.
+        this.container.setChildIndex(this.charLayer, this.container.children.length - 1);
         // Hop out onto the sandy shore with a gentle arc.
         const d = Math.min(1, disT / HOP);
         const ed = d * d * (3 - 2 * d);

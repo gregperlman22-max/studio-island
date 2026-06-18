@@ -134,10 +134,6 @@ export class SceneRenderer {
   private fireflyDots: {
     g: Graphics; cx: number; cy: number; rx: number; ry: number; phase: number; speed: number;
   }[] = [];
-  /** Arrival boat (world space) — the cleaned illustrated sailboat sprite. */
-  private boat = new Sprite();
-  /** Where the boat berths at the dock (its moored home after arrival). */
-  private boatHome = { x: 0, y: 0 };
   /** Mode 2 — third-person zone view (parallax, screen space). */
   private zoneView!: ZoneView;
   /** Optional flash overlay kept for reduced-motion / safety (screen space). */
@@ -167,6 +163,8 @@ export class SceneRenderer {
   private arrivalFadeT = 0;
   /** Painted full-screen stage texture for the arrival cinematic. */
   private arrivalBgTex?: Texture;
+  /** Boat texture (used by the arrival cinematic only). */
+  private boatTex?: Texture;
 
   private textures!: ProgrammaticTextureProvider;
   private theme!: ThemePackConfig;
@@ -265,7 +263,6 @@ export class SceneRenderer {
       this.entities,
       this.flame,
       this.fireflies,
-      this.boat,
     );
     this.biomeLayer.mask = this.landMask;
     this.entities.sortableChildren = true;
@@ -314,21 +311,10 @@ export class SceneRenderer {
     this.opts.onReady?.();
   }
 
-  /** Moor the world-map boat at the dock, and either kick off the third-person
-   *  arrival cinematic or (reduced motion / in-zone) drop the avatar on the dock. */
+  /** Kick off the third-person arrival cinematic, or (reduced motion / in-zone)
+   *  drop the avatar straight onto the dock. The boat lives only in the cinematic
+   *  now — there is no moored boat on the world map. */
   private setupArrival(): void {
-    this.boat.scale.set(BOAT_ART.scale);
-    this.boat.zIndex = 9999;
-    this.boat.eventMode = "none";
-    // World-map moored-boat home: just off the painted dock's front edge.
-    const dock = this.zones.find((z) => z.key === "welcome_dock");
-    const c = dock
-      ? footprintCenter(dock.gridPosition, dock.footprint.w, dock.footprint.h)
-      : tileCenter(this.layout.spawnPoint.x, this.layout.spawnPoint.y);
-    this.boatHome = { x: c.x - 18, y: c.y + 92 };
-    this.boat.position.set(this.boatHome.x, this.boatHome.y);
-    this.boat.visible = true;
-
     if (this.arrival === "cinematic") {
       // Hide the world avatar until it disembarks; play the cinematic overlay.
       const local = this.localId ? this.avatarViews.get(this.localId) : null;
@@ -339,7 +325,7 @@ export class SceneRenderer {
       this.arrivalView.enter(
         this.localCfg(),
         this.arrivalBgTex,
-        this.boat.texture,
+        this.boatTex,
         this.app.screen.width,
         this.app.screen.height,
       );
@@ -350,17 +336,19 @@ export class SceneRenderer {
     this.arrivalFadeT = 0;
   }
 
-  /** Drop the local avatar at the walkable cell by the dock front (on arrival). */
+  /** Stand the local avatar ON the dock's front edge after arrival. This cell is
+   *  inside the (movement-blocked) dock footprint, so it reads as standing on the
+   *  dock and y-sorts IN FRONT of the dock art; walkView routes it back onto open
+   *  ground via the nearest walkable cell on the first move. */
   private placeAvatarOnDock(): void {
     const local = this.localId ? this.avatarViews.get(this.localId) : null;
     if (!local) return;
     const dock = this.zones.find((z) => z.key === "welcome_dock");
-    const front = dock
+    const spot = dock
       ? { x: Math.floor(dock.gridPosition.x + dock.footprint.w / 2), y: dock.gridPosition.y + dock.footprint.h - 1 }
-      : this.layout.spawnPoint;
-    const entrance = nearestWalkable(this.grid, front) ?? this.layout.spawnPoint;
-    local.pos = { x: entrance.x, y: entrance.y };
-    local.lastPropPos = { x: entrance.x, y: entrance.y };
+      : (nearestWalkable(this.grid, this.layout.spawnPoint) ?? this.layout.spawnPoint);
+    local.pos = { x: spot.x, y: spot.y };
+    local.lastPropPos = { x: spot.x, y: spot.y };
     local.container.visible = true;
     this.placeAvatar(local);
   }
@@ -739,10 +727,7 @@ export class SceneRenderer {
       (async () => {
         try {
           const tex = (await Assets.load(BOAT_ART.url)) as Texture;
-          if (!this.destroyed) {
-            this.boat.texture = tex;
-            this.boat.anchor.set(BOAT_ART.anchorX, BOAT_ART.anchorY);
-          }
+          if (!this.destroyed) this.boatTex = tex;
         } catch (err) {
           console.warn("[island-scene] boat art failed to load", err);
         }
@@ -1050,7 +1035,13 @@ export class SceneRenderer {
 
   private walkView(view: AvatarView, goal: GridPosition, onArrive?: () => void): void {
     const start = { x: Math.round(view.pos.x), y: Math.round(view.pos.y) };
-    const path = findPath(this.grid, start, goal);
+    let path = findPath(this.grid, start, goal);
+    // If the avatar is standing on a non-walkable cell (e.g. just landed ON the
+    // dock footprint), route from the nearest open ground so it can still leave.
+    if ((!path || path.length === 0) && !this.grid.walkable(start.x, start.y)) {
+      const off = nearestWalkable(this.grid, start, 6);
+      if (off) path = findPath(this.grid, off, goal);
+    }
     if (!path || path.length === 0) return;
     view.path = path;
     view.pathIndex = 0;
@@ -1408,11 +1399,6 @@ export class SceneRenderer {
         // Trees sway their canopy; zone landmarks have idle details.
         for (const s of this.swayers) s.sprite.rotation = Math.sin(t * 1.0 + s.phase) * 0.088;
         for (const anim of this.zoneAnimators) anim(t);
-        // Moored at the dock, the boat bobs gently on the swell.
-        if (this.arrival === "done") {
-          this.boat.position.set(this.boatHome.x, this.boatHome.y + Math.sin(t * 1.1) * 2.2);
-          this.boat.rotation = Math.sin(t * 1.1 + 0.6) * 0.03;
-        }
       }
       const t = this.elapsed / 1000;
       for (const f of this.fireflyDots) {
