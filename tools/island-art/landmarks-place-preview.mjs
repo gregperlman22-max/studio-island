@@ -14,16 +14,16 @@ const footprintCenter = (px, py, w, h) => tileCenter(px + (w - 1) / 2, py + (h -
 
 // Mirrors defaultLayout.sampleZones + zones.LANDMARK_ART (Part-B baseline).
 const ZONES = [
-  { key: 'lighthouse_point', file: 'lighthouse',   x: 30, y: 4,  w: 4, h: 4, scale: 0.54,   ax: 0.5464, ay: 0.8789 },
-  { key: 'treehouse_hideaway', file: 'treehouse',  x: 4,  y: 20, w: 5, h: 5, scale: 0.495,  ax: 0.501,  ay: 0.8848 },
-  { key: 'art_hut', file: 'art-hut',               x: 28, y: 20, w: 4, h: 4, scale: 0.375,  ax: 0.5181, ay: 0.7236 },
-  { key: 'campfire_circle', file: 'campfire',      x: 15, y: 21, w: 4, h: 4, scale: 0.1936, ax: 0.499,  ay: 0.75 },
+  { key: 'lighthouse_point', file: 'lighthouse',   x: 30, y: 4,  w: 4, h: 4, scale: 0.675,  ax: 0.5464, ay: 0.8789 },
+  { key: 'treehouse_hideaway', file: 'treehouse',  x: 4,  y: 20, w: 5, h: 5, scale: 0.475,  ax: 0.501,  ay: 0.8848 },
+  { key: 'art_hut', file: 'art-hut',               x: 28, y: 20, w: 4, h: 4, scale: 0.445,  ax: 0.5181, ay: 0.7236 },
+  { key: 'campfire_circle', file: 'campfire',      x: 19, y: 24, w: 4, h: 4, scale: 0.255,  ax: 0.499,  ay: 0.75 },
   { key: 'arcade_cove', file: 'arcade',            x: 42, y: 24, w: 5, h: 4, scale: 0.324,  ax: 0.5103, ay: 0.8457 },
-  { key: 'calm_beach', file: 'calm-beach',         x: 5,  y: 31, w: 6, h: 4, scale: 0.1725, ax: 0.5073, ay: 0.8037 },
-  { key: 'welcome_dock', file: 'welcome-dock',     x: 43, y: 37, w: 6, h: 4, scale: 0.30,   ax: 0.5205, ay: 0.7676 },
+  { key: 'calm_beach', file: 'calm-beach',         x: 5,  y: 31, w: 6, h: 4, scale: 0.33,   ax: 0.4385, ay: 0.7598 },
+  { key: 'welcome_dock', file: 'welcome-dock',     x: 43, y: 37, w: 6, h: 4, scale: 0.395,  ax: 0.5205, ay: 0.7676 },
 ];
 // Boat berths just off the dock front (matches SceneRenderer.dockApproach toX/toY).
-const BOAT = { file: 'boat', scale: 0.14, ax: 0.4892, ay: 0.9027, dx: -18, dy: 92 };
+const BOAT = { file: 'boat', scale: 0.23, ax: 0.4892, ay: 0.9027, dx: -18, dy: 92 };
 
 const composites = [];
 for (const z of ZONES) {

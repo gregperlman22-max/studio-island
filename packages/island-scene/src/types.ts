@@ -257,11 +257,6 @@ export interface IslandSceneHandle {
   walkLocalAvatarTo: (position: GridPosition) => void;
   /** Resize hint for the host when the container size changes outside React's notice. */
   resize: () => void;
-  /** TEMP (scale-tweaker): rescale one landmark live, base-pinned. Remove with
-   *  the dev panel once final scales are baked into LANDMARK_ART. */
-  devSetLandmarkScale?: (key: ZoneKey, scale: number) => void;
-  /** TEMP (scale-tweaker): rescale the boat live. Remove with the dev panel. */
-  devSetBoatScale?: (scale: number) => void;
 }
 
 // ──────────────────────────────────────────────────────────────────

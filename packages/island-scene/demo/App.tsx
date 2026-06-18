@@ -15,9 +15,6 @@ import {
   type ThemePackKey,
   type ZoneKey,
 } from "../src";
-// TEMP (scale-tweaker): baseline scales for the live size panel. Remove this
-// import together with the ScaleTweaker panel once final scales are baked.
-import { LANDMARK_ART, BOAT_ART } from "../src/render/zones";
 
 /**
  * Demo harness. The island is full-screen (the child-facing product view).
@@ -218,9 +215,6 @@ export function DemoApp() {
         </div>
       )}
 
-      {/* TEMP: live landmark/boat scale tweaker — REMOVE once scales are baked. */}
-      <ScaleTweaker sceneRef={sceneRef} />
-
       {/* Minimal always-on hint for first-time reviewers. */}
       <div
         style={{
@@ -239,105 +233,6 @@ export function DemoApp() {
       >
         Tap to walk · tap a zone to visit · drag to look around
       </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// TEMP — Live scale tweaker. Throwaway dev panel: drag each control to resize a
-// landmark (or the boat) in real time, base-pinned, then hit "Copy values" and
-// paste the numbers back so they can be baked into LANDMARK_ART / BOAT_ART.
-// DELETE this whole block (and its <ScaleTweaker/> render + the LANDMARK_ART/
-// BOAT_ART import) once the final scales are locked in.
-// ─────────────────────────────────────────────────────────────────────────
-const SHOW_SCALE_TWEAKER = true;
-
-type TweakId = ZoneKey | "boat";
-const TWEAK_ITEMS: { id: TweakId; label: string; base: number }[] = [
-  { id: "lighthouse_point", label: "lighthouse", base: LANDMARK_ART.lighthouse_point.scale },
-  { id: "treehouse_hideaway", label: "treehouse", base: LANDMARK_ART.treehouse_hideaway.scale },
-  { id: "art_hut", label: "art-hut", base: LANDMARK_ART.art_hut.scale },
-  { id: "arcade_cove", label: "arcade", base: LANDMARK_ART.arcade_cove.scale },
-  { id: "campfire_circle", label: "campfire", base: LANDMARK_ART.campfire_circle.scale },
-  { id: "calm_beach", label: "calm-beach", base: LANDMARK_ART.calm_beach.scale },
-  { id: "welcome_dock", label: "welcome-dock", base: LANDMARK_ART.welcome_dock.scale },
-  { id: "boat", label: "boat", base: BOAT_ART.scale },
-];
-
-function ScaleTweaker({ sceneRef }: { sceneRef: React.RefObject<IslandSceneHandle | null> }) {
-  const [open, setOpen] = useState(true);
-  const [scales, setScales] = useState<Record<string, number>>(() =>
-    Object.fromEntries(TWEAK_ITEMS.map((it) => [it.id, it.base])),
-  );
-  const [copied, setCopied] = useState(false);
-
-  if (!SHOW_SCALE_TWEAKER) return null;
-
-  const apply = (id: TweakId, v: number) => {
-    setScales((s) => ({ ...s, [id]: v }));
-    if (id === "boat") sceneRef.current?.devSetBoatScale?.(v);
-    else sceneRef.current?.devSetLandmarkScale?.(id as ZoneKey, v);
-  };
-
-  const copy = () => {
-    const text = TWEAK_ITEMS.map((it) => `${it.label} (${it.id}): ${scales[it.id].toFixed(4)}`).join("\n");
-    navigator.clipboard?.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  };
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        top: 16,
-        right: 16,
-        width: 250,
-        padding: 12,
-        borderRadius: 12,
-        background: "rgba(255,247,235,0.96)",
-        border: "2px dashed #c0392b",
-        boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
-        fontFamily: "system-ui, sans-serif",
-        zIndex: 20,
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <strong style={{ fontSize: 12, color: "#c0392b" }}>TEMP · scale tweaker</strong>
-        <button onClick={() => setOpen((o) => !o)} style={{ ...btn, padding: "2px 8px" }}>
-          {open ? "hide" : "show"}
-        </button>
-      </div>
-      {open && (
-        <>
-          <p style={{ margin: "6px 0 10px", fontSize: 10, color: "#8a6d4f" }}>
-            Drag to resize live (base-pinned). Throwaway — will be removed.
-          </p>
-          {TWEAK_ITEMS.map((it) => (
-            <label key={it.id} style={{ display: "block", fontSize: 11, marginBottom: 8 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span>{it.label}</span>
-                <span style={{ fontVariantNumeric: "tabular-nums", color: "#6b5a44" }}>
-                  {scales[it.id].toFixed(4)}
-                </span>
-              </div>
-              <input
-                type="range"
-                min={0.02}
-                max={it.id === "boat" ? 0.6 : 1.5}
-                step={0.005}
-                value={scales[it.id]}
-                onChange={(e) => apply(it.id, parseFloat(e.target.value))}
-                style={{ width: "100%" }}
-              />
-            </label>
-          ))}
-          <button onClick={copy} style={{ ...btn, width: "100%", marginTop: 4 }}>
-            {copied ? "✓ Copied!" : "Copy current values"}
-          </button>
-        </>
-      )}
     </div>
   );
 }
