@@ -34,7 +34,7 @@ import { ProgrammaticTextureProvider } from "./TextureProvider";
 import { buildAvatarSprite, type AvatarSprite } from "./avatar";
 import { biomeAt, landContext } from "./biome";
 import { islandOutline, flatten, insetLoop, clusterOutline, type Pt } from "./coast";
-import { buildZoneScene, LANDMARK_ART, BOAT_ART } from "./zones";
+import { buildZoneScene, LANDMARK_ART, BOAT_ART, ARRIVAL_BG_URL } from "./zones";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
 import { ArrivalView } from "./ArrivalView";
@@ -165,6 +165,8 @@ export class SceneRenderer {
   private arrival: "cinematic" | "fade" | "done" = "cinematic";
   private arrivalView?: ArrivalView;
   private arrivalFadeT = 0;
+  /** Painted full-screen stage texture for the arrival cinematic. */
+  private arrivalBgTex?: Texture;
 
   private textures!: ProgrammaticTextureProvider;
   private theme!: ThemePackConfig;
@@ -335,10 +337,9 @@ export class SceneRenderer {
       this.app.stage.addChild(this.arrivalView.container);
       this.app.stage.setChildIndex(this.fade, this.app.stage.children.length - 1); // keep fade on top
       this.arrivalView.enter(
-        this.theme.palette,
         this.localCfg(),
+        this.arrivalBgTex,
         this.boat.texture,
-        this.landmarkTextures.get("welcome_dock"),
         this.app.screen.width,
         this.app.screen.height,
       );
@@ -744,6 +745,14 @@ export class SceneRenderer {
           }
         } catch (err) {
           console.warn("[island-scene] boat art failed to load", err);
+        }
+      })(),
+      (async () => {
+        try {
+          const tex = (await Assets.load(ARRIVAL_BG_URL)) as Texture;
+          if (!this.destroyed) this.arrivalBgTex = tex;
+        } catch (err) {
+          console.warn("[island-scene] arrival background failed to load", err);
         }
       })(),
     ]);

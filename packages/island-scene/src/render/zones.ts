@@ -66,6 +66,9 @@ export const BOAT_ART = {
   anchorY: 0.9027,
 };
 
+/** Full-screen painted stage for the side-view arrival cinematic. */
+export const ARRIVAL_BG_URL = landmarkUrl("arrival-bg");
+
 export function buildZoneScene(
   zone: ZoneInstance,
   theme: ThemePackConfig,
