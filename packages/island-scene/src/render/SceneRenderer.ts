@@ -34,7 +34,7 @@ import { ProgrammaticTextureProvider } from "./TextureProvider";
 import { buildAvatarSprite, type AvatarSprite } from "./avatar";
 import { biomeAt, landContext } from "./biome";
 import { islandOutline, flatten, insetLoop, clusterOutline, type Pt } from "./coast";
-import { buildZoneScene } from "./zones";
+import { buildZoneScene, LANDMARK_ART } from "./zones";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
 
@@ -179,6 +179,8 @@ export class SceneRenderer {
   private swayers: { sprite: Sprite; phase: number }[] = [];
   /** Per-zone idle animators (lighthouse beam, lantern flicker, etc.). */
   private zoneAnimators: ((t: number) => void)[] = [];
+  /** Finished illustrated landmark sprites, preloaded by zone key. */
+  private landmarkTextures = new Map<ZoneKey, Texture>();
 
   // ── Camera (zoom + eased follow + drag pan, clamped to world) ──
   private camScale = 1;
@@ -285,6 +287,7 @@ export class SceneRenderer {
     this.opts.onLoadProgress?.(0.6);
 
     await this.loadGround();
+    await this.loadLandmarks();
 
     this.rebuild();
     this.drawFadeRect();
@@ -307,7 +310,9 @@ export class SceneRenderer {
   /** Position the boat off-shore and hide the avatar for the arrival walk-on. */
   private setupArrival(): void {
     this.boat.visible = this.arrival === "boat";
-    this.boat.scale.set(3.6); // a proper, character-scale boat with a visible sail
+    // Sized to read alongside the new welcome-dock.png (~97px wide); the old
+    // 3.6 was scaled for the larger code-drawn dock. Eyeball-adjustable.
+    this.boat.scale.set(2.0);
     const local = this.localId ? this.avatarViews.get(this.localId) : null;
     if (this.arrival === "boat" && local) local.container.visible = false;
     this.arrivalT = 0;
@@ -319,8 +324,11 @@ export class SceneRenderer {
     const c = dock
       ? footprintCenter(dock.gridPosition, dock.footprint.w, dock.footprint.h)
       : tileCenter(this.layout.spawnPoint.x, this.layout.spawnPoint.y);
-    // Boat docks just in front (down-screen) of the dock, arriving from further out.
-    return { fromX: c.x - 30, fromY: c.y + 220, toX: c.x, toY: c.y + 54 };
+    // Boat docks just in front (down-screen) of the new welcome-dock.png. Its
+    // painted front edge sits ~28px below the footprint centre at the current
+    // dock scale, so the boat berths a touch beyond that, arriving from further
+    // out in the water. (Landing offset tuned to the dock art — eyeball-adjust.)
+    return { fromX: c.x - 18, fromY: c.y + 205, toX: c.x - 18, toY: c.y + 44 };
   }
 
   private drawBoat(x = 0, y = 0): void {
@@ -694,6 +702,22 @@ export class SceneRenderer {
     this.positionGround();
   }
 
+  /** Preload the finished illustrated landmark sprites (one per zone). A
+   *  failed load just leaves that zone without a texture, so buildZoneScene
+   *  falls back to the code-drawn structure rather than going blank. */
+  private async loadLandmarks(): Promise<void> {
+    await Promise.all(
+      (Object.keys(LANDMARK_ART) as ZoneKey[]).map(async (key) => {
+        try {
+          const tex = (await Assets.load(LANDMARK_ART[key].url)) as Texture;
+          if (!this.destroyed) this.landmarkTextures.set(key, tex);
+        } catch (err) {
+          console.warn(`[island-scene] landmark art failed to load: ${key}`, err);
+        }
+      }),
+    );
+  }
+
   /** Pin the ground sprite so art-pixel (0,0) → world (originX, originY). */
   private positionGround(): void {
     const img = this.layout.terrainImage;
@@ -828,7 +852,9 @@ export class SceneRenderer {
   private buildZones(): void {
     this.zoneAnimators = [];
     for (const z of this.zones) {
-      const scene = buildZoneScene(z, this.theme, this.opts.hideTextLabels);
+      const scene = buildZoneScene(
+        z, this.theme, this.opts.hideTextLabels, this.landmarkTextures.get(z.key),
+      );
       if (scene.animate) this.zoneAnimators.push(scene.animate);
       const center = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
       scene.container.position.set(center.x, center.y);

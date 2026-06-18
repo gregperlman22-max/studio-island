@@ -1,16 +1,17 @@
-import { Container, Graphics, Text } from "pixi.js";
+import { Container, Graphics, Sprite, Text, type Texture } from "pixi.js";
 import type { ThemePackConfig, ThemePalette, ZoneInstance, ZoneKey } from "../types";
 import { TILE_H, TILE_W } from "./constants";
 import { hexNum, shade } from "./iso";
-import { smoothClosed, flatten } from "./coast";
 
 /**
- * Per-zone landmark art in a Wind Waker register: bold dark outlines, flat
- * vivid fills with a light highlight + dark shadow (cel shading), and
- * structures that read as real landmarks (not tiny tokens). Programmatic now,
- * swappable for atlas art later behind the same builder.
+ * Per-zone landmark art. The WORLD-MAP landmark (Mode 1) is now a finished
+ * illustrated PNG (tools/island-art/landmarks/, cleaned in M1) placed as a
+ * base-pinned sprite over the painted terrain. The cel-shaded programmatic
+ * painters below (ZONE_PAINT / paintZoneStructure) are retained because the
+ * Mode-2 zone interiors (zoneEnv.ts) still draw with them.
  *
- * Local origin (0,0) is the footprint center; art rises upward (negative y).
+ * Local origin (0,0) is the footprint center / ground-contact point; the sprite
+ * is anchored at its base there and rises upward (negative y).
  */
 export interface ZoneScene {
   container: Container;
@@ -22,125 +23,93 @@ export interface ZoneScene {
 /** Bold cel outline color used across all art. */
 const INK = 0x23201c;
 
+/** Resolve a bundled landmark PNG URL (Vite rewrites these at build time). */
+const landmarkUrl = (name: string): string =>
+  new URL(`../assets/landmarks/${name}.png`, import.meta.url).href;
+
+/**
+ * Placement for each zone's illustrated landmark sprite.
+ *   url      — bundled cleaned PNG
+ *   scale    — world px per art px (starting sizes; tuned by eye after review)
+ *   anchorX  — horizontal pin: the opaque body's centre (0..1 of texture width)
+ *   anchorY  — vertical pin: the opaque body's BASE / ground contact (0..1 of height)
+ *   labelY   — world-y (negative = up) for the floating name, above the art top
+ * Anchors/labelY were derived from each cleaned PNG's opaque bounding box
+ * (tools/island-art/landmarks-anchors.mjs) so every sprite sits BY ITS BASE on
+ * the clearing — tall objects rise upward, low objects sit flat. Relative
+ * scales: lighthouse/treehouse tall, art-hut/arcade mid, campfire/calm-beach
+ * low, dock flat+wide.
+ */
+export const LANDMARK_ART: Record<
+  ZoneKey,
+  { url: string; scale: number; anchorX: number; anchorY: number; labelY: number }
+> = {
+  lighthouse_point: { url: landmarkUrl("lighthouse"), scale: 0.18, anchorX: 0.5464, anchorY: 0.8789, labelY: -165 },
+  treehouse_hideaway: { url: landmarkUrl("treehouse"), scale: 0.165, anchorX: 0.501, anchorY: 0.8848, labelY: -155 },
+  art_hut: { url: landmarkUrl("art-hut"), scale: 0.15, anchorX: 0.5181, anchorY: 0.7236, labelY: -110 },
+  arcade_cove: { url: landmarkUrl("arcade"), scale: 0.135, anchorX: 0.5103, anchorY: 0.8457, labelY: -113 },
+  campfire_circle: { url: landmarkUrl("campfire"), scale: 0.088, anchorX: 0.499, anchorY: 0.75, labelY: -70 },
+  calm_beach: { url: landmarkUrl("calm-beach"), scale: 0.075, anchorX: 0.5073, anchorY: 0.8037, labelY: -67 },
+  welcome_dock: { url: landmarkUrl("welcome-dock"), scale: 0.12, anchorX: 0.5205, anchorY: 0.7676, labelY: -72 },
+};
+
 export function buildZoneScene(
   zone: ZoneInstance,
   theme: ThemePackConfig,
   hideLabels: boolean,
+  texture?: Texture,
 ): ZoneScene {
   const { palette } = theme;
   const container = new Container();
-  const halfW = (zone.footprint.w * TILE_W) / 2;
   const halfH = (zone.footprint.h * TILE_H) / 2;
 
   const art = new Container();
   container.addChild(art);
 
-  // Ground patch: soft ROUNDED organic footprint (no boxy diamond edges).
-  const ground = new Graphics();
-  const gw = halfW - 3;
-  const gh = halfH - 2;
-  const groundColor = ZONE_GROUND[zone.key](palette);
-  const padFlat = flatten(
-    smoothClosed(
-      [
-        { x: 0, y: -gh }, { x: gw * 0.62, y: -gh * 0.52 }, { x: gw, y: 0 },
-        { x: gw * 0.62, y: gh * 0.52 }, { x: 0, y: gh }, { x: -gw * 0.62, y: gh * 0.52 },
-        { x: -gw, y: 0 }, { x: -gw * 0.62, y: -gh * 0.52 },
-      ],
-      3,
-    ),
-  );
-  ground.poly(padFlat).fill(groundColor).stroke({ width: 3, color: INK, alpha: 0.5 });
-  ground.ellipse(0, -gh * 0.28, gw * 0.5, gh * 0.42).fill({ color: hexNum(shade(groundColor, 0.18)), alpha: 0.4 });
-  art.addChild(ground);
-
-  // Landmark structure — LARGE (dominates its clearing).
-  const structure = new Graphics();
-  ZONE_PAINT[zone.key](structure, palette);
-  const s = STRUCTURE_SCALE[zone.key] ?? 2.7;
-  structure.scale.set(s);
-  art.addChild(structure);
-
+  const cfg = LANDMARK_ART[zone.key];
   // Gentle per-zone idle details (all disabled under reduced motion upstream).
   const fxFns: ((t: number) => void)[] = [];
+  // Default label position (above the old code structure); overridden to sit
+  // above the taller PNG art when a sprite is placed.
+  let labelY = -halfH - 12;
 
-  // Soft beacon glow at the base of every zone — a slow, warm invitation to
-  // tap. Never blinks; phase-offset per zone so the island doesn't pulse in
-  // unison. (Under reduced motion the fx never runs, leaving a faint static
-  // glow.)
-  const beacon = new Graphics();
-  beacon.ellipse(0, gh * 0.22, gw * 0.78, gh * 0.6).fill({ color: 0xfff0bf, alpha: 0.2 });
-  beacon.ellipse(0, gh * 0.22, gw * 0.46, gh * 0.36).fill({ color: 0xfff7e0, alpha: 0.2 });
-  art.addChildAt(beacon, 1); // above the ground patch, below the structure
-  const beaconPhase = [...zone.key].reduce((a, c) => a + c.charCodeAt(0), 0) % 7;
-  fxFns.push((t) => { beacon.alpha = 0.55 + 0.45 * Math.sin(t * 0.7 + beaconPhase); });
+  if (texture) {
+    // ── Finished illustrated landmark (Mode 1) ──
+    // Pinned by its BASE (bottom-centre of the opaque body) at the footprint
+    // centre, so it sits ON the clearing; tall art rises upward from there.
+    const sprite = new Sprite(texture);
+    sprite.anchor.set(cfg.anchorX, cfg.anchorY);
+    sprite.scale.set(cfg.scale);
+    art.addChild(sprite);
+    labelY = cfg.labelY;
 
-  switch (zone.key) {
-    case "lighthouse_point": {
-      // Rotating soft light cone with a brighter core (a real beam sweep).
-      const cone = new Graphics();
-      cone.poly([0, 0, 130, -34, 130, 34]).fill({ color: 0xfff3b0, alpha: 0.3 });
-      cone.poly([0, 0, 136, -12, 136, 12]).fill({ color: 0xffffff, alpha: 0.4 });
-      cone.position.set(0, -86 * s);
-      art.addChild(cone);
-      // Slow, calm sweep — about one rotation every ~13 seconds.
-      fxFns.push((t) => { cone.rotation = t * 0.48; });
-      break;
+    switch (zone.key) {
+      case "lighthouse_point":
+        // The light beam is PAINTED into lighthouse.png (the old code-drawn
+        // rotating cone is removed). TODO(anim-pass): add a gentle beam sweep /
+        // lantern glow over the painted beam.
+        break;
+      case "treehouse_hideaway":
+        // Gentle canopy sway (pivots at the base anchor) — maps cleanly to the
+        // tall tree art.
+        fxFns.push((t) => { sprite.rotation = Math.sin(t * 0.6) * 0.02; });
+        break;
+      case "campfire_circle":
+        // Animated flame flicker is drawn by the renderer (drawFlame) over the
+        // painted fire ring.
+        break;
+      // TODO(anim-pass): art_hut palette dab, arcade screen glow, welcome_dock
+      // lantern + a permanently-moored rowboat, calm_beach umbrella sway — the
+      // old code-drawn versions were tied to the removed code structures and
+      // don't map onto the finished art, so they're dropped for this pass.
     }
-    case "treehouse_hideaway":
-      fxFns.push((t) => { structure.rotation = Math.sin(t * 0.6) * 0.03; });
-      break;
-    case "campfire_circle":
-      break; // flame is animated by the renderer
-    case "art_hut": {
-      const pal = new Graphics();
-      pal.ellipse(0, 0, 4, 3).fill(0xffffff).stroke({ width: 2, color: INK });
-      pal.circle(-1.5, -0.5, 1).fill(hexNum(palette.accent));
-      pal.circle(1.5, 0.5, 1).fill(0x4aa6c9);
-      const px = -23 * s, py = -22 * s;
-      art.addChild(pal);
-      fxFns.push((t) => { pal.position.set(px, py + Math.sin(t * 1.2) * 2.5); });
-      break;
-    }
-    case "arcade_cove": {
-      const l1 = new Graphics(); l1.circle(0, 0, 2.6).fill(0xfff1a8); l1.position.set(-9.5 * s, -26 * s);
-      const l2 = new Graphics(); l2.circle(0, 0, 2.6).fill(0x9be7ff); l2.position.set(9.5 * s, -26 * s);
-      art.addChild(l1, l2);
-      // Soft cross-fading glow (no hard blink/flash — soothing space for kids).
-      fxFns.push((t) => {
-        l1.alpha = 0.55 + 0.35 * Math.sin(t * 1.1);
-        l2.alpha = 0.55 + 0.35 * Math.sin(t * 1.1 + 1.8);
-      });
-      break;
-    }
-    case "welcome_dock": {
-      const glow = new Graphics();
-      glow.circle(0, 0, 7).fill({ color: 0xfff1a8, alpha: 0.9 });
-      glow.position.set(-19.5 * s, -20 * s);
-      art.addChild(glow);
-      // Slow lantern breathing (was a fast pulse).
-      fxFns.push((t) => { glow.alpha = 0.4 + 0.35 * (0.5 + 0.5 * Math.sin(t * 1.2)); });
-
-      // A little moored rowboat just off the dock front, bobbing on the swell.
-      const boat = new Graphics();
-      boat.ellipse(0, 5, 12, 3.5).fill({ color: 0x000000, alpha: 0.14 });   // water shadow
-      boat.poly([-12, 0, 12, 0, 9, 8, -9, 8]).fill(0xb5763f).stroke({ width: 2.5, color: INK });
-      boat.roundRect(-11, -2, 22, 3.5, 1.5).fill(0xcf9457).stroke({ width: 2.5, color: INK });
-      boat.moveTo(0, -2).lineTo(0, -17).stroke({ width: 2.5, color: INK });   // mast
-      boat.poly([0, -17, 0, -4, 10, -8]).fill(0xfff1f0).stroke({ width: 2.5, color: INK }); // sail
-      boat.scale.set(1.5);
-      const boatY = halfH + 10;
-      boat.position.set(2, boatY);
-      art.addChild(boat);
-      fxFns.push((t) => {
-        boat.position.y = boatY + Math.sin(t * 1.1) * 1.8;
-        boat.rotation = Math.sin(t * 1.1 + 0.6) * 0.045;
-      });
-      break;
-    }
-    case "calm_beach":
-      fxFns.push((t) => { structure.rotation = Math.sin(t * 0.7) * 0.035; });
-      break;
+  } else {
+    // Fallback (PNG failed to load): draw the cel-shaded code structure so the
+    // zone is never empty. No ground patch / beacon — just the landmark.
+    const structure = new Graphics();
+    ZONE_PAINT[zone.key](structure, palette);
+    structure.scale.set(STRUCTURE_SCALE[zone.key] ?? 2.7);
+    art.addChild(structure);
   }
 
   if (!zone.unlocked) {
@@ -166,7 +135,6 @@ export function buildZoneScene(
       },
     });
     label.anchor.set(0.5, 1);
-    const labelY = -halfH - 12;
     label.position.set(0, labelY);
     container.addChild(label);
     // Slow 2s bob, ~4px range.
@@ -180,7 +148,7 @@ export function buildZoneScene(
   };
 }
 
-// ── Ground tone per zone ────────────────────────────────────────────
+// ── Code structure scale (fallback + Mode-2 interior reference) ──────
 const STRUCTURE_SCALE: Record<ZoneKey, number> = {
   lighthouse_point: 3.4,
   treehouse_hideaway: 3.2,
@@ -189,16 +157,6 @@ const STRUCTURE_SCALE: Record<ZoneKey, number> = {
   arcade_cove: 2.8,
   calm_beach: 2.4,
   welcome_dock: 3.0,
-};
-
-const ZONE_GROUND: Record<ZoneKey, (p: ThemePalette) => number> = {
-  lighthouse_point: (p) => shade(p.landAlt, -0.12),
-  treehouse_hideaway: (p) => shade(p.foliage, -0.1),
-  campfire_circle: () => 0x9a7b52,
-  art_hut: (p) => shade(p.land, 0.08),
-  arcade_cove: (p) => shade(p.landAlt, 0.05),
-  calm_beach: (p) => shade(p.landAlt, 0.08),
-  welcome_dock: (p) => shade(p.water, -0.05),
 };
 
 // Cel-shaded box helper: flat fill + bold outline + soft top highlight.
