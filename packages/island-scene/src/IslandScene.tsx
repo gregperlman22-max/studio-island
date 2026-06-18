@@ -109,6 +109,10 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
         walkLocalAvatarTo: (position) =>
           rendererRef.current?.walkLocalAvatarTo(position),
         resize: () => rendererRef.current?.resize(),
+        // TEMP (scale-tweaker): remove with the dev panel once scales are baked.
+        devSetLandmarkScale: (key, scale) =>
+          rendererRef.current?.setLandmarkScale(key, scale),
+        devSetBoatScale: (scale) => rendererRef.current?.setBoatScale(scale),
       }),
       [],
     );

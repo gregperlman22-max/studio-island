@@ -34,7 +34,7 @@ import { ProgrammaticTextureProvider } from "./TextureProvider";
 import { buildAvatarSprite, type AvatarSprite } from "./avatar";
 import { biomeAt, landContext } from "./biome";
 import { islandOutline, flatten, insetLoop, clusterOutline, type Pt } from "./coast";
-import { buildZoneScene, LANDMARK_ART } from "./zones";
+import { buildZoneScene, LANDMARK_ART, BOAT_ART } from "./zones";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
 
@@ -133,8 +133,10 @@ export class SceneRenderer {
   private fireflyDots: {
     g: Graphics; cx: number; cy: number; rx: number; ry: number; phase: number; speed: number;
   }[] = [];
-  /** Arrival boat (world space). */
-  private boat = new Graphics();
+  /** Arrival boat (world space) — the cleaned illustrated sailboat sprite. */
+  private boat = new Sprite();
+  /** Where the boat berths at the dock (its moored home after arrival). */
+  private boatHome = { x: 0, y: 0 };
   /** Mode 2 — third-person zone view (parallax, screen space). */
   private zoneView!: ZoneView;
   /** Optional flash overlay kept for reduced-motion / safety (screen space). */
@@ -181,6 +183,13 @@ export class SceneRenderer {
   private zoneAnimators: ((t: number) => void)[] = [];
   /** Finished illustrated landmark sprites, preloaded by zone key. */
   private landmarkTextures = new Map<ZoneKey, Texture>();
+  /** Live landmark sprite instances (rebuilt with the scene), for the TEMP
+   *  scale tweaker. */
+  private landmarkSprites = new Map<ZoneKey, Sprite>();
+  /** TEMP scale-tweaker overrides (absolute scale), reapplied across rebuilds. */
+  private landmarkScaleOverride = new Map<ZoneKey, number>();
+  /** Current boat scale (BOAT_ART.scale unless overridden by the tweaker). */
+  private boatScale = BOAT_ART.scale;
 
   // ── Camera (zoom + eased follow + drag pan, clamped to world) ──
   private camScale = 1;
@@ -307,16 +316,22 @@ export class SceneRenderer {
     this.opts.onReady?.();
   }
 
-  /** Position the boat off-shore and hide the avatar for the arrival walk-on. */
+  /** Position the boat and hide the avatar for the arrival walk-on. The boat
+   *  glides in during arrival and then stays MOORED at the dock (so it reads as
+   *  the boat you arrived on — and so its size is tweakable live). */
   private setupArrival(): void {
-    this.boat.visible = this.arrival === "boat";
-    // Sized to read alongside the new welcome-dock.png (~97px wide); the old
-    // 3.6 was scaled for the larger code-drawn dock. Eyeball-adjustable.
-    this.boat.scale.set(2.0);
+    this.boat.scale.set(this.boatScale);
+    this.boat.zIndex = 9999;
+    this.boat.eventMode = "none";
+    const seg = this.dockApproach();
+    this.boatHome = { x: seg.toX, y: seg.toY };
+    // Start off-shore if the arrival will animate; otherwise sit moored.
+    const start = this.arrival === "boat" ? { x: seg.fromX, y: seg.fromY } : this.boatHome;
+    this.boat.position.set(start.x, start.y);
+    this.boat.visible = true;
     const local = this.localId ? this.avatarViews.get(this.localId) : null;
     if (this.arrival === "boat" && local) local.container.visible = false;
     this.arrivalT = 0;
-    this.drawBoat();
   }
 
   private dockApproach(): { fromX: number; fromY: number; toX: number; toY: number } {
@@ -324,25 +339,11 @@ export class SceneRenderer {
     const c = dock
       ? footprintCenter(dock.gridPosition, dock.footprint.w, dock.footprint.h)
       : tileCenter(this.layout.spawnPoint.x, this.layout.spawnPoint.y);
-    // Boat docks just in front (down-screen) of the new welcome-dock.png. Its
-    // painted front edge sits ~28px below the footprint centre at the current
-    // dock scale, so the boat berths a touch beyond that, arriving from further
-    // out in the water. (Landing offset tuned to the dock art — eyeball-adjust.)
-    return { fromX: c.x - 18, fromY: c.y + 205, toX: c.x - 18, toY: c.y + 44 };
-  }
-
-  private drawBoat(x = 0, y = 0): void {
-    this.boat.clear();
-    if (this.arrival !== "boat") return;
-    const INK = 0x23201c;
-    this.boat.position.set(x, y);
-    this.boat.zIndex = 9999;
-    // little sailboat
-    this.boat.ellipse(0, 6, 4, 2).fill({ color: 0x000000, alpha: 0.18 });
-    this.boat.poly([-18, 0, 18, 0, 12, 10, -12, 10]).fill(0xb5763f).stroke({ width: 3, color: INK });
-    this.boat.roundRect(-16, -2, 32, 4, 2).fill(0xcf9457).stroke({ width: 3, color: INK });
-    this.boat.moveTo(0, -2).lineTo(0, -28).stroke({ width: 3, color: INK });
-    this.boat.poly([0, -28, 0, -6, 15, -10]).fill(0xfff1f0).stroke({ width: 3, color: INK });
+    // Boat berths just in front (down-screen) of the new welcome-dock.png. At the
+    // Part-B dock scale its painted front edge sits ~71px below the footprint
+    // centre, so the boat lands a touch beyond that, arriving from further out in
+    // the water. (Landing offset tuned to the dock art — eyeball-adjustable.)
+    return { fromX: c.x - 18, fromY: c.y + 300, toX: c.x - 18, toY: c.y + 92 };
   }
 
   // ── Prop updates ────────────────────────────────────────────────
@@ -706,8 +707,8 @@ export class SceneRenderer {
    *  failed load just leaves that zone without a texture, so buildZoneScene
    *  falls back to the code-drawn structure rather than going blank. */
   private async loadLandmarks(): Promise<void> {
-    await Promise.all(
-      (Object.keys(LANDMARK_ART) as ZoneKey[]).map(async (key) => {
+    await Promise.all([
+      ...(Object.keys(LANDMARK_ART) as ZoneKey[]).map(async (key) => {
         try {
           const tex = (await Assets.load(LANDMARK_ART[key].url)) as Texture;
           if (!this.destroyed) this.landmarkTextures.set(key, tex);
@@ -715,7 +716,18 @@ export class SceneRenderer {
           console.warn(`[island-scene] landmark art failed to load: ${key}`, err);
         }
       }),
-    );
+      (async () => {
+        try {
+          const tex = (await Assets.load(BOAT_ART.url)) as Texture;
+          if (!this.destroyed) {
+            this.boat.texture = tex;
+            this.boat.anchor.set(BOAT_ART.anchorX, BOAT_ART.anchorY);
+          }
+        } catch (err) {
+          console.warn("[island-scene] boat art failed to load", err);
+        }
+      })(),
+    ]);
   }
 
   /** Pin the ground sprite so art-pixel (0,0) → world (originX, originY). */
@@ -851,11 +863,19 @@ export class SceneRenderer {
 
   private buildZones(): void {
     this.zoneAnimators = [];
+    this.landmarkSprites.clear();
     for (const z of this.zones) {
       const scene = buildZoneScene(
         z, this.theme, this.opts.hideTextLabels, this.landmarkTextures.get(z.key),
       );
       if (scene.animate) this.zoneAnimators.push(scene.animate);
+      // Track the sprite and reapply any TEMP scale-tweaker override (so it
+      // survives rebuilds triggered by theme/avatar/layout changes).
+      if (scene.landmarkSprite) {
+        this.landmarkSprites.set(z.key, scene.landmarkSprite);
+        const ov = this.landmarkScaleOverride.get(z.key);
+        if (ov !== undefined) scene.landmarkSprite.scale.set(ov);
+      }
       const center = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
       scene.container.position.set(center.x, center.y);
       // Zone art y-sorts just behind props/avatars on the same row.
@@ -868,6 +888,18 @@ export class SceneRenderer {
       this.staticEntities.push(scene.container);
       this.zoneScenes.set(z.key, { setHover: scene.setHover });
     }
+  }
+
+  // ── TEMP: live scale tweaker (remove once final scales are baked) ──
+  /** Rescale one landmark live, staying base-pinned (anchor at its base). */
+  setLandmarkScale(key: ZoneKey, scale: number): void {
+    this.landmarkScaleOverride.set(key, scale);
+    this.landmarkSprites.get(key)?.scale.set(scale);
+  }
+  /** Rescale the arrival/moored boat live (base-pinned at its waterline). */
+  setBoatScale(scale: number): void {
+    this.boatScale = scale;
+    this.boat.scale.set(scale);
   }
 
   private buildDecorations(): void {
@@ -1368,6 +1400,11 @@ export class SceneRenderer {
         // Trees sway their canopy; zone landmarks have idle details.
         for (const s of this.swayers) s.sprite.rotation = Math.sin(t * 1.0 + s.phase) * 0.088;
         for (const anim of this.zoneAnimators) anim(t);
+        // Once moored, the boat bobs gently on the swell at the dock.
+        if (this.arrival !== "boat") {
+          this.boat.position.set(this.boatHome.x, this.boatHome.y + Math.sin(t * 1.1) * 2.2);
+          this.boat.rotation = Math.sin(t * 1.1 + 0.6) * 0.03;
+        }
       }
       const t = this.elapsed / 1000;
       for (const f of this.fireflyDots) {
@@ -1387,7 +1424,10 @@ export class SceneRenderer {
     if (this.arrival === "boat") {
       this.arrivalT = Math.min(1, this.arrivalT + dt / 2.6);
       const e = this.arrivalT * this.arrivalT * (3 - 2 * this.arrivalT); // smoothstep
-      this.drawBoat(seg.fromX + (seg.toX - seg.fromX) * e, seg.fromY + (seg.toY - seg.fromY) * e);
+      this.boat.position.set(
+        seg.fromX + (seg.toX - seg.fromX) * e,
+        seg.fromY + (seg.toY - seg.fromY) * e,
+      );
       if (this.arrivalT >= 1) {
         this.arrival = "step";
         const local = this.localId ? this.avatarViews.get(this.localId) : null;

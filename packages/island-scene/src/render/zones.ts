@@ -18,6 +18,9 @@ export interface ZoneScene {
   setHover: (hovered: boolean) => void;
   /** Gentle idle animation (called each frame with elapsed seconds). */
   animate?: (t: number) => void;
+  /** The illustrated landmark sprite (when art loaded) — exposed so the renderer
+   *  can rescale it live (TEMP dev scale tweaker). */
+  landmarkSprite?: Sprite;
 }
 
 /** Bold cel outline color used across all art. */
@@ -30,27 +33,40 @@ const landmarkUrl = (name: string): string =>
 /**
  * Placement for each zone's illustrated landmark sprite.
  *   url      — bundled cleaned PNG
- *   scale    — world px per art px (starting sizes; tuned by eye after review)
+ *   scale    — world px per art px (starting sizes; tuned by eye via the TEMP
+ *              scale tweaker, then baked back here)
  *   anchorX  — horizontal pin: the opaque body's centre (0..1 of texture width)
  *   anchorY  — vertical pin: the opaque body's BASE / ground contact (0..1 of height)
- *   labelY   — world-y (negative = up) for the floating name, above the art top
- * Anchors/labelY were derived from each cleaned PNG's opaque bounding box
+ *   contentH — opaque body height in art px; the floating label is placed this
+ *              far (× scale) above the base, so it tracks any scale change
+ * Anchors/contentH were derived from each cleaned PNG's opaque bounding box
  * (tools/island-art/landmarks-anchors.mjs) so every sprite sits BY ITS BASE on
  * the clearing — tall objects rise upward, low objects sit flat. Relative
  * scales: lighthouse/treehouse tall, art-hut/arcade mid, campfire/calm-beach
- * low, dock flat+wide.
+ * low, dock flat+wide. Scales below are the Part-B bigger baseline.
  */
 export const LANDMARK_ART: Record<
   ZoneKey,
-  { url: string; scale: number; anchorX: number; anchorY: number; labelY: number }
+  { url: string; scale: number; anchorX: number; anchorY: number; contentH: number }
 > = {
-  lighthouse_point: { url: landmarkUrl("lighthouse"), scale: 0.18, anchorX: 0.5464, anchorY: 0.8789, labelY: -165 },
-  treehouse_hideaway: { url: landmarkUrl("treehouse"), scale: 0.165, anchorX: 0.501, anchorY: 0.8848, labelY: -155 },
-  art_hut: { url: landmarkUrl("art-hut"), scale: 0.15, anchorX: 0.5181, anchorY: 0.7236, labelY: -110 },
-  arcade_cove: { url: landmarkUrl("arcade"), scale: 0.135, anchorX: 0.5103, anchorY: 0.8457, labelY: -113 },
-  campfire_circle: { url: landmarkUrl("campfire"), scale: 0.088, anchorX: 0.499, anchorY: 0.75, labelY: -70 },
-  calm_beach: { url: landmarkUrl("calm-beach"), scale: 0.075, anchorX: 0.5073, anchorY: 0.8037, labelY: -67 },
-  welcome_dock: { url: landmarkUrl("welcome-dock"), scale: 0.12, anchorX: 0.5205, anchorY: 0.7676, labelY: -72 },
+  lighthouse_point: { url: landmarkUrl("lighthouse"), scale: 0.54, anchorX: 0.5464, anchorY: 0.8789, contentH: 839 },
+  treehouse_hideaway: { url: landmarkUrl("treehouse"), scale: 0.495, anchorX: 0.501, anchorY: 0.8848, contentH: 853 },
+  art_hut: { url: landmarkUrl("art-hut"), scale: 0.375, anchorX: 0.5181, anchorY: 0.7236, contentH: 638 },
+  arcade_cove: { url: landmarkUrl("arcade"), scale: 0.324, anchorX: 0.5103, anchorY: 0.8457, contentH: 734 },
+  campfire_circle: { url: landmarkUrl("campfire"), scale: 0.1936, anchorX: 0.499, anchorY: 0.75, contentH: 641 },
+  calm_beach: { url: landmarkUrl("calm-beach"), scale: 0.1725, anchorX: 0.5073, anchorY: 0.8037, contentH: 701 },
+  welcome_dock: { url: landmarkUrl("welcome-dock"), scale: 0.30, anchorX: 0.5205, anchorY: 0.7676, contentH: 484 },
+};
+
+/**
+ * Arrival sailboat sprite (cleaned boat.png). Base-pinned at the hull waterline
+ * so it berths against the dock. Scale is the TEMP-tweakable baseline.
+ */
+export const BOAT_ART = {
+  url: landmarkUrl("boat"),
+  scale: 0.14,
+  anchorX: 0.4892,
+  anchorY: 0.9027,
 };
 
 export function buildZoneScene(
@@ -72,6 +88,7 @@ export function buildZoneScene(
   // Default label position (above the old code structure); overridden to sit
   // above the taller PNG art when a sprite is placed.
   let labelY = -halfH - 12;
+  let landmarkSprite: Sprite | undefined;
 
   if (texture) {
     // ── Finished illustrated landmark (Mode 1) ──
@@ -81,7 +98,9 @@ export function buildZoneScene(
     sprite.anchor.set(cfg.anchorX, cfg.anchorY);
     sprite.scale.set(cfg.scale);
     art.addChild(sprite);
-    labelY = cfg.labelY;
+    landmarkSprite = sprite;
+    // Label tracks the art top: contentH (art px) × scale above the base.
+    labelY = -(cfg.contentH * cfg.scale + 14);
 
     switch (zone.key) {
       case "lighthouse_point":
@@ -145,6 +164,7 @@ export function buildZoneScene(
     container,
     setHover: (hovered: boolean) => art.scale.set(hovered ? 1.05 : 1),
     animate: fxFns.length ? (t: number) => { for (const f of fxFns) f(t); } : undefined,
+    landmarkSprite,
   };
 }
 
