@@ -949,10 +949,13 @@ export class SceneRenderer {
       text.visible = onScreen;
       if (!onScreen) continue;
       // Place above the sprite's painted top, clamped into the viewport so a tall
-      // landmark can't push its label off the top edge.
+      // landmark can't push its label off the top edge. The label is
+      // bottom-anchored, so its top edge is (y - height): clamp the bottom to
+      // topMargin + height to keep the whole label on-screen.
       const worldY = center.y - cfg.contentH * cfg.scale - 14;
       const sx = Math.max(padX, Math.min(sw - padX, baseSx));
-      const sy = Math.max(topMargin, Math.min(sh - 12, worldY * this.camScale + this.camY));
+      const minY = topMargin + text.height;
+      const sy = Math.max(minY, Math.min(sh - 12, worldY * this.camScale + this.camY));
       text.position.set(sx, sy);
     }
   }
