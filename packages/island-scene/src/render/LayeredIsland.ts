@@ -21,11 +21,21 @@ export interface IslandTextures {
   tree02: Texture;
 }
 
-export interface IslandBounds {
-  minX: number;
-  maxX: number;
-  minY: number;
-  maxY: number;
+export interface IslandLayoutOpts {
+  /**
+   * Sand/island footprint, pinned to the painted-ground registration so the
+   * (unchanged) landmarks sit on the sand. The sand is centered at (cx, cy)
+   * and scaled so its width equals `spanW`.
+   */
+  cx: number;
+  cy: number;
+  spanW: number;
+  /** World rect (centered on cx, cy) the water must blanket edge-to-edge —
+   *  sized to the viewport at the most-zoomed-out level so there are no gaps. */
+  waterW: number;
+  waterH: number;
+  /** Base size metric for the scattered props (≈ island height in world px). */
+  unit: number;
 }
 
 /** Small deterministic PRNG (mulberry32) — same seed ⇒ same island. */
@@ -65,32 +75,21 @@ export class LayeredIsland {
   }
 
   /**
-   * Size + place every layer to fit the island world-bounds. Idempotent: clears
-   * and rebuilds the scattered layers each call (deterministic), so it is safe
-   * to re-run on rebuild/resize.
+   * Size + place every layer. The sand is pinned to the painted-ground
+   * registration (cx/cy/spanW) so the landmarks line up; the water blankets the
+   * requested rect; the props scatter over the sand. Idempotent and
+   * deterministic, so it is safe to re-run on rebuild/resize.
    */
-  layout(b: IslandBounds): void {
-    const cx = (b.minX + b.maxX) / 2;
-    const cy = (b.minY + b.maxY) / 2;
-    const islandW = Math.max(1, b.maxX - b.minX);
-    const islandH = Math.max(1, b.maxY - b.minY);
-
-    // SAND — cover the island footprint so every landmark sits on land.
-    const sandW = islandW * 1.12;
+  layout(o: IslandLayoutOpts): void {
+    // SAND — pinned to match the old painting's footprint exactly.
+    const sandW = o.spanW;
     const sandScale = sandW / this.tex.sand.width;
     const sandH = this.tex.sand.height * sandScale;
     this.sand.scale.set(sandScale);
-    this.sand.position.set(cx, cy);
+    this.sand.position.set(o.cx, o.cy);
 
-    // WATER — sand is ~70% of the canvas width, so the water canvas is larger;
-    // fill comfortably past the island in both axes.
-    const canvasW = sandW / 0.7;
-    const waterScale = Math.max(
-      canvasW / this.tex.water.width,
-      (islandH * 1.5) / this.tex.water.height,
-    );
-    this.water.scale.set(waterScale);
-    this.water.position.set(cx, cy);
+    // WATER — blanket the requested rect edge-to-edge (no gaps at any zoom).
+    this.coverWater(o.cx, o.cy, o.waterW, o.waterH);
 
     // Half-extents of the sand ellipse used for scatter placement.
     const shx = sandW / 2;
@@ -98,13 +97,24 @@ export class LayeredIsland {
 
     // Base on-screen sizes, expressed as a fraction of island height, so the
     // scene reads the same regardless of the absolute world scale.
-    const treeUnit = (islandH * 0.3) / this.tex.tree01.height;
-    const grassUnit = (islandH * 0.13) / this.tex.grass.height;
-    const rockUnit = (islandH * 0.16) / this.tex.rock.height;
+    const treeUnit = (o.unit * 0.3) / this.tex.tree01.height;
+    const grassUnit = (o.unit * 0.13) / this.tex.grass.height;
+    const rockUnit = (o.unit * 0.16) / this.tex.rock.height;
 
-    this.scatterGrass(cx, cy, shx, shy, grassUnit);
-    this.scatterRocks(cx, cy, shx, shy, rockUnit);
-    this.scatterTrees(cx, cy, shx, shy, treeUnit);
+    this.scatterGrass(o.cx, o.cy, shx, shy, grassUnit);
+    this.scatterRocks(o.cx, o.cy, shx, shy, rockUnit);
+    this.scatterTrees(o.cx, o.cy, shx, shy, treeUnit);
+  }
+
+  /**
+   * Position + uniform-scale the water sprite so it blankets a world rect of
+   * `w × h` centered on (cx, cy), with no gaps. Cheap; call on resize so the
+   * ocean keeps filling the viewport at every zoom level.
+   */
+  coverWater(cx: number, cy: number, w: number, h: number): void {
+    const s = Math.max(w / this.tex.water.width, h / this.tex.water.height);
+    this.water.scale.set(s);
+    this.water.position.set(cx, cy);
   }
 
   /** A sprite anchored at its base (so it "stands" on its placement point). */

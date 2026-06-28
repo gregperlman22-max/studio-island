@@ -38,7 +38,7 @@ import { buildZoneScene, LANDMARK_ART, BOAT_ART, ARRIVAL_BG_URL } from "./zones"
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
 import { ArrivalView } from "./ArrivalView";
-import { LayeredIsland } from "./LayeredIsland";
+import { LayeredIsland, type IslandLayoutOpts } from "./LayeredIsland";
 
 // Individual illustrated world-map sprites (transparent cutouts; water solid).
 const spriteUrl = (name: string): string =>
@@ -603,6 +603,11 @@ export class SceneRenderer {
     this.updateCamScale();
     this.clampCamera();
     this.applyCamera();
+    // Keep the ocean blanketing the (now larger/smaller) viewport — no gaps.
+    if (this.island) {
+      const o = this.islandLayout();
+      this.island.coverWater(o.cx, o.cy, o.waterW, o.waterH);
+    }
     if (this.currentZone) this.zoneView.resize(this.app.screen.width, this.app.screen.height);
     this.arrivalView?.resize(this.app.screen.width, this.app.screen.height);
   }
@@ -614,9 +619,9 @@ export class SceneRenderer {
     this.drawTerrain();
     this.buildGrid();
     this.computeWorldBounds();
-    // Fit the layered sprite island to the island's world footprint so the
+    // Pin the layered sprite island to the painted-ground registration so the
     // (unchanged) landmarks sit on the sand.
-    this.island?.layout(this.worldBounds);
+    this.island?.layout(this.islandLayout());
     // Tear down only the static props; avatar views persist across theme/zone
     // changes so in-progress walks aren't interrupted.
     for (const e of this.staticEntities) e.destroy({ children: true });
@@ -738,6 +743,38 @@ export class SceneRenderer {
     const vig = Math.max(w, h);
     this.sky.rect(0, 0, w, h).fill({ color: 0x000000, alpha: 0 });
     this.sky.ellipse(w / 2, h / 2, vig * 0.62, vig * 0.62).fill({ color: 0xffd98a, alpha: 0.05 });
+  }
+
+  // Nominal pixel size of the original painted ground (home-island.png); the
+  // landmark grid positions were calibrated against this art pinned via
+  // terrainImage.originX/originY/scale, so the sand reuses that exact footprint.
+  private static readonly ART_W = 1536;
+  private static readonly ART_H = 1024;
+
+  /**
+   * Placement for the layered island. Sand is pinned to the painted-ground
+   * registration (so landmarks line up); water is sized to blanket the viewport
+   * at the most-zoomed-out level so it fills edge-to-edge with no gaps.
+   */
+  private islandLayout(): IslandLayoutOpts {
+    const img = this.layout.terrainImage;
+    const scale = img?.scale ?? 1.5;
+    const ox = img?.originX ?? -1056;
+    const oy = img?.originY ?? 112;
+    const spanW = SceneRenderer.ART_W * scale;
+    const spanH = SceneRenderer.ART_H * scale;
+    const cx = ox + spanW / 2; // = 96 for the default pin
+    const cy = oy + spanH / 2; // = 880 for the default pin
+
+    // Water must cover the world region visible at MIN_ZOOM, plus margin for
+    // camera offset, and never be smaller than the island itself.
+    const sw = this.app.screen.width;
+    const sh = this.app.screen.height;
+    const waterW = Math.max((sw / MIN_ZOOM) * 1.3, spanW * 1.2);
+    const waterH = Math.max((sh / MIN_ZOOM) * 1.3, spanH * 1.2);
+
+    const unit = this.worldBounds.maxY - this.worldBounds.minY;
+    return { cx, cy, spanW, waterW, waterH, unit };
   }
 
   /**
