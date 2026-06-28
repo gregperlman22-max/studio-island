@@ -1,4 +1,4 @@
-import { Container, Sprite, Texture } from "pixi.js";
+import { Container, Graphics, Sprite, Texture } from "pixi.js";
 
 /**
  * LayeredIsland — the world map composed from individual illustrated sprites
@@ -44,10 +44,25 @@ export interface IslandLayoutOpts {
  * for painter ordering.
  */
 const TREE_OFFSETS: ReadonlyArray<readonly [number, number]> = [
-  [0.070, -0.857], [-0.148, -0.807], [0.452, -0.732], [-0.516, -0.688],
-  [-0.148, -0.487], [-0.714, -0.479], [0.085, -0.354], [-0.361, -0.014],
-  [0.859, 0.049], [0.440, 0.098], [-0.536, 0.212], [-0.810, 0.290],
-  [0.801, 0.312], [-0.062, 0.380], [0.510, 0.480], [-0.160, 0.845],
+  [0.097, -0.854], [-0.214, -0.833], [-0.469, -0.803], [0.581, -0.634],
+  [-0.188, -0.570], [-0.690, -0.526], [-0.198, -0.345], [-0.499, -0.331],
+  [0.034, -0.323], [0.677, -0.299], [-0.832, -0.216], [0.228, -0.200],
+  [0.462, -0.170], [0.858, -0.053], [0.192, 0.282], [0.775, 0.373],
+  [-0.484, 0.448], [0.419, 0.658], [0.197, 0.755], [-0.214, 0.833],
+];
+
+/** Flower-cluster anchor points (sand-relative). Each renders 3–5 small warm
+ *  blossoms. Generated against the sand alpha so they sit on sand. */
+const FLOWER_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [0.528, -0.472], [0.140, -0.393], [-0.399, -0.272], [-0.061, -0.248],
+  [0.398, -0.214], [0.249, 0.229], [-0.358, 0.266], [0.116, 0.484],
+  [-0.133, 0.617],
+];
+
+/** Bush anchor points (sand-relative), placed near trees/landmark edges. */
+const BUSH_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [-0.329, -0.877], [-0.061, -0.780], [-0.489, -0.708], [-0.666, -0.633],
+  [-0.711, -0.279], [0.102, 0.700], [0.356, 0.791],
 ];
 
 /** Small deterministic PRNG (mulberry32) — same seed ⇒ same island. */
@@ -67,6 +82,8 @@ export class LayeredIsland {
   private readonly water: Sprite;
   private readonly sand: Sprite;
   private readonly grass = new Container();
+  private readonly flowers = new Graphics();
+  private readonly bushes = new Graphics();
   private readonly rocks = new Container();
   private readonly trees = new Container();
 
@@ -76,9 +93,13 @@ export class LayeredIsland {
     this.water.anchor.set(0.5);
     this.sand.anchor.set(0.5);
 
-    // Bottom → top. Grass/rocks/trees are y-sorted internally.
-    this.container.addChild(this.water, this.sand, this.grass, this.rocks, this.trees);
-    for (const c of [this.container, this.water, this.sand, this.grass, this.rocks, this.trees]) {
+    // Bottom → top. Grass/rocks/trees are y-sorted internally; flowers (flat)
+    // and bushes (low rounded greenery) sit between the grass and the props.
+    this.container.addChild(
+      this.water, this.sand, this.grass, this.flowers, this.bushes, this.rocks, this.trees,
+    );
+    for (const c of [this.container, this.water, this.sand, this.grass,
+      this.flowers, this.bushes, this.rocks, this.trees]) {
       c.eventMode = "none";
     }
     this.trees.sortableChildren = true;
@@ -114,8 +135,59 @@ export class LayeredIsland {
     const rockUnit = (sandH * 0.14) / this.tex.rock.height;
 
     this.scatterGrass(o.cx, o.cy, shx, shy, grassUnit);
+    this.drawFlowers(o.cx, o.cy, shx, shy, sandH);
+    this.drawBushes(o.cx, o.cy, shx, shy, sandH);
     this.scatterRocks(o.cx, o.cy, shx, shy, rockUnit);
     this.scatterTrees(o.cx, o.cy, shx, shy, treeUnit);
+  }
+
+  // Small charming flower clusters (3–5 warm blossoms each), drawn flat on the
+  // sand. Programmatic — no PNG assets.
+  private drawFlowers(cx: number, cy: number, shx: number, shy: number, sandH: number): void {
+    this.flowers.clear();
+    const r = rng(0xf10a);
+    const petalCols = [0xff9fb6, 0xffd36e, 0xfff3d6, 0xf6a5c0, 0xffe08a];
+    const unit = sandH * 0.011; // blossom radius in world px
+    for (const [nx, ny] of FLOWER_OFFSETS) {
+      const bx = cx + nx * shx;
+      const by = cy + ny * shy;
+      const n = 3 + Math.floor(r() * 3); // 3–5 blossoms
+      for (let i = 0; i < n; i++) {
+        const fx = bx + (r() - 0.5) * unit * 7;
+        const fy = by + (r() - 0.5) * unit * 4;
+        const pr = unit * (0.8 + r() * 0.5);
+        const col = petalCols[Math.floor(r() * petalCols.length)];
+        // five petals + a yellow centre
+        for (let p = 0; p < 5; p++) {
+          const a = (p / 5) * Math.PI * 2 + r();
+          this.flowers.circle(fx + Math.cos(a) * pr, fy + Math.sin(a) * pr * 0.7, pr * 0.7).fill(col);
+        }
+        this.flowers.circle(fx, fy, pr * 0.55).fill(0xfff0a6);
+      }
+    }
+  }
+
+  // Rounded bushes — a touch darker than the grass — near trees / landmark edges.
+  private drawBushes(cx: number, cy: number, shx: number, shy: number, sandH: number): void {
+    this.bushes.clear();
+    const r = rng(0xb05e);
+    const base = sandH * 0.05; // bush radius in world px
+    for (const [nx, ny] of BUSH_OFFSETS) {
+      const bx = cx + nx * shx;
+      const by = cy + ny * shy;
+      const s = base * (0.8 + r() * 0.5);
+      // soft contact shadow
+      this.bushes.ellipse(bx, by, s * 1.15, s * 0.34).fill({ color: 0x000000, alpha: 0.12 });
+      // a few overlapping rounded lobes, bottom-anchored
+      const lobes = 3 + Math.floor(r() * 2);
+      for (let i = 0; i < lobes; i++) {
+        const ox = (i - (lobes - 1) / 2) * s * 0.7 + (r() - 0.5) * s * 0.3;
+        const oy = -s * (0.35 + r() * 0.2);
+        this.bushes.circle(bx + ox, by + oy, s * (0.6 + r() * 0.25)).fill(0x6f9a3a);
+      }
+      // lighter top dabs
+      this.bushes.circle(bx - s * 0.2, by - s * 0.7, s * 0.42).fill({ color: 0x8cb84f, alpha: 0.85 });
+    }
   }
 
   /**

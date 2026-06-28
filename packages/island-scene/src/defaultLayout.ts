@@ -115,28 +115,28 @@ const OBSTACLE_ROWS: Array<[number, Array<[number, number]>]> = [
 
 const landCells: GridPosition[] = expand(LAND_ROWS);
 
-// Nine landmark zones: campfire at the centre, a loose interior ring of four
-// around it (treehouse/art-hut/arcade/star-market), and four coastal zones near
-// the sand edge (lighthouse/dock/calm-beach/lazy-lagoon). Positions are tuned so
-// no footprints or screen-space labels overlap and every zone is reachable.
+// Nine landmark zones, positioned from the drag-and-drop layout editor (the
+// editor's percentage offsets mapped onto the sand ellipse). Campfire at the
+// centre; the dock is pushed to the southern waterline so its planks reach the
+// ocean. Verified: no footprint overlaps, all reachable from spawn.
 export const sampleZones: ZoneInstance[] = [
   // Centre
-  { key: "campfire_circle", displayName: "Campfire Circle", skinName: "Marshmallow Ring", gridPosition: { x: 25, y: 21 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  { key: "campfire_circle", displayName: "Campfire Circle", skinName: "Marshmallow Ring", gridPosition: { x: 26, y: 22 }, footprint: { w: 4, h: 4 }, unlocked: true },
   // Interior ring
-  { key: "treehouse_hideaway", displayName: "Treehouse Hideaway", skinName: "Treetop Hideaway", gridPosition: { x: 12, y: 18 }, footprint: { w: 5, h: 5 }, unlocked: true },
-  { key: "art_hut", displayName: "Art Hut", skinName: "Paint Cabin", gridPosition: { x: 22, y: 9 }, footprint: { w: 4, h: 4 }, unlocked: true },
-  { key: "arcade_cove", displayName: "Arcade Cove", skinName: "Arcade Cove", gridPosition: { x: 35, y: 25 }, footprint: { w: 5, h: 4 }, unlocked: true },
-  { key: "star_market", displayName: "Star Market", skinName: "Star Market", gridPosition: { x: 30, y: 36 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  { key: "treehouse_hideaway", displayName: "Treehouse Hideaway", skinName: "Treetop Hideaway", gridPosition: { x: 10, y: 16 }, footprint: { w: 5, h: 5 }, unlocked: true },
+  { key: "art_hut", displayName: "Art Hut", skinName: "Paint Cabin", gridPosition: { x: 16, y: 6 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  { key: "arcade_cove", displayName: "Arcade Cove", skinName: "Arcade Cove", gridPosition: { x: 34, y: 18 }, footprint: { w: 5, h: 4 }, unlocked: true },
+  { key: "star_market", displayName: "Star Market", skinName: "Star Market", gridPosition: { x: 18, y: 28 }, footprint: { w: 4, h: 4 }, unlocked: true },
   // Coastal
-  { key: "lighthouse_point", displayName: "Lighthouse Point", skinName: "Beacon Point", gridPosition: { x: 26, y: 6 }, footprint: { w: 4, h: 4 }, unlocked: true },
-  { key: "welcome_dock", displayName: "Welcome Dock", skinName: "Welcome Dock", gridPosition: { x: 39, y: 35 }, footprint: { w: 6, h: 4 }, unlocked: true },
-  { key: "calm_beach", displayName: "Calm Beach", skinName: "Calm Beach", gridPosition: { x: 15, y: 31 }, footprint: { w: 6, h: 4 }, unlocked: true },
-  { key: "lazy_lagoon", displayName: "Lazy Lagoon", skinName: "Lazy Lagoon", gridPosition: { x: 43, y: 22 }, footprint: { w: 5, h: 4 }, unlocked: true },
+  { key: "lighthouse_point", displayName: "Lighthouse Point", skinName: "Beacon Point", gridPosition: { x: 30, y: 4 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  { key: "welcome_dock", displayName: "Welcome Dock", skinName: "Welcome Dock", gridPosition: { x: 44, y: 38 }, footprint: { w: 6, h: 4 }, unlocked: true },
+  { key: "calm_beach", displayName: "Calm Beach", skinName: "Calm Beach", gridPosition: { x: 24, y: 38 }, footprint: { w: 6, h: 4 }, unlocked: true },
+  { key: "lazy_lagoon", displayName: "Lazy Lagoon", skinName: "Lazy Lagoon", gridPosition: { x: 45, y: 26 }, footprint: { w: 5, h: 4 }, unlocked: true },
 ];
 
 // Spawn just inland (up-screen) of the welcome dock — the arrival sequence
 // drops the avatar here after the boat pulls up.
-const spawnPoint: GridPosition = { x: 41, y: 36 };
+const spawnPoint: GridPosition = { x: 41, y: 37 };
 
 // Obstacle set = the painted tree/rock masses, with their frayed edges shaved.
 // The classifier dilates each mass slightly, leaving thin 1-cell tendrils that
