@@ -45,18 +45,20 @@ export const LANDMARK_ART: Record<
   ZoneKey,
   { url: string; scale: number; anchorX: number; anchorY: number; contentH: number }
 > = {
-  // Scales set from the layout editor's size values (size/100 ≈ scale).
-  lighthouse_point: { url: landmarkUrl("lighthouse"), scale: 0.25, anchorX: 0.5464, anchorY: 0.8789, contentH: 839 },
-  treehouse_hideaway: { url: landmarkUrl("treehouse"), scale: 0.38, anchorX: 0.501, anchorY: 0.8848, contentH: 853 },
-  art_hut: { url: landmarkUrl("art-hut"), scale: 0.27, anchorX: 0.5181, anchorY: 0.7236, contentH: 638 },
-  arcade_cove: { url: landmarkUrl("arcade"), scale: 0.27, anchorX: 0.5103, anchorY: 0.8457, contentH: 734 },
+  // Scales normalized by door/entrance size so every structure reads at the
+  // same child-scale door (~42 world px). Towers are taller; the treehouse is
+  // capped (its door is a tiny fraction of the all-tree image).
+  lighthouse_point: { url: landmarkUrl("lighthouse"), scale: 0.37, anchorX: 0.5464, anchorY: 0.8789, contentH: 839 },
+  treehouse_hideaway: { url: landmarkUrl("treehouse"), scale: 0.42, anchorX: 0.501, anchorY: 0.8848, contentH: 853 },
+  art_hut: { url: landmarkUrl("art-hut"), scale: 0.29, anchorX: 0.5181, anchorY: 0.7236, contentH: 638 },
+  arcade_cove: { url: landmarkUrl("arcade"), scale: 0.21, anchorX: 0.5103, anchorY: 0.8457, contentH: 734 },
   campfire_circle: { url: landmarkUrl("campfire"), scale: 0.31, anchorX: 0.499, anchorY: 0.75, contentH: 641 },
   calm_beach: { url: landmarkUrl("calm-beach"), scale: 0.25, anchorX: 0.4385, anchorY: 0.7598, contentH: 657 },
   welcome_dock: { url: landmarkUrl("welcome-dock"), scale: 0.25, anchorX: 0.5205, anchorY: 0.7676, contentH: 484 },
   // New zones. store-01 is a tall stall (base-pinned); lagoon-01 is a flat
   // top-down pond, so it is centre-pinned (anchorY 0.5) and uses a reduced
   // contentH just for the floating label height.
-  star_market: { url: landmarkUrl("store-01"), scale: 0.23, anchorX: 0.4995, anchorY: 0.9941, contentH: 1167 },
+  star_market: { url: landmarkUrl("store-01"), scale: 0.19, anchorX: 0.4995, anchorY: 0.9941, contentH: 1167 },
   lazy_lagoon: { url: landmarkUrl("lagoon-01"), scale: 0.25, anchorX: 0.4996, anchorY: 0.5, contentH: 440 },
   // TODO: fishing-dock-01.png placeholder — asset is coming; wire a new zone
   // once it is finalized (it is already uploaded to the repo root but skipped

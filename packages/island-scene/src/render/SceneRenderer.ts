@@ -780,16 +780,23 @@ export class SceneRenderer {
    */
   private async loadIsland(): Promise<void> {
     try {
-      const [water, sand, grass, rock, tree01, tree02] = (await Promise.all([
-        Assets.load(spriteUrl("water-base")),
-        Assets.load(spriteUrl("sand-base")),
-        Assets.load(spriteUrl("grass-01")),
-        Assets.load(spriteUrl("rock-01")),
-        Assets.load(spriteUrl("tree-01")),
-        Assets.load(spriteUrl("tree-02")),
-      ])) as Texture[];
+      const [water, sand, grass, rock, tree01, tree02, bush01, bush02, flower01, flowerBush01] =
+        (await Promise.all([
+          Assets.load(spriteUrl("water-base")),
+          Assets.load(spriteUrl("sand-base")),
+          Assets.load(spriteUrl("grass-01")),
+          Assets.load(spriteUrl("rock-01")),
+          Assets.load(spriteUrl("tree-01")),
+          Assets.load(spriteUrl("tree-02")),
+          Assets.load(spriteUrl("bush-01")),
+          Assets.load(spriteUrl("bush-02")),
+          Assets.load(spriteUrl("flower-01")),
+          Assets.load(spriteUrl("flower-bush-01")),
+        ])) as Texture[];
       if (this.destroyed) return;
-      const island = new LayeredIsland({ water, sand, grass, rock, tree01, tree02 });
+      const island = new LayeredIsland({
+        water, sand, grass, rock, tree01, tree02, bush01, bush02, flower01, flowerBush01,
+      });
       this.island = island;
       // Very bottom of the world; landmarks/avatars (in entities) stay on top.
       this.world.addChildAt(island.container, 0);
