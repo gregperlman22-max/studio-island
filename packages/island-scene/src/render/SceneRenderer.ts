@@ -745,36 +745,31 @@ export class SceneRenderer {
     this.sky.ellipse(w / 2, h / 2, vig * 0.62, vig * 0.62).fill({ color: 0xffd98a, alpha: 0.05 });
   }
 
-  // Nominal pixel size of the original painted ground (home-island.png); the
-  // landmark grid positions were calibrated against this art pinned via
-  // terrainImage.originX/originY/scale, so the sand reuses that exact footprint.
-  private static readonly ART_W = 1536;
-  private static readonly ART_H = 1024;
+  // Sand width in world pixels. Sized so the island reads as ~60-65% of a
+  // typical screen at full zoom-out, leaving visible ocean on all sides. The
+  // landmark grid positions in defaultLayout are placed to fit this footprint.
+  private static readonly ISLAND_SPAN_W = 1600;
 
   /**
-   * Placement for the layered island. Sand is pinned to the painted-ground
-   * registration (so landmarks line up); water is sized to blanket the viewport
-   * at the most-zoomed-out level so it fills edge-to-edge with no gaps.
+   * Placement for the layered island. Sand is centered on the world-bounds
+   * centre (where the camera frames the island when zoomed out) and sized to
+   * ISLAND_SPAN_W; water is sized to blanket the viewport at the most-zoomed-out
+   * level so it fills edge-to-edge with no gaps.
    */
   private islandLayout(): IslandLayoutOpts {
-    const img = this.layout.terrainImage;
-    const scale = img?.scale ?? 1.5;
-    const ox = img?.originX ?? -1056;
-    const oy = img?.originY ?? 112;
-    const spanW = SceneRenderer.ART_W * scale;
-    const spanH = SceneRenderer.ART_H * scale;
-    const cx = ox + spanW / 2; // = 96 for the default pin
-    const cy = oy + spanH / 2; // = 880 for the default pin
+    const b = this.worldBounds;
+    const cx = (b.minX + b.maxX) / 2;
+    const cy = (b.minY + b.maxY) / 2;
+    const spanW = SceneRenderer.ISLAND_SPAN_W;
 
     // Water must cover the world region visible at MIN_ZOOM, plus margin for
     // camera offset, and never be smaller than the island itself.
     const sw = this.app.screen.width;
     const sh = this.app.screen.height;
-    const waterW = Math.max((sw / MIN_ZOOM) * 1.3, spanW * 1.2);
-    const waterH = Math.max((sh / MIN_ZOOM) * 1.3, spanH * 1.2);
+    const waterW = Math.max((sw / MIN_ZOOM) * 1.3, spanW * 1.3);
+    const waterH = Math.max((sh / MIN_ZOOM) * 1.3, spanW * 1.3);
 
-    const unit = this.worldBounds.maxY - this.worldBounds.minY;
-    return { cx, cy, spanW, waterW, waterH, unit };
+    return { cx, cy, spanW, waterW, waterH };
   }
 
   /**

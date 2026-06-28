@@ -117,18 +117,18 @@ const landCells: GridPosition[] = expand(LAND_ROWS);
 
 // Seven landmark zones, snapped onto open clearings in the illustration.
 export const sampleZones: ZoneInstance[] = [
-  { key: "lighthouse_point", displayName: "Lighthouse Point", skinName: "Beacon Point", gridPosition: { x: 30, y: 4 }, footprint: { w: 4, h: 4 }, unlocked: true },
-  { key: "treehouse_hideaway", displayName: "Treehouse Hideaway", skinName: "Treetop Hideaway", gridPosition: { x: 4, y: 20 }, footprint: { w: 5, h: 5 }, unlocked: true },
-  { key: "art_hut", displayName: "Art Hut", skinName: "Paint Cabin", gridPosition: { x: 28, y: 20 }, footprint: { w: 4, h: 4 }, unlocked: true },
-  { key: "campfire_circle", displayName: "Campfire Circle", skinName: "Marshmallow Ring", gridPosition: { x: 19, y: 24 }, footprint: { w: 4, h: 4 }, unlocked: true },
-  { key: "arcade_cove", displayName: "Arcade Cove", skinName: "Arcade Cove", gridPosition: { x: 42, y: 24 }, footprint: { w: 5, h: 4 }, unlocked: true },
-  { key: "calm_beach", displayName: "Calm Beach", skinName: "Calm Beach", gridPosition: { x: 5, y: 31 }, footprint: { w: 6, h: 4 }, unlocked: true },
-  { key: "welcome_dock", displayName: "Welcome Dock", skinName: "Welcome Dock", gridPosition: { x: 43, y: 37 }, footprint: { w: 6, h: 4 }, unlocked: true },
+  { key: "lighthouse_point", displayName: "Lighthouse Point", skinName: "Beacon Point", gridPosition: { x: 21, y: 4 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  { key: "treehouse_hideaway", displayName: "Treehouse Hideaway", skinName: "Treetop Hideaway", gridPosition: { x: 11, y: 17 }, footprint: { w: 5, h: 5 }, unlocked: true },
+  { key: "art_hut", displayName: "Art Hut", skinName: "Paint Cabin", gridPosition: { x: 28, y: 16 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  { key: "campfire_circle", displayName: "Campfire Circle", skinName: "Marshmallow Ring", gridPosition: { x: 25, y: 21 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  { key: "arcade_cove", displayName: "Arcade Cove", skinName: "Arcade Cove", gridPosition: { x: 39, y: 23 }, footprint: { w: 5, h: 4 }, unlocked: true },
+  { key: "calm_beach", displayName: "Calm Beach", skinName: "Calm Beach", gridPosition: { x: 16, y: 31 }, footprint: { w: 6, h: 4 }, unlocked: true },
+  { key: "welcome_dock", displayName: "Welcome Dock", skinName: "Welcome Dock", gridPosition: { x: 39, y: 36 }, footprint: { w: 6, h: 4 }, unlocked: true },
 ];
 
 // Spawn just inland (up-screen) of the welcome dock — the arrival sequence
 // drops the avatar here after the boat pulls up.
-const spawnPoint: GridPosition = { x: 44, y: 33 };
+const spawnPoint: GridPosition = { x: 41, y: 36 };
 
 // Obstacle set = the painted tree/rock masses, with their frayed edges shaved.
 // The classifier dilates each mass slightly, leaving thin 1-cell tendrils that

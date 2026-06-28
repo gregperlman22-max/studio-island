@@ -34,8 +34,6 @@ export interface IslandLayoutOpts {
    *  sized to the viewport at the most-zoomed-out level so there are no gaps. */
   waterW: number;
   waterH: number;
-  /** Base size metric for the scattered props (≈ island height in world px). */
-  unit: number;
 }
 
 /** Small deterministic PRNG (mulberry32) — same seed ⇒ same island. */
@@ -95,11 +93,11 @@ export class LayeredIsland {
     const shx = sandW / 2;
     const shy = sandH / 2;
 
-    // Base on-screen sizes, expressed as a fraction of island height, so the
-    // scene reads the same regardless of the absolute world scale.
-    const treeUnit = (o.unit * 0.3) / this.tex.tree01.height;
-    const grassUnit = (o.unit * 0.13) / this.tex.grass.height;
-    const rockUnit = (o.unit * 0.16) / this.tex.rock.height;
+    // Prop sizes are a fraction of the SAND height, so the tree ring, grass and
+    // rocks scale proportionally whenever the island is resized.
+    const treeUnit = (sandH * 0.27) / this.tex.tree01.height;
+    const grassUnit = (sandH * 0.11) / this.tex.grass.height;
+    const rockUnit = (sandH * 0.14) / this.tex.rock.height;
 
     this.scatterGrass(o.cx, o.cy, shx, shy, grassUnit);
     this.scatterRocks(o.cx, o.cy, shx, shy, rockUnit);
