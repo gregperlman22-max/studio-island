@@ -142,6 +142,13 @@ export interface LayoutConfig {
    */
   terrainImage?: {
     url: string;
+    /**
+     * Optional foliage overlay sharing the same registration (originX/originY/
+     * scale). When set, `url` is the foliage-free base art and this image is
+     * stacked directly above it and gently swayed; together they replace the
+     * single ground sprite. Purely decorative — it never affects the walk-grid.
+     */
+    foliageUrl?: string;
     originX: number;
     originY: number;
     scale: number;

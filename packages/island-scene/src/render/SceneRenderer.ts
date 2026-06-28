@@ -119,6 +119,11 @@ export class SceneRenderer {
   /** Finished illustrated ground sprite (replaces the procedural terrain when
    *  layout.terrainImage is set); pinned into world space via the registration. */
   private ground?: Sprite;
+  /** Foliage overlay stacked above the base ground; gently swayed in update().
+   *  Bottom-center anchored so the canopy tilts from its "roots". */
+  private foliage?: Sprite;
+  /** Rest x of the foliage sprite (sway drifts around this). */
+  private foliageRestX = 0;
   /** Smooth island blob (base fill + cliff + bold coast outline). */
   private terrain = new Graphics();
   /** Per-tile biome coloring, masked to the smooth coastline. */
@@ -748,6 +753,24 @@ export class SceneRenderer {
     this.ground = spr;
     // Sits at the very bottom of the world so props/avatars draw on top.
     this.world.addChildAt(spr, 0);
+
+    // Optional foliage overlay, same registration as the base. Stacked just
+    // above the base (still beneath props/avatars, preserving the prior depth)
+    // and bottom-center anchored so it can sway from its roots in update().
+    if (img.foliageUrl) {
+      try {
+        const ftex = (await Assets.load(img.foliageUrl)) as Texture;
+        if (!this.destroyed) {
+          const fol = new Sprite(ftex);
+          fol.anchor.set(0.5, 1);
+          fol.eventMode = "none";
+          this.foliage = fol;
+          this.world.addChildAt(fol, 1);
+        }
+      } catch (err) {
+        console.warn("[island-scene] foliageImage failed to load; skipping sway layer", err);
+      }
+    }
     this.positionGround();
   }
 
@@ -786,9 +809,21 @@ export class SceneRenderer {
   /** Pin the ground sprite so art-pixel (0,0) → world (originX, originY). */
   private positionGround(): void {
     const img = this.layout.terrainImage;
-    if (!this.ground || !img) return;
-    this.ground.position.set(img.originX, img.originY);
-    this.ground.scale.set(img.scale);
+    if (!img) return;
+    if (this.ground) {
+      this.ground.position.set(img.originX, img.originY);
+      this.ground.scale.set(img.scale);
+    }
+    if (this.foliage) {
+      this.foliage.scale.set(img.scale);
+      // Bottom-center anchor → its position is the art's bottom-center in world
+      // space, so it stays pixel-aligned with the base while rotating from there.
+      const w = this.foliage.texture.width;
+      const h = this.foliage.texture.height;
+      this.foliageRestX = img.originX + (img.scale * w) / 2;
+      this.foliage.position.set(this.foliageRestX, img.originY + img.scale * h);
+      this.foliage.rotation = 0;
+    }
   }
 
   private drawTerrain(): void {
@@ -1497,6 +1532,13 @@ export class SceneRenderer {
         this.drawFlame();
         // Trees sway their canopy; zone landmarks have idle details.
         for (const s of this.swayers) s.sprite.rotation = Math.sin(t * 1.0 + s.phase) * 0.088;
+        // Foliage overlay: a gentle horizontal drift + a slightly phase-offset
+        // tilt about its bottom-center root, so the canopy breathes organically.
+        if (this.foliage) {
+          const w = (2 * Math.PI) / 3.5; // ~3.5s period
+          this.foliage.position.x = this.foliageRestX + Math.sin(t * w) * 4;
+          this.foliage.rotation = Math.sin(t * w + 0.9) * 0.004;
+        }
         for (const anim of this.zoneAnimators) anim(t);
       }
       const t = this.elapsed / 1000;
