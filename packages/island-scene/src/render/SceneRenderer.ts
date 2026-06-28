@@ -201,6 +201,7 @@ export class SceneRenderer {
   private pinchDist = 0;
 
   private inited = false;
+  private canvasRevealed = false;
   private destroyed = false;
   private tornDown = false;
   private elapsed = 0;
@@ -242,6 +243,11 @@ export class SceneRenderer {
     this.zoneView = new ZoneView({ reducedMotion: this.opts.reducedMotion });
 
     this.app.canvas.style.display = "block";
+    // Mount invisible: Pixi's auto-started ticker can paint a frame at the
+    // default world scale/position before the camera/layout math below runs,
+    // which reads as a one-frame zoom/offset flash. We reveal the canvas only
+    // once the first correctly-composed frame is ready (see fadeInCanvas).
+    this.app.canvas.style.opacity = "0";
     this.opts.container.appendChild(this.app.canvas);
     // The zone view sits BELOW the world map so the enter transition can fade
     // the (tilting) world out to reveal the parallax beneath, and the exit
@@ -301,7 +307,34 @@ export class SceneRenderer {
     // decorative bob/shimmer are gated by the reduced-motion flag.
     this.app.ticker.add(this.update);
 
+    // First correctly-composed frame is ready (post-layout, post-camera). Force
+    // it to the screen, then warmly fade the canvas in — initial load only.
+    this.app.render();
+    this.fadeInCanvas();
+
     this.opts.onReady?.();
+  }
+
+  /**
+   * Reveal the canvas once, with a gentle warm fade, after the first correct
+   * frame is composed. The canvas mounts at opacity 0 (see init) so the
+   * pre-layout default-scale frame never flashes; here we let that first good
+   * frame paint, then transition opacity 0 → 1. Resize reuses the same canvas,
+   * so this runs a single time on initial load.
+   */
+  private fadeInCanvas(): void {
+    if (this.canvasRevealed || this.destroyed) return;
+    this.canvasRevealed = true;
+    const canvas = this.app.canvas;
+    canvas.style.transition = "opacity 360ms ease-out";
+    // Two frames: the first lets the just-rendered correct frame paint while
+    // still invisible; the second flips opacity so the browser animates it.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (this.destroyed) return;
+        canvas.style.opacity = "1";
+      });
+    });
   }
 
   /** Position the boat off-shore and hide the avatar for the arrival walk-on. */
