@@ -52,6 +52,14 @@ export const LANDMARK_ART: Record<
   campfire_circle: { url: landmarkUrl("campfire"), scale: 0.255, anchorX: 0.499, anchorY: 0.75, contentH: 641 },
   calm_beach: { url: landmarkUrl("calm-beach"), scale: 0.33, anchorX: 0.4385, anchorY: 0.7598, contentH: 657 },
   welcome_dock: { url: landmarkUrl("welcome-dock"), scale: 0.395, anchorX: 0.5205, anchorY: 0.7676, contentH: 484 },
+  // New zones. store-01 is a tall stall (base-pinned); lagoon-01 is a flat
+  // top-down pond, so it is centre-pinned (anchorY 0.5) and uses a reduced
+  // contentH just for the floating label height.
+  star_market: { url: landmarkUrl("store-01"), scale: 0.35, anchorX: 0.4995, anchorY: 0.9941, contentH: 1167 },
+  lazy_lagoon: { url: landmarkUrl("lagoon-01"), scale: 0.45, anchorX: 0.4996, anchorY: 0.5, contentH: 440 },
+  // TODO: fishing-dock-01.png placeholder — asset is coming; wire a new zone
+  // once it is finalized (it is already uploaded to the repo root but skipped
+  // for this pass per the layout brief).
 };
 
 /**
@@ -148,6 +156,8 @@ const STRUCTURE_SCALE: Record<ZoneKey, number> = {
   arcade_cove: 2.8,
   calm_beach: 2.4,
   welcome_dock: 3.0,
+  star_market: 2.8,
+  lazy_lagoon: 2.6,
 };
 
 // Cel-shaded box helper: flat fill + bold outline + soft top highlight.
@@ -170,6 +180,8 @@ export const INTERIOR_BG: Record<ZoneKey, string> = {
   arcade_cove: "#c9d2ff",
   calm_beach: "#d6f0ee",
   welcome_dock: "#bfe6ee",
+  star_market: "#f6e7c8",
+  lazy_lagoon: "#cdeef0",
 };
 
 // ── Landmark painters (large, bold-outlined) ────────────────────────
@@ -308,5 +320,26 @@ const ZONE_PAINT: Record<ZoneKey, (g: Graphics, p: ThemePalette) => void> = {
     g.roundRect(-22, -16, 5, 12, 1).fill(0x6e4a2a).stroke({ width: 2.5, color: INK });
     g.roundRect(17, -16, 5, 12, 1).fill(0x6e4a2a).stroke({ width: 2.5, color: INK });
     g.circle(-19.5, -20, 4).fill(0xfff1a8).stroke({ width: 2, color: INK });
+  },
+  star_market: (g, p) => {
+    // Little market stall: counter, posts and a striped awning.
+    const wood = 0xb07a44;
+    celBox(g, -20, -8, 40, 16, 2, wood); // counter
+    g.roundRect(-20, -34, 4, 26, 1).fill(0x6e4a2a).stroke({ width: 2.5, color: INK });
+    g.roundRect(16, -34, 4, 26, 1).fill(0x6e4a2a).stroke({ width: 2.5, color: INK });
+    // striped awning
+    for (let i = 0; i < 6; i++) {
+      g.poly([-22 + i * 7.3, -34, -22 + (i + 1) * 7.3, -34, -22 + (i + 1) * 7.3 - 3, -26, -22 + i * 7.3 - 3, -26])
+        .fill(i % 2 ? 0xf4f0e6 : hexNum(shade(p.accent, 0.1)));
+    }
+    g.poly([-24, -34, 24, -34, 18, -26, -18, -26]).stroke({ width: 3, color: INK });
+  },
+  lazy_lagoon: (g, p) => {
+    // Flat top-down pond: water oval with a sandy rim and a couple of rocks.
+    g.ellipse(0, 0, 34, 20).fill(hexNum(shade(p.landAlt, 0.05))).stroke({ width: 3, color: INK });
+    g.ellipse(0, 0, 28, 15).fill(hexNum(p.water));
+    g.ellipse(-3, -2, 20, 9).fill({ color: hexNum(shade(p.water, 0.18)), alpha: 0.5 });
+    g.ellipse(12, 4, 5, 3).fill(0x8d8475).stroke({ width: 2, color: INK });
+    g.ellipse(-14, 5, 4, 2.5).fill(0x8d8475).stroke({ width: 2, color: INK });
   },
 };

@@ -79,7 +79,9 @@ export type ZoneKey =
   | "art_hut"
   | "arcade_cove"
   | "welcome_dock"
-  | "calm_beach";
+  | "calm_beach"
+  | "star_market"
+  | "lazy_lagoon";
 
 /** Coarse grid coordinates in island-space (not pixels). */
 export interface GridPosition {
