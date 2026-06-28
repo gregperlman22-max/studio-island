@@ -38,6 +38,11 @@ import { buildZoneScene, LANDMARK_ART, BOAT_ART, ARRIVAL_BG_URL } from "./zones"
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
 import { ArrivalView } from "./ArrivalView";
+import { LayeredIsland } from "./LayeredIsland";
+
+// Individual illustrated world-map sprites (transparent cutouts; water solid).
+const spriteUrl = (name: string): string =>
+  new URL(`../assets/sprites/${name}.png`, import.meta.url).href;
 
 /** Walk speed in grid tiles per second. */
 const WALK_SPEED = 4.5;
@@ -119,6 +124,9 @@ export class SceneRenderer {
   /** Finished illustrated ground sprite (replaces the procedural terrain when
    *  layout.terrainImage is set); pinned into world space via the registration. */
   private ground?: Sprite;
+  /** Layered sprite world map (water/sand/grass/rocks/trees), drawn at the
+   *  very bottom of the world beneath landmarks + avatars. */
+  private island?: LayeredIsland;
   /** Smooth island blob (base fill + cliff + bold coast outline). */
   private terrain = new Graphics();
   /** Per-tile biome coloring, masked to the smooth coastline. */
@@ -301,7 +309,7 @@ export class SceneRenderer {
     this.textures.refresh(theme.palette);
     this.opts.onLoadProgress?.(0.6);
 
-    await this.loadGround();
+    await this.loadIsland();
     await this.loadLandmarks();
 
     this.rebuild();
@@ -606,6 +614,9 @@ export class SceneRenderer {
     this.drawTerrain();
     this.buildGrid();
     this.computeWorldBounds();
+    // Fit the layered sprite island to the island's world footprint so the
+    // (unchanged) landmarks sit on the sand.
+    this.island?.layout(this.worldBounds);
     // Tear down only the static props; avatar views persist across theme/zone
     // changes so in-progress walks aren't interrupted.
     for (const e of this.staticEntities) e.destroy({ children: true });
@@ -729,6 +740,32 @@ export class SceneRenderer {
     this.sky.ellipse(w / 2, h / 2, vig * 0.62, vig * 0.62).fill({ color: 0xffd98a, alpha: 0.05 });
   }
 
+  /**
+   * Build the layered sprite world map (water/sand/grass/rocks/trees) and pin
+   * it at the very bottom of the world, beneath landmarks + avatars. Replaces
+   * the single painted ground sprite. A failed texture load just leaves the
+   * island unbuilt; the procedural terrain (drawTerrain) then draws instead.
+   */
+  private async loadIsland(): Promise<void> {
+    try {
+      const [water, sand, grass, rock, tree01, tree02] = (await Promise.all([
+        Assets.load(spriteUrl("water-base")),
+        Assets.load(spriteUrl("sand-base")),
+        Assets.load(spriteUrl("grass-01")),
+        Assets.load(spriteUrl("rock-01")),
+        Assets.load(spriteUrl("tree-01")),
+        Assets.load(spriteUrl("tree-02")),
+      ])) as Texture[];
+      if (this.destroyed) return;
+      const island = new LayeredIsland({ water, sand, grass, rock, tree01, tree02 });
+      this.island = island;
+      // Very bottom of the world; landmarks/avatars (in entities) stay on top.
+      this.world.addChildAt(island.container, 0);
+    } catch (err) {
+      console.warn("[island-scene] island sprites failed to load; using code terrain", err);
+    }
+  }
+
   /** Load the finished terrain illustration and pin it into the world. */
   private async loadGround(): Promise<void> {
     const img = this.layout.terrainImage;
@@ -800,7 +837,7 @@ export class SceneRenderer {
     // sky/sea backdrop. We DO keep a coast loop (derived from the same grid the
     // art was registered to) purely so drawWaves can lap a soft water shimmer
     // just off the painted shore.
-    if (this.layout.terrainImage && this.ground) {
+    if (this.layout.terrainImage && (this.ground || this.island)) {
       this.terrain.clear();
       this.biomeLayer.clear();
       this.landMask.clear();
