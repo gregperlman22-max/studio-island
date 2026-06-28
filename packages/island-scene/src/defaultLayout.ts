@@ -117,9 +117,9 @@ const landCells: GridPosition[] = expand(LAND_ROWS);
 
 // Seven landmark zones, snapped onto open clearings in the illustration.
 export const sampleZones: ZoneInstance[] = [
-  { key: "lighthouse_point", displayName: "Lighthouse Point", skinName: "Beacon Point", gridPosition: { x: 21, y: 4 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  { key: "lighthouse_point", displayName: "Lighthouse Point", skinName: "Beacon Point", gridPosition: { x: 26, y: 10 }, footprint: { w: 4, h: 4 }, unlocked: true },
   { key: "treehouse_hideaway", displayName: "Treehouse Hideaway", skinName: "Treetop Hideaway", gridPosition: { x: 11, y: 17 }, footprint: { w: 5, h: 5 }, unlocked: true },
-  { key: "art_hut", displayName: "Art Hut", skinName: "Paint Cabin", gridPosition: { x: 28, y: 16 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  { key: "art_hut", displayName: "Art Hut", skinName: "Paint Cabin", gridPosition: { x: 29, y: 18 }, footprint: { w: 4, h: 4 }, unlocked: true },
   { key: "campfire_circle", displayName: "Campfire Circle", skinName: "Marshmallow Ring", gridPosition: { x: 25, y: 21 }, footprint: { w: 4, h: 4 }, unlocked: true },
   { key: "arcade_cove", displayName: "Arcade Cove", skinName: "Arcade Cove", gridPosition: { x: 39, y: 23 }, footprint: { w: 5, h: 4 }, unlocked: true },
   { key: "calm_beach", displayName: "Calm Beach", skinName: "Calm Beach", gridPosition: { x: 16, y: 31 }, footprint: { w: 6, h: 4 }, unlocked: true },
