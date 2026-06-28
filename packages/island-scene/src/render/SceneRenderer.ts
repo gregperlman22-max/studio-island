@@ -34,9 +34,10 @@ import { ProgrammaticTextureProvider } from "./TextureProvider";
 import { buildAvatarSprite, type AvatarSprite } from "./avatar";
 import { biomeAt, landContext } from "./biome";
 import { islandOutline, flatten, insetLoop, clusterOutline, type Pt } from "./coast";
-import { buildZoneScene } from "./zones";
+import { buildZoneScene, LANDMARK_ART, BOAT_ART, ARRIVAL_BG_URL } from "./zones";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
+import { ArrivalView } from "./ArrivalView";
 
 /** Walk speed in grid tiles per second. */
 const WALK_SPEED = 4.5;
@@ -133,10 +134,12 @@ export class SceneRenderer {
   private fireflyDots: {
     g: Graphics; cx: number; cy: number; rx: number; ry: number; phase: number; speed: number;
   }[] = [];
-  /** Arrival boat (world space). */
-  private boat = new Graphics();
   /** Mode 2 — third-person zone view (parallax, screen space). */
   private zoneView!: ZoneView;
+  /** Zone name labels — SCREEN space, clamped into the viewport so a tall
+   *  landmark can never push its label off-screen or sit in front of it. */
+  private zoneLabels = new Container();
+  private zoneLabelItems: { text: Text; zone: ZoneInstance }[] = [];
   /** Optional flash overlay kept for reduced-motion / safety (screen space). */
   private fade = new Graphics();
 
@@ -157,9 +160,15 @@ export class SceneRenderer {
     scale0: number; scale1: number;
   } | null = null;
 
-  // Arrival sequence state.
-  private arrival: "boat" | "step" | "done" = "boat";
-  private arrivalT = 0;
+  // Arrival sequence state. "cinematic" = third-person boat-to-dock open;
+  // "fade" = cross-fading that cinematic up into the world map; "done" = normal.
+  private arrival: "cinematic" | "fade" | "done" = "cinematic";
+  private arrivalView?: ArrivalView;
+  private arrivalFadeT = 0;
+  /** Painted full-screen stage texture for the arrival cinematic. */
+  private arrivalBgTex?: Texture;
+  /** Boat texture (used by the arrival cinematic only). */
+  private boatTex?: Texture;
 
   private textures!: ProgrammaticTextureProvider;
   private theme!: ThemePackConfig;
@@ -179,6 +188,8 @@ export class SceneRenderer {
   private swayers: { sprite: Sprite; phase: number }[] = [];
   /** Per-zone idle animators (lighthouse beam, lantern flicker, etc.). */
   private zoneAnimators: ((t: number) => void)[] = [];
+  /** Finished illustrated landmark sprites, preloaded by zone key. */
+  private landmarkTextures = new Map<ZoneKey, Texture>();
 
   // ── Camera (zoom + eased follow + drag pan, clamped to world) ──
   private camScale = 1;
@@ -252,7 +263,8 @@ export class SceneRenderer {
     // The zone view sits BELOW the world map so the enter transition can fade
     // the (tilting) world out to reveal the parallax beneath, and the exit
     // transition can fade the world back in over it.
-    this.app.stage.addChild(this.backdrop, this.zoneView.container, this.world, this.fade);
+    this.app.stage.addChild(this.backdrop, this.zoneView.container, this.world, this.zoneLabels, this.fade);
+    this.zoneLabels.eventMode = "none";
     this.backdrop.addChild(this.sky, this.shimmer);
     this.world.addChild(
       this.terrain,
@@ -262,16 +274,15 @@ export class SceneRenderer {
       this.entities,
       this.flame,
       this.fireflies,
-      this.boat,
     );
     this.biomeLayer.mask = this.landMask;
     this.entities.sortableChildren = true;
     this.fade.eventMode = "none";
 
-    // Arrival: reduced motion skips straight to "landed"; otherwise the boat
-    // pulls up to the dock on first load. If the host starts inside a zone,
-    // there's no world arrival to play.
-    this.arrival = this.opts.reducedMotion || initialZone ? "done" : "boat";
+    // Arrival: reduced motion (or starting inside a zone) skips the cinematic
+    // and drops the avatar on the dock; otherwise the third-person boat-to-dock
+    // cinematic plays on first load.
+    this.arrival = this.opts.reducedMotion || initialZone ? "done" : "cinematic";
 
     // Unified pointer handling on the stage: press + release without travel is
     // a tap (walk / zone / object); press + drag pans the camera. Zones and
@@ -291,6 +302,7 @@ export class SceneRenderer {
     this.opts.onLoadProgress?.(0.6);
 
     await this.loadGround();
+    await this.loadLandmarks();
 
     this.rebuild();
     this.drawFadeRect();
@@ -337,37 +349,48 @@ export class SceneRenderer {
     });
   }
 
-  /** Position the boat off-shore and hide the avatar for the arrival walk-on. */
+  /** Kick off the third-person arrival cinematic, or (reduced motion / in-zone)
+   *  drop the avatar straight onto the dock. The boat lives only in the cinematic
+   *  now — there is no moored boat on the world map. */
   private setupArrival(): void {
-    this.boat.visible = this.arrival === "boat";
-    this.boat.scale.set(3.6); // a proper, character-scale boat with a visible sail
+    if (this.arrival === "cinematic") {
+      // Hide the world avatar until it disembarks; play the cinematic overlay.
+      const local = this.localId ? this.avatarViews.get(this.localId) : null;
+      if (local) local.container.visible = false;
+      this.arrivalView = new ArrivalView(this.opts.reducedMotion);
+      this.app.stage.addChild(this.arrivalView.container);
+      this.app.stage.setChildIndex(this.fade, this.app.stage.children.length - 1); // keep fade on top
+      this.arrivalView.enter(
+        this.localCfg(),
+        this.arrivalBgTex,
+        this.boatTex,
+        this.app.screen.width,
+        this.app.screen.height,
+      );
+    } else {
+      // No cinematic: place the avatar straight onto the dock.
+      this.placeAvatarOnDock();
+    }
+    this.arrivalFadeT = 0;
+  }
+
+  /** Stand the local avatar ON the dock's front edge after arrival. This cell is
+   *  inside the (movement-blocked) dock footprint, so it reads as standing on the
+   *  dock and y-sorts IN FRONT of the dock art; walkView routes it back onto open
+   *  ground via the nearest walkable cell on the first move. */
+  private placeAvatarOnDock(): void {
     const local = this.localId ? this.avatarViews.get(this.localId) : null;
-    if (this.arrival === "boat" && local) local.container.visible = false;
-    this.arrivalT = 0;
-    this.drawBoat();
-  }
-
-  private dockApproach(): { fromX: number; fromY: number; toX: number; toY: number } {
+    if (!local) return;
     const dock = this.zones.find((z) => z.key === "welcome_dock");
-    const c = dock
-      ? footprintCenter(dock.gridPosition, dock.footprint.w, dock.footprint.h)
-      : tileCenter(this.layout.spawnPoint.x, this.layout.spawnPoint.y);
-    // Boat docks just in front (down-screen) of the dock, arriving from further out.
-    return { fromX: c.x - 30, fromY: c.y + 220, toX: c.x, toY: c.y + 54 };
-  }
-
-  private drawBoat(x = 0, y = 0): void {
-    this.boat.clear();
-    if (this.arrival !== "boat") return;
-    const INK = 0x23201c;
-    this.boat.position.set(x, y);
-    this.boat.zIndex = 9999;
-    // little sailboat
-    this.boat.ellipse(0, 6, 4, 2).fill({ color: 0x000000, alpha: 0.18 });
-    this.boat.poly([-18, 0, 18, 0, 12, 10, -12, 10]).fill(0xb5763f).stroke({ width: 3, color: INK });
-    this.boat.roundRect(-16, -2, 32, 4, 2).fill(0xcf9457).stroke({ width: 3, color: INK });
-    this.boat.moveTo(0, -2).lineTo(0, -28).stroke({ width: 3, color: INK });
-    this.boat.poly([0, -28, 0, -6, 15, -10]).fill(0xfff1f0).stroke({ width: 3, color: INK });
+    // One row up from the dock's front edge so the avatar stands ON the planks
+    // (mid-deck) and still y-sorts in front of the dock art.
+    const spot = dock
+      ? { x: Math.floor(dock.gridPosition.x + dock.footprint.w / 2), y: dock.gridPosition.y + dock.footprint.h - 2 }
+      : (nearestWalkable(this.grid, this.layout.spawnPoint) ?? this.layout.spawnPoint);
+    local.pos = { x: spot.x, y: spot.y };
+    local.lastPropPos = { x: spot.x, y: spot.y };
+    local.container.visible = true;
+    this.placeAvatar(local);
   }
 
   // ── Prop updates ────────────────────────────────────────────────
@@ -573,6 +596,7 @@ export class SceneRenderer {
     this.clampCamera();
     this.applyCamera();
     if (this.currentZone) this.zoneView.resize(this.app.screen.width, this.app.screen.height);
+    this.arrivalView?.resize(this.app.screen.width, this.app.screen.height);
   }
 
   // ── Build ───────────────────────────────────────────────────────
@@ -727,6 +751,38 @@ export class SceneRenderer {
     this.positionGround();
   }
 
+  /** Preload the finished illustrated landmark sprites (one per zone). A
+   *  failed load just leaves that zone without a texture, so buildZoneScene
+   *  falls back to the code-drawn structure rather than going blank. */
+  private async loadLandmarks(): Promise<void> {
+    await Promise.all([
+      ...(Object.keys(LANDMARK_ART) as ZoneKey[]).map(async (key) => {
+        try {
+          const tex = (await Assets.load(LANDMARK_ART[key].url)) as Texture;
+          if (!this.destroyed) this.landmarkTextures.set(key, tex);
+        } catch (err) {
+          console.warn(`[island-scene] landmark art failed to load: ${key}`, err);
+        }
+      }),
+      (async () => {
+        try {
+          const tex = (await Assets.load(BOAT_ART.url)) as Texture;
+          if (!this.destroyed) this.boatTex = tex;
+        } catch (err) {
+          console.warn("[island-scene] boat art failed to load", err);
+        }
+      })(),
+      (async () => {
+        try {
+          const tex = (await Assets.load(ARRIVAL_BG_URL)) as Texture;
+          if (!this.destroyed) this.arrivalBgTex = tex;
+        } catch (err) {
+          console.warn("[island-scene] arrival background failed to load", err);
+        }
+      })(),
+    ]);
+  }
+
   /** Pin the ground sprite so art-pixel (0,0) → world (originX, originY). */
   private positionGround(): void {
     const img = this.layout.terrainImage;
@@ -861,7 +917,7 @@ export class SceneRenderer {
   private buildZones(): void {
     this.zoneAnimators = [];
     for (const z of this.zones) {
-      const scene = buildZoneScene(z, this.theme, this.opts.hideTextLabels);
+      const scene = buildZoneScene(z, this.theme, this.landmarkTextures.get(z.key));
       if (scene.animate) this.zoneAnimators.push(scene.animate);
       const center = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
       scene.container.position.set(center.x, center.y);
@@ -874,6 +930,66 @@ export class SceneRenderer {
       this.entities.addChild(scene.container);
       this.staticEntities.push(scene.container);
       this.zoneScenes.set(z.key, { setHover: scene.setHover });
+    }
+    this.buildZoneLabels();
+  }
+
+  /** (Re)create the screen-space zone name labels. Positioned every frame by
+   *  positionZoneLabels (projected from world + clamped into the viewport). */
+  private buildZoneLabels(): void {
+    this.zoneLabels.removeChildren().forEach((c) => c.destroy());
+    this.zoneLabelItems = [];
+    if (this.opts.hideTextLabels) return;
+    for (const z of this.zones) {
+      const text = new Text({
+        text: z.unlocked ? z.displayName : `${z.displayName} (locked)`,
+        style: {
+          fontFamily: '"Trebuchet MS", "Segoe UI", system-ui, sans-serif',
+          fontSize: 22,
+          fontWeight: "900",
+          fill: 0xffffff,
+          stroke: { color: INK, width: 5 },
+          align: "center",
+          dropShadow: { color: 0x000000, alpha: 0.35, blur: 4, distance: 3, angle: Math.PI / 2 },
+        },
+      });
+      text.anchor.set(0.5, 1);
+      this.zoneLabels.addChild(text);
+      this.zoneLabelItems.push({ text, zone: z });
+    }
+  }
+
+  /** Project each zone's label to screen space (above its sprite) and clamp it
+   *  into the viewport so it's always readable — never off the top edge, never
+   *  behind the (taller) landmark art. */
+  private positionZoneLabels(): void {
+    const show =
+      this.world.visible && this.currentZone === null && !this.trans && this.arrival === "done";
+    this.zoneLabels.visible = show;
+    if (!show) return;
+    const sw = this.app.screen.width;
+    const sh = this.app.screen.height;
+    const padX = 60;
+    const topMargin = 22;
+    for (const { text, zone } of this.zoneLabelItems) {
+      const cfg = LANDMARK_ART[zone.key];
+      const center = footprintCenter(zone.gridPosition, zone.footprint.w, zone.footprint.h);
+      // Only label landmarks whose base is actually on screen (so labels for
+      // panned-away zones don't pile up against the viewport edges).
+      const baseSx = center.x * this.camScale + this.camX;
+      const baseSy = center.y * this.camScale + this.camY;
+      const onScreen = baseSx > -80 && baseSx < sw + 80 && baseSy > -40 && baseSy < sh + 80;
+      text.visible = onScreen;
+      if (!onScreen) continue;
+      // Place above the sprite's painted top, clamped into the viewport so a tall
+      // landmark can't push its label off the top edge. The label is
+      // bottom-anchored, so its top edge is (y - height): clamp the bottom to
+      // topMargin + height to keep the whole label on-screen.
+      const worldY = center.y - cfg.contentH * cfg.scale - 14;
+      const sx = Math.max(padX, Math.min(sw - padX, baseSx));
+      const minY = topMargin + text.height;
+      const sy = Math.max(minY, Math.min(sh - 12, worldY * this.camScale + this.camY));
+      text.position.set(sx, sy);
     }
   }
 
@@ -1017,7 +1133,13 @@ export class SceneRenderer {
 
   private walkView(view: AvatarView, goal: GridPosition, onArrive?: () => void): void {
     const start = { x: Math.round(view.pos.x), y: Math.round(view.pos.y) };
-    const path = findPath(this.grid, start, goal);
+    let path = findPath(this.grid, start, goal);
+    // If the avatar is standing on a non-walkable cell (e.g. just landed ON the
+    // dock footprint), route from the nearest open ground so it can still leave.
+    if ((!path || path.length === 0) && !this.grid.walkable(start.x, start.y)) {
+      const off = nearestWalkable(this.grid, start, 6);
+      if (off) path = findPath(this.grid, off, goal);
+    }
     if (!path || path.length === 0) return;
     view.path = path;
     view.pathIndex = 0;
@@ -1358,6 +1480,7 @@ export class SceneRenderer {
       if (this.currentZone === null) this.followCamera(dt);
       else this.zoneView.update(dt);
     }
+    this.positionZoneLabels();
 
     if (this.opts.reducedMotion) {
       this.fireflies.visible = false;
@@ -1387,35 +1510,28 @@ export class SceneRenderer {
     }
   };
 
-  /** Arrival: boat glides to the dock, then the avatar steps off and walks in. */
+  /** Arrival: play the third-person cinematic, then cross-fade up into the world
+   *  map with the avatar landed on the dock. */
   private tickArrival(dt: number): void {
     if (this.currentZone !== null || this.arrival === "done") return;
-    const seg = this.dockApproach();
-    if (this.arrival === "boat") {
-      this.arrivalT = Math.min(1, this.arrivalT + dt / 2.6);
-      const e = this.arrivalT * this.arrivalT * (3 - 2 * this.arrivalT); // smoothstep
-      this.drawBoat(seg.fromX + (seg.toX - seg.fromX) * e, seg.fromY + (seg.toY - seg.fromY) * e);
-      if (this.arrivalT >= 1) {
-        this.arrival = "step";
-        const local = this.localId ? this.avatarViews.get(this.localId) : null;
-        if (local) {
-          local.container.visible = true;
-          // Step off at the dock's front, then walk inland to the spawn tile.
-          const dock = this.zones.find((z) => z.key === "welcome_dock");
-          const front = dock
-            ? { x: Math.floor(dock.gridPosition.x + dock.footprint.w / 2), y: dock.gridPosition.y + dock.footprint.h - 1 }
-            : this.layout.spawnPoint;
-          const entrance = nearestWalkable(this.grid, front) ?? this.layout.spawnPoint;
-          local.pos = { x: entrance.x, y: entrance.y };
-          this.placeAvatar(local);
-          this.walkView(local, this.layout.spawnPoint);
-        } else {
-          this.arrival = "done";
-        }
+    if (this.arrival === "cinematic") {
+      this.arrivalView?.update(dt);
+      if (!this.arrivalView || this.arrivalView.done) {
+        // Cinematic finished — put the avatar on the dock, then fade the
+        // overlay out to reveal the world map beneath.
+        this.placeAvatarOnDock();
+        this.followEnabled = true;
+        this.arrival = "fade";
+        this.arrivalFadeT = 0;
       }
-    } else if (this.arrival === "step") {
-      const local = this.localId ? this.avatarViews.get(this.localId) : null;
-      if (!local || !local.moving) this.arrival = "done";
+    } else if (this.arrival === "fade") {
+      this.arrivalFadeT = Math.min(1, this.arrivalFadeT + dt / 0.8);
+      if (this.arrivalView) this.arrivalView.container.alpha = 1 - this.arrivalFadeT;
+      if (this.arrivalFadeT >= 1) {
+        this.arrivalView?.destroy();
+        this.arrivalView = undefined;
+        this.arrival = "done";
+      }
     }
   }
 
@@ -1504,6 +1620,7 @@ export class SceneRenderer {
       /* ticker/listeners may not be attached */
     }
     this.textures?.destroy();
+    this.arrivalView?.destroy();
     try {
       this.app.destroy({ removeView: true }, { children: true });
     } catch {

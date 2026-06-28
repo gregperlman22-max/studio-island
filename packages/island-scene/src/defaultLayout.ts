@@ -120,7 +120,7 @@ export const sampleZones: ZoneInstance[] = [
   { key: "lighthouse_point", displayName: "Lighthouse Point", skinName: "Beacon Point", gridPosition: { x: 30, y: 4 }, footprint: { w: 4, h: 4 }, unlocked: true },
   { key: "treehouse_hideaway", displayName: "Treehouse Hideaway", skinName: "Treetop Hideaway", gridPosition: { x: 4, y: 20 }, footprint: { w: 5, h: 5 }, unlocked: true },
   { key: "art_hut", displayName: "Art Hut", skinName: "Paint Cabin", gridPosition: { x: 28, y: 20 }, footprint: { w: 4, h: 4 }, unlocked: true },
-  { key: "campfire_circle", displayName: "Campfire Circle", skinName: "Marshmallow Ring", gridPosition: { x: 15, y: 21 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  { key: "campfire_circle", displayName: "Campfire Circle", skinName: "Marshmallow Ring", gridPosition: { x: 19, y: 24 }, footprint: { w: 4, h: 4 }, unlocked: true },
   { key: "arcade_cove", displayName: "Arcade Cove", skinName: "Arcade Cove", gridPosition: { x: 42, y: 24 }, footprint: { w: 5, h: 4 }, unlocked: true },
   { key: "calm_beach", displayName: "Calm Beach", skinName: "Calm Beach", gridPosition: { x: 5, y: 31 }, footprint: { w: 6, h: 4 }, unlocked: true },
   { key: "welcome_dock", displayName: "Welcome Dock", skinName: "Welcome Dock", gridPosition: { x: 43, y: 37 }, footprint: { w: 6, h: 4 }, unlocked: true },

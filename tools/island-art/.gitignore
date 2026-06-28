@@ -1,2 +1,4 @@
 node_modules/
 bun.lock
+# Generated preview / shadow-map / before-after / original-backup images.
+landmarks/_*
