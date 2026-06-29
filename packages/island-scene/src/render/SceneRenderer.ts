@@ -34,7 +34,7 @@ import { buildAvatarSprite, type AvatarSprite } from "./avatar";
 import { biomeAt, landContext } from "./biome";
 import { islandOutline, flatten, insetLoop, clusterOutline, type Pt } from "./coast";
 import { buildZoneScene, LANDMARK_ART, BOAT_ART, ARRIVAL_BG_URL } from "./zones";
-import { buildOverlayFx } from "./landmarkFx";
+import { buildFishFx } from "./landmarkFx";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
 import { ArrivalView } from "./ArrivalView";
@@ -1014,18 +1014,16 @@ export class SceneRenderer {
       this.staticEntities.push(scene.container);
       this.zoneScenes.set(z.key, { setHover: scene.setHover });
 
-      // Parent-level ambient overlays (arcade party lights, lagoon ripples).
-      // These live in `entities` — NOT inside the landmark container — so they
-      // y-sort independently and float clearly above the landmark instead of
-      // being occluded by it or by nearby props. The party lights ride well
-      // above everything (a large depth boost); the lagoon ripples sit just
-      // above the flat pond sprite.
-      const overlay = buildOverlayFx(z.key, center.x, center.y);
-      if (overlay) {
-        overlay.container.zIndex = z.key === "arcade_cove" ? center.y + 200 : center.y + 1;
-        this.entities.addChild(overlay.container);
-        this.staticEntities.push(overlay.container);
-        this.zoneAnimators.push(overlay.animate);
+      // Parent-level ambient overlay: the Lazy Lagoon fish jump. It lives in
+      // `entities` — NOT inside the lagoon container — so it y-sorts
+      // independently and renders above the flat lagoon sprite (with its splash
+      // and entry ripple) instead of being clipped or occluded by it.
+      if (z.key === "lazy_lagoon") {
+        const fish = buildFishFx(center.x, center.y);
+        fish.container.zIndex = center.y + 2;
+        this.entities.addChild(fish.container);
+        this.staticEntities.push(fish.container);
+        this.zoneAnimators.push(fish.animate);
       }
     }
     this.buildZoneLabels();
