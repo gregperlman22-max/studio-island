@@ -135,7 +135,6 @@ export class SceneRenderer {
   private landMask = new Graphics();
   private coastLoop: Pt[] = [];
   private waves = new Graphics();
-  private flame = new Graphics();
   /** y-sorted props: zones, decorations, avatars. */
   private entities = new Container();
   /** Ambient firefly overlay (world space, drawn above props). */
@@ -192,7 +191,6 @@ export class SceneRenderer {
   private hoveredZone: ZoneKey | null = null;
   private localId: string | null = null;
   private grid: WalkGrid = { walkable: () => false };
-  private flamePos: { x: number; y: number } | null = null;
   /** Trees that gently sway. */
   private swayers: { sprite: Sprite; phase: number }[] = [];
   /** Per-zone idle animators (lighthouse beam, lantern flicker, etc.). */
@@ -281,7 +279,6 @@ export class SceneRenderer {
       this.landMask,
       this.waves,
       this.entities,
-      this.flame,
       this.fireflies,
     );
     this.biomeLayer.mask = this.landMask;
@@ -634,35 +631,9 @@ export class SceneRenderer {
     // nothing is rendered for it (a future phase docks a video window there).
     this.reconcileAvatars();
     this.buildFireflies();
-    const fire = this.zones.find((z) => z.key === "campfire_circle");
-    this.flamePos = fire
-      ? footprintCenter(fire.gridPosition, fire.footprint.w, fire.footprint.h)
-      : null;
+    // The campfire's animated light is now a warm ambient glow built into its
+    // landmark fx layer (landmarkFx.ts) — no separate code-drawn flame icon.
     this.setupCamera();
-  }
-
-  /** Tall flickering campfire flame (animated), drawn above the props. */
-  private drawFlame(): void {
-    this.flame.clear();
-    if (!this.flamePos) return;
-    const t = this.elapsed / 1000;
-    // Gentle, unhurried flicker: slow primary sway + a small soft tremble.
-    const sway = Math.sin(t * 3.2) * 1.6 + Math.sin(t * 6.5) * 0.6;
-    const grow = 1 + 0.12 * Math.sin(t * 2.4 + 1) + 0.05 * Math.sin(t * 5.5);
-    const bx = this.flamePos.x;
-    const by = this.flamePos.y - 4;
-    const H = 27 * grow; // cozy campfire, ~40% of the old bonfire
-    // Soft warm glow pulse pooling around the base (drawn first, behind flame).
-    const gp = 0.5 + 0.5 * Math.sin(t * 1.2);
-    this.flame.ellipse(bx, by - 4, 18 + gp * 4, 11 + gp * 2).fill({ color: 0xffb24d, alpha: 0.08 + 0.05 * gp });
-    // outer → mid → inner, bold outline on the outer flame.
-    this.flame.poly([bx, by - H, bx + 7, by - 6, bx + sway, by, bx - 7, by - 6])
-      .fill(0xff7a2d).stroke({ width: 2.5, color: INK });
-    this.flame.poly([bx, by - H * 0.72, bx + 4, by - 5, bx + sway * 0.6, by, bx - 4, by - 5])
-      .fill(0xffd23d);
-    this.flame.poly([bx, by - H * 0.45, bx + 2, by - 3.5, bx, by, bx - 2, by - 3.5])
-      .fill(0xfff1a8);
-    this.flame.ellipse(bx, by + 2, 11, 3).fill({ color: 0xff9a3d, alpha: 0.22 }); // ember glow
   }
 
   /** Soft fireflies drifting by the forest treehouse — calm, magical. */
@@ -1362,9 +1333,14 @@ export class SceneRenderer {
   private setupCamera(): void {
     this.updateCamScale();
     if (!this.cameraInit) {
+      // On first load, frame the WHOLE island rather than the avatar (which
+      // spawns at the southern dock). Centering vertically on the island's
+      // bounding box pulls the view north so the treehouse up top is visible
+      // without scrolling. Zoom is untouched; clampCamera keeps it in bounds.
       const focus = this.localFocus();
+      const islandCenterY = (this.worldBounds.minY + this.worldBounds.maxY) / 2;
       this.camX = this.app.screen.width / 2 - focus.x * this.camScale;
-      this.camY = this.app.screen.height / 2 - focus.y * this.camScale;
+      this.camY = this.app.screen.height / 2 - islandCenterY * this.camScale;
       this.cameraInit = true;
     }
     this.clampCamera();
@@ -1599,17 +1575,14 @@ export class SceneRenderer {
 
     if (this.opts.reducedMotion) {
       this.fireflies.visible = false;
-      this.flame.visible = false;
     } else {
       // Animate the world map whenever it's on screen — including while it
       // tilts/fades through a transition.
       this.fireflies.visible = this.world.visible;
-      this.flame.visible = this.world.visible;
       if (this.world.visible) {
         const t = this.elapsed / 1000;
         this.drawShimmer();
         this.drawWaves();
-        this.drawFlame();
         // Trees sway their canopy; zone landmarks have idle details.
         for (const s of this.swayers) s.sprite.rotation = Math.sin(t * 1.0 + s.phase) * 0.088;
         for (const anim of this.zoneAnimators) anim(t);

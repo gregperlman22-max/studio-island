@@ -43,11 +43,6 @@ function glow(color: number, diameter: number): Sprite {
 }
 
 function lerp(a: number, b: number, t: number): number { return a + (b - a) * t; }
-function lerpColor(a: number, b: number, t: number): number {
-  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
-  const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
-  return (Math.round(lerp(ar, br, t)) << 16) | (Math.round(lerp(ag, bg, t)) << 8) | Math.round(lerp(ab, bb, t));
-}
 function starPath(R: number, r: number): number[] {
   const p: number[] = [];
   for (let i = 0; i < 10; i++) {
@@ -78,24 +73,30 @@ export function buildLandmarkFx(
 
   switch (key) {
     case "campfire_circle": {
-      // Warm breathing glow over the (untouched) flame + a wider ground pool.
-      const ground = glow(0xff8c00, 320); ground.position.set(0, -2); ground.height = 160;
-      const aura = glow(0xff8c00, 200); aura.position.set(0, -20); aura.height = 170;
-      fx.addChild(ground, aura);
+      // No flame icon — the campfire is now pure warm firelight: a soft inner
+      // glow breathing over the embers, plus a larger, fainter wash pulsing out
+      // of phase so the light feels like it's alive.
+      const PERIOD = 1.8;
+      const inner = glow(0xff6600, 160); inner.position.set(0, -10); // radius ~80
+      const outer = glow(0xff4400, 280); outer.position.set(0, -10); // radius ~140
+      fx.addChild(outer, inner); // inner draws on top of the wider wash
       ups.push((t) => {
-        const s = 0.5 + 0.5 * Math.sin(t * (TAU / 2)); // 2s period
-        aura.alpha = 0.08 + 0.12 * s;   // 0.08 → 0.20
-        ground.alpha = 0.04 + 0.04 * s; // 0.04 → 0.08
+        const s = 0.5 + 0.5 * Math.sin(t * (TAU / PERIOD));
+        inner.alpha = 0.10 + 0.15 * s; // 0.10 → 0.25
+        const s2 = 0.5 + 0.5 * Math.sin((t - 0.9) * (TAU / PERIOD)); // +0.9s = antiphase
+        outer.alpha = 0.03 + 0.05 * s2; // 0.03 → 0.08
       });
       break;
     }
 
     case "art_hut": {
-      // Chimney smoke puffs (offset (−15,−80)) + a whisper of canvas-breeze sway.
-      const ox = -15, oy = -80;
+      // Chimney smoke: small grey puffs rising from the single chimney-top
+      // point (−18,−85) only — no longer drifting off the whole building.
+      const ox = -18, oy = -85;
+      const PUFF = 40; // puff diameter (px) at scale 1.0
       const N = 3, puffs: { s: Sprite; age: number; jx: number }[] = [];
       for (let i = 0; i < N; i++) {
-        const s = glow(0xcccccc, 14); s.alpha = 0; fx.addChild(s);
+        const s = glow(0xcccccc, PUFF); s.alpha = 0; fx.addChild(s);
         puffs.push({ s, age: 2.5 - (i * 2.5) / N, jx: 0 }); // staggered
       }
       ups.push((_t, dt) => {
@@ -103,8 +104,9 @@ export function buildLandmarkFx(
           p.age += dt;
           if (p.age >= 2.5) { p.age = 0; p.jx = (Math.random() - 0.5) * 10; }
           const f = p.age / 2.5;
+          const sc = lerp(0.2, 0.8, f); // start scale 0.2, grow to 0.8 max
           p.s.position.set(ox + p.jx * f, oy - 45 * f);
-          p.s.width = p.s.height = lerp(12, 46, f);
+          p.s.width = p.s.height = PUFF * sc;
           p.s.alpha = 0.5 * (1 - f);
         }
       });
@@ -114,34 +116,30 @@ export function buildLandmarkFx(
     }
 
     case "lighthouse_point": {
-      // Rotating beam + ground sweep (one rotating container) + lamp pulse.
-      const ox = 5, oy = -140;
-      const beamRot = new Container(); beamRot.position.set(ox, oy); fx.addChild(beamRot);
-      const sweep = new Graphics();
-      sweep.poly([0, -40, 0, 40, 230, 0]).fill({ color: 0xfffacc, alpha: 0.06 });
-      const beam = new Graphics();
-      beam.poly([0, -11, 0, 11, 130, 0]).fill({ color: 0xfffacc, alpha: 0.35 });
-      beamRot.addChild(sweep, beam);
-      const lamp = glow(0xffee88, 36); lamp.position.set(ox, oy); fx.addChild(lamp);
+      // Lamp-housing glow only. The beam is painted into the sprite — no
+      // rotating cone / overlay beam here. Just a warm light breathing on.
+      const lamp = glow(0xffee88, 32); lamp.position.set(5, -125); fx.addChild(lamp); // radius 16
       ups.push((t) => {
-        beamRot.rotation = t * (TAU / 6); // full turn every 6s
-        lamp.alpha = 0.4 + 0.45 * (0.5 + 0.5 * Math.sin(t * (TAU / 1.5))); // 0.40→0.85
+        const s = 0.5 + 0.5 * Math.sin(t * (TAU / 1.8)); // ~1.8s period
+        lamp.alpha = 0.25 + 0.45 * s; // 0.25 → 0.70
       });
       break;
     }
 
     case "arcade_cove": {
-      // Color-cycling screen glow + sequenced marquee twinkle + bunting flutter.
-      const screen = glow(0x4fc3f7, 46); screen.position.set(10, -45); screen.alpha = 0.42;
-      fx.addChild(screen);
-      const cyc = [0x4fc3f7, 0xf06292, 0xaed581];
-      const marq = new Container(); fx.addChild(marq);
-      const diamonds: Graphics[] = [];
-      for (let i = 0; i < 4; i++) {
-        const d = new Graphics();
-        d.poly([0, -3.5, 3.5, 0, 0, 3.5, -3.5, 0]).fill(0xfff3c4);
-        d.position.set(-30 + i * 20, -96);
-        marq.addChild(d); diamonds.push(d);
+      // Festive party/string lights strung ABOVE the cabinet (no screen glow):
+      // 5 warm bulbs in a gentle arc, each pulsing independently with a slight
+      // stagger. The bunting flutter below is kept.
+      const BULB_COLORS = [0xff6b6b, 0xffd93d, 0x6bcb77, 0x4d96ff, 0xff6ba8];
+      const SPAN = 80, BULBS = 5;
+      const lights: Graphics[] = [];
+      for (let i = 0; i < BULBS; i++) {
+        const g = new Graphics();
+        g.circle(0, 0, 5).fill(BULB_COLORS[i]);
+        const nx = i / (BULBS - 1) - 0.5;        // -0.5 … 0.5 across the arc
+        const sag = 8 * (1 - (nx * 2) * (nx * 2)); // gentle sag, 0 at ends → 8 mid
+        g.position.set(nx * SPAN, -75 + sag);     // centered at (0,−75)
+        fx.addChild(g); lights.push(g);
       }
       const flags: Graphics[] = [];
       const flagCols = [0xf6c945, 0xef8aa0, 0x8fc7e8, 0xf0b86a];
@@ -152,13 +150,9 @@ export function buildLandmarkFx(
         fx.addChild(f); flags.push(f);
       }
       ups.push((t) => {
-        const phase = (t / 1.5) % cyc.length;
-        const i0 = Math.floor(phase), i1 = (i0 + 1) % cyc.length;
-        screen.tint = lerpColor(cyc[i0], cyc[i1], phase - i0);
-        screen.alpha = 0.40 + 0.06 * (0.5 + 0.5 * Math.sin(t * TAU));
-        for (let i = 0; i < diamonds.length; i++) {
-          const p = (t / 1.2 + i * 0.25) % 1;
-          diamonds[i].alpha = Math.max(0, Math.sin(p * Math.PI));
+        for (let i = 0; i < lights.length; i++) {
+          const s = 0.5 + 0.5 * Math.sin(((t - i * 0.25) / 1.2) * TAU); // ~1.2s, staggered 0.25s
+          lights[i].alpha = 0.3 + 0.7 * s; // 0.3 → 1.0
         }
         for (let i = 0; i < flags.length; i++) {
           flags[i].y = -104 + Math.sin(t * (TAU / 2.5) + i * 0.7) * 3;
@@ -192,26 +186,28 @@ export function buildLandmarkFx(
     }
 
     case "lazy_lagoon": {
-      // Concentric ripples + occasional bubble pop + a slow water bob.
-      const cx = 15, cy = -20;
-      const rings = [0, 1, 2].map(() => { const g = new Graphics(); fx.addChild(g); return g; });
-      const bub = new Graphics(); bub.circle(0, 0, 4).fill(0xffffff); bub.alpha = 0; fx.addChild(bub);
+      // The lagoon-01.png is a flat image — never animate the sprite. Just draw
+      // ripple rings over its water + an occasional bubble pop.
+      const cx = 10, cy = -15;
+      const DUR = 2.5;
+      const starts = [0, 0.85, 1.7]; // staggered so a ring is always in motion
+      const rings = starts.map(() => { const g = new Graphics(); fx.addChild(g); return g; });
+      const bub = new Graphics(); bub.circle(0, 0, 3).fill(0xffffff); bub.alpha = 0; fx.addChild(bub);
       let bubAge = 0, bubNext = 5.5;
       ups.push((t, dt) => {
         for (let i = 0; i < rings.length; i++) {
-          const p = ((t / 2.5) + i * (0.8 / 2.5)) % 1;
-          const r = lerp(8, 55, p);
+          const p = (((t - starts[i]) / DUR) % 1 + 1) % 1; // 0..1
+          const r = lerp(6, 50, p); // expand 6px → 50px
           rings[i].clear();
-          rings[i].ellipse(cx, cy, r, r * 0.62).stroke({ width: 2, color: 0x7ec8c8, alpha: 1 - p });
+          rings[i].circle(cx, cy, r).stroke({ width: 1.5, color: 0x7ec8e3, alpha: 0.8 * (1 - p) });
         }
         bubAge += dt;
         if (bubAge >= bubNext) {
-          bubAge = 0; bubNext = 5 + Math.random() * 1.5;
-          bub.position.set(cx + (Math.random() - 0.5) * 180, cy + (Math.random() - 0.5) * 90);
+          bubAge = 0; bubNext = 5 + Math.random(); // every 5–6s
+          bub.position.set(cx + (Math.random() - 0.5) * 40, cy + (Math.random() - 0.5) * 40); // ±20px
         }
-        bub.alpha = bubAge < 0.4 ? Math.sin((bubAge / 0.4) * Math.PI) : 0;
+        bub.alpha = bubAge < 0.35 ? Math.sin((bubAge / 0.35) * Math.PI) : 0; // 0→1→0 over 0.35s
       });
-      ups.push((t) => { sprite.position.y = Math.sin(t * (TAU / 4)) * 2; }); // gentle surface bob
       break;
     }
 
