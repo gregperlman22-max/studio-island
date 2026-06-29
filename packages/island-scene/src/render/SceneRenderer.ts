@@ -1021,7 +1021,7 @@ export class SceneRenderer {
       // Campfire warm glow: just above the sprite so it sits ON the stone ring.
       if (z.key === "campfire_circle") {
         const fire = buildCampfireFx(center.x, center.y);
-        fire.container.zIndex = center.y + 1;
+        fire.container.zIndex = center.y + 1.5;
         this.entities.addChild(fire.container);
         this.staticEntities.push(fire.container);
         this.zoneAnimators.push(fire.animate);
@@ -1030,18 +1030,19 @@ export class SceneRenderer {
       // Art Hut chimney smoke: in front of the building, not behind it.
       if (z.key === "art_hut") {
         const smoke = buildArtHutFx(center.x, center.y);
-        smoke.container.zIndex = center.y + 1;
+        smoke.container.zIndex = center.y + 1.5;
         this.entities.addChild(smoke.container);
         this.staticEntities.push(smoke.container);
         this.zoneAnimators.push(smoke.animate);
       }
 
-      // Lazy Lagoon fish jump: well above all sprites + flowers in the lagoon
-      // area so the arc is always visible in front of everything (with its
-      // splash and entry ripple) instead of being clipped or occluded.
+      // Lazy Lagoon fish jump: pinned to a hardcoded very-high zIndex so the arc
+      // (with its splash and entry ripple) always renders in front of everything
+      // on the island — flowers, grass, and the lagoon sprite — never clipped or
+      // occluded by a same-row prop.
       if (z.key === "lazy_lagoon") {
         const fish = buildFishFx(center.x, center.y);
-        fish.container.zIndex = center.y + 2;
+        fish.container.zIndex = 99999;
         this.entities.addChild(fish.container);
         this.staticEntities.push(fish.container);
         this.zoneAnimators.push(fish.animate);

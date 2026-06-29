@@ -87,15 +87,16 @@ export function buildLandmarkFx(
 
     case "lighthouse_point": {
       // Lamp-housing glow only, pinned to the lamp room at the VERY TOP of the
-      // tower (+5,−175) where the painted beam originates — not mid-tower. The
-      // beam is painted into the sprite; no rotating cone / overlay beam here. A
-      // bright warm lamp pulse: a soft outer halo plus a tighter, brighter core.
-      const outer = glow(0xffcc44, 88); outer.position.set(5, -175); fx.addChild(outer); // radius 44
-      const lamp = glow(0xffee88, 52); lamp.position.set(5, -175); fx.addChild(lamp); // radius 26
+      // tower (+8,−195) — above the copper dome — where the painted beam
+      // originates, not mid-tower. The beam is painted into the sprite; no
+      // rotating cone / overlay beam here. A bright warm lamp pulse: a soft outer
+      // halo plus a tighter, brighter core.
+      const outer = glow(0xffcc44, 104); outer.position.set(8, -195); fx.addChild(outer); // radius 52
+      const lamp = glow(0xffee88, 60); lamp.position.set(8, -195); fx.addChild(lamp); // radius 30
       ups.push((t) => {
-        const s = 0.5 + 0.5 * Math.sin(t * (TAU / 1.6)); // 1.6s period
-        lamp.alpha = 0.50 + 0.45 * s;  // 0.50 → 0.95
-        outer.alpha = 0.20 + 0.20 * s; // 0.20 → 0.40
+        const s = 0.5 + 0.5 * Math.sin(t * (TAU / 1.4)); // 1.4s period
+        lamp.alpha = 0.60 + 0.40 * s;  // 0.60 → 1.0
+        outer.alpha = 0.25 + 0.25 * s; // 0.25 → 0.50
       });
       break;
     }
@@ -253,15 +254,15 @@ export function buildCampfireFx(
   fx.eventMode = "none";
   fx.position.set(worldX, worldY); // glow offsets are relative to the anchor
   const TAU = Math.PI * 2;
-  const PERIOD = 1.8;
-  const inner = glow(0xff6600, 160); inner.position.set(0, -10); // radius ~80
-  const outer = glow(0xff4400, 280); outer.position.set(0, -10); // radius ~140
+  const PERIOD = 1.6;
+  const inner = glow(0xff6600, 220); inner.position.set(0, -10); // radius 110
+  const outer = glow(0xff4400, 360); outer.position.set(0, -10); // radius 180
   fx.addChild(outer, inner); // inner draws on top of the wider wash
   const animate = (t: number) => {
     const s = 0.5 + 0.5 * Math.sin(t * (TAU / PERIOD));
-    inner.alpha = 0.10 + 0.15 * s; // 0.10 → 0.25
-    const s2 = 0.5 + 0.5 * Math.sin((t - 0.9) * (TAU / PERIOD)); // +0.9s = antiphase
-    outer.alpha = 0.03 + 0.05 * s2; // 0.03 → 0.08
+    inner.alpha = 0.25 + 0.30 * s; // 0.25 → 0.55
+    const s2 = 0.5 + 0.5 * Math.sin((t - 0.8) * (TAU / PERIOD)); // +0.8s = antiphase
+    outer.alpha = 0.08 + 0.10 * s2; // 0.08 → 0.18
   };
   return { container: fx, animate };
 }
@@ -270,7 +271,7 @@ export function buildCampfireFx(
  * Art Hut chimney smoke, built at the PARENT scene-container level (the
  * renderer's `entities` layer) rather than inside the hut's own container — so
  * it y-sorts independently and renders IN FRONT of the building sprite, never
- * behind it. Soft grey puffs rise from the chimney-top point (−18,−95), on top
+ * behind it. Soft grey puffs rise from the chimney-top point (−15,−115), on top
  * of the building, slightly left of centre. A fresh puff is emitted every 1.4s;
  * each lives 2.5s, so up to two overlap in the air.
  */
@@ -281,14 +282,14 @@ export function buildArtHutFx(
   const fx = new Container();
   fx.eventMode = "none";
   fx.position.set(worldX, worldY); // puff offsets are relative to the anchor
-  const ox = -18, oy = -95;
+  const ox = -15, oy = -115;
   const PUFF = 40;    // puff diameter (px) at scale 1.0
-  const LIFE = 2.5;   // seconds a puff lives (fade 0.65 → 0)
+  const LIFE = 2.5;   // seconds a puff lives (fade 0.80 → 0)
   const EMIT = 1.4;   // one new puff every 1.4s
   const N = 3;        // pool large enough for the overlap (ceil(LIFE/EMIT)+1)
   const puffs: { s: Sprite; age: number; jx: number }[] = [];
   for (let i = 0; i < N; i++) {
-    const s = glow(0xdddddd, PUFF); s.alpha = 0; fx.addChild(s);
+    const s = glow(0xeeeeee, PUFF); s.alpha = 0; fx.addChild(s);
     puffs.push({ s, age: LIFE, jx: 0 }); // start inactive
   }
   let emitClock = EMIT; // emit one immediately on the first tick
@@ -306,10 +307,10 @@ export function buildArtHutFx(
       if (p.age >= LIFE) { p.s.alpha = 0; continue; }
       p.age += dt;
       const f = p.age / LIFE;
-      const sc = lerp(0.35, 1.2, f); // scale 0.35 → 1.2
-      p.s.position.set(ox + p.jx * f, oy - 55 * f); // drift up ~55px
+      const sc = lerp(0.40, 1.4, f); // scale 0.40 → 1.4
+      p.s.position.set(ox + p.jx * f, oy - 65 * f); // drift up ~65px
       p.s.width = p.s.height = PUFF * sc;
-      p.s.alpha = 0.65 * (1 - f); // fade 0.65 → 0
+      p.s.alpha = 0.80 * (1 - f); // fade 0.80 → 0
     }
   };
   return { container: fx, animate };
