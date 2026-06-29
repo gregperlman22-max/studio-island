@@ -40,8 +40,10 @@ export interface LandmarkMark {
   x: number;
   /** World-pixel base/centre y of the footprint. */
   y: number;
-  /** Footprint width in grid tiles (sizes the keep-out + grass ring). */
+  /** Footprint width in grid tiles (sizes the grass ring). */
   w: number;
+  /** Tree keep-out radius in world pixels — no tree base may sit inside it. */
+  clear: number;
   /**
    * "grass" structures get a green ring + base tufts; "sand" structures
    * (campfire, welcome dock, calm beach) stay on bare sand and act as a grass
@@ -76,20 +78,21 @@ export interface IslandLayoutOpts {
  * centre/right) and a handful of lone trees around the edges.
  */
 const TREE_OFFSETS: ReadonlyArray<readonly [number, number]> = [
-  // Lighthouse grove — frames the beacon from behind/beside.
-  [0.911, -0.184], [0.874, 0.030], [0.770, -0.048], [0.605, -0.262],
-  // Southern grove — between the arcade, lazy lagoon and the dock.
-  [0.292, 0.777], [0.410, 0.683], [0.512, 0.376], [0.400, 0.547], [0.371, 0.392],
-  // Scattered individuals — calm-beach side, mid-island, far east, north-centre.
-  [-0.449, 0.378], [-0.007, 0.366], [0.840, 0.337], [0.004, -0.336],
+  // Lighthouse grove — frames the beacon from beside/behind, ≥165px clear.
+  [0.901, 0.066], [0.787, -0.026], [0.607, -0.278], [0.871, -0.022],
+  // Southern grove — frames the arcade/lazy lagoon from below-right, ≥150px clear.
+  [0.198, 0.745], [0.289, 0.757], [0.710, 0.404], [0.469, 0.471], [0.409, 0.659],
+  // Scattered individuals — pulled inward/upward onto the interior slopes
+  // (off the flat sandy coast): star↔treehouse gap, north-centre, mid-east, mid.
+  [-0.420, -0.193], [0.118, -0.352], [0.688, 0.122], [0.196, 0.283],
 ];
 
 // Treehouse forest — the densest stand, tightly grouped around and behind the
 // Treehouse Hideaway so it reads as a structure standing IN the woods. These
 // are exempt from the treehouse keep-out so they can sit intentionally close.
 const CLUSTER_TREE_OFFSETS: ReadonlyArray<readonly [number, number]> = [
-  [-0.375, -0.689], [-0.164, -0.237], [-0.438, -0.399], [-0.577, -0.673],
-  [-0.536, -0.381], [-0.656, -0.690], [-0.646, -0.333],
+  [-0.389, -0.683], [-0.197, -0.246], [-0.446, -0.402], [-0.573, -0.667],
+  [-0.536, -0.385], [-0.574, -0.217], [-0.645, -0.684],
 ];
 
 // Illustrated bushes (bush-01 / bush-02), clustered near the treehouse forest
@@ -121,6 +124,12 @@ export class LayeredIsland {
    *  a thin "dry beach foam" strip that separates the island from the water. */
   private readonly beachRim: Sprite;
   private readonly beachRimMask: Sprite;
+  /** Height-map shading: a dark ring darkening the coastal "slopes" and a warm
+   *  highlight brightening the elevated hilltop toward the back of the island. */
+  private readonly shadowRing: Sprite;
+  private readonly shadowMask: Sprite;
+  private readonly hilltop: Sprite;
+  private readonly hilltopMask: Sprite;
   /** Soft olive-green radial overlay tinting the interior sand toward grassy
    *  packed earth, feathering out to the bare golden coast. */
   private readonly greenInterior: Sprite;
@@ -146,22 +155,48 @@ export class LayeredIsland {
     for (const s of [this.beachRim, this.beachRimMask]) s.anchor.set(0.5);
     this.beachRim.mask = this.beachRimMask;
 
+    // Shadow ring: dark at the shoreline, fading inward — the rising slopes.
+    this.shadowRing = new Sprite(this.radialTexture([
+      [0.0, "rgba(80, 50, 20, 0)"],
+      [0.65, "rgba(80, 50, 20, 0)"],
+      [1.0, "rgba(80, 50, 20, 0.18)"],
+    ]) ?? Texture.EMPTY);
+    this.shadowMask = new Sprite(tex.sand);
+    for (const s of [this.shadowRing, this.shadowMask]) s.anchor.set(0.5);
+    this.shadowRing.mask = this.shadowMask;
+
+    // Hilltop highlight: a warm glow at the (upward-offset) elevated centre.
+    this.hilltop = new Sprite(this.radialTexture([
+      [0.0, "rgba(255, 240, 180, 0.15)"],
+      [1.0, "rgba(255, 240, 180, 0)"],
+    ]) ?? Texture.EMPTY);
+    this.hilltopMask = new Sprite(tex.sand);
+    for (const s of [this.hilltop, this.hilltopMask]) s.anchor.set(0.5);
+    this.hilltop.mask = this.hilltopMask;
+
     // Green interior: a feathered radial olive overlay, clipped to the sand.
-    this.greenInterior = new Sprite(this.makeGreenTexture() ?? Texture.EMPTY);
+    this.greenInterior = new Sprite(this.radialTexture([
+      [0.0, "rgba(120, 160, 60, 0.35)"],
+      [0.55, "rgba(120, 160, 60, 0.35)"],
+      [0.8, "rgba(120, 160, 60, 0)"],
+      [1.0, "rgba(120, 160, 60, 0)"],
+    ]) ?? Texture.EMPTY);
     this.greenMask = new Sprite(tex.sand);
     for (const s of [this.greenInterior, this.greenMask]) s.anchor.set(0.5);
     this.greenInterior.mask = this.greenMask;
 
-    // Bottom → top: water · beach rim · sand · green interior · grass · rocks ·
-    // flowers+bushes · trees. Landmarks/avatars draw above this whole container
-    // (the renderer's `entities`), so structures always sit on top of nature.
+    // Bottom → top: water · beach rim · sand · shadow ring · hilltop highlight ·
+    // green interior · rocks · grass · bushes · flowers · trees. Landmarks/
+    // avatars draw above this whole container (the renderer's `entities`).
     this.container.addChild(
       this.water, this.beachRim, this.beachRimMask, this.sand,
+      this.shadowRing, this.shadowMask, this.hilltop, this.hilltopMask,
       this.greenInterior, this.greenMask,
-      this.grass, this.rocks, this.flowers, this.bushes, this.trees,
+      this.rocks, this.grass, this.bushes, this.flowers, this.trees,
     );
     for (const c of [this.container, this.water, this.beachRim, this.beachRimMask,
-      this.sand, this.greenInterior, this.greenMask, this.grass,
+      this.sand, this.shadowRing, this.shadowMask, this.hilltop, this.hilltopMask,
+      this.greenInterior, this.greenMask, this.grass,
       this.rocks, this.flowers, this.bushes, this.trees]) {
       c.eventMode = "none";
     }
@@ -173,12 +208,12 @@ export class LayeredIsland {
   }
 
   /**
-   * Build the feathered olive overlay as a radial-gradient canvas texture:
-   * flat green across the interior, fading to nothing by ~80% of the radius so
-   * the outer fifth of the island stays sandy. Returns undefined when there's
-   * no DOM (e.g. a non-browser test) — the overlay then renders nothing.
+   * Build a centred radial-gradient canvas texture from `[offset, cssColor]`
+   * stops (offset 0 = centre, 1 = edge). Used for the elevation shading and the
+   * green overlay. Returns undefined when there's no DOM (e.g. a non-browser
+   * test) — the overlay then renders nothing.
    */
-  private makeGreenTexture(): Texture | undefined {
+  private radialTexture(stops: ReadonlyArray<readonly [number, string]>): Texture | undefined {
     if (typeof document === "undefined") return undefined;
     const S = 256;
     const cnv = document.createElement("canvas");
@@ -186,10 +221,7 @@ export class LayeredIsland {
     const ctx = cnv.getContext("2d");
     if (!ctx) return undefined;
     const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-    g.addColorStop(0.0, "rgba(120, 160, 60, 0.35)");
-    g.addColorStop(0.55, "rgba(120, 160, 60, 0.35)");
-    g.addColorStop(0.8, "rgba(120, 160, 60, 0.0)");
-    g.addColorStop(1.0, "rgba(120, 160, 60, 0.0)");
+    for (const [off, color] of stops) g.addColorStop(off, color);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, S, S);
     return Texture.from(cnv);
@@ -216,6 +248,22 @@ export class LayeredIsland {
     this.beachRim.width = sandW * 1.02;
     this.beachRim.height = sandH * 1.02;
     this.beachRim.position.set(o.cx, o.cy);
+
+    // SHADOW RING — darkens the coastal slopes; sized to the sand ellipse so
+    // its dark edge meets the shoreline, clipped to the sand silhouette.
+    this.shadowMask.scale.set(sandScale);
+    this.shadowMask.position.set(o.cx, o.cy);
+    this.shadowRing.width = sandW;
+    this.shadowRing.height = sandH;
+    this.shadowRing.position.set(o.cx, o.cy);
+
+    // HILLTOP HIGHLIGHT — warm glow at the elevated centre, offset ~15% upward
+    // to peak toward the back; fades out by ~45% of the radius.
+    this.hilltopMask.scale.set(sandScale);
+    this.hilltopMask.position.set(o.cx, o.cy);
+    this.hilltop.width = sandW * 0.45;
+    this.hilltop.height = sandH * 0.45;
+    this.hilltop.position.set(o.cx, o.cy - sandH * 0.15);
 
     // GREEN INTERIOR — radial olive overlay sized to the sand ellipse (its
     // gradient fades out by ~80% radius), clipped to the sand silhouette.
@@ -427,11 +475,10 @@ export class LayeredIsland {
     this.trees.removeChildren();
     const r = rng(0x9e3d);
     const place = (nx: number, ny: number, tex: Texture, scale: number, skipKey?: string): void => {
-      let x = cx + nx * shx;
-      const y = cy + ny * shy;
-      x = this.keepOff(x, y, marks, skipKey);
-      // Stay on the sand horizontally after any nudge.
+      let [x, y] = this.keepOff(cx + nx * shx, cy + ny * shy, marks, skipKey);
+      // Stay on the sand after any nudge.
       x = Math.max(cx - shx * 0.93, Math.min(cx + shx * 0.93, x));
+      y = Math.max(cy - shy * 0.93, Math.min(cy + shy * 0.93, y));
       this.stamp(this.trees, tex, x, y, scale);
     };
     // Grove + scattered trees: tree-01 (even) 0.35–0.45, tree-02 (odd) 0.28–0.38.
@@ -447,24 +494,25 @@ export class LayeredIsland {
   }
 
   /**
-   * If (x, y) falls inside any landmark's keep-out box, push it horizontally to
-   * the nearer edge so the tree sits beside the structure, not over it. The box
-   * is tall above the base (where the sprite art rises) and shallow below it.
+   * If (x, y) falls inside any landmark's circular keep-out, push it radially
+   * outward to the keep-out edge so the tree sits clear of the structure. The
+   * baked positions already satisfy this; it's a safety net (and keeps the
+   * campfire/arcade/lighthouse clearings honoured if positions are ever tweaked).
+   * Returns the nudged [x, y].
    */
-  private keepOff(x: number, y: number, marks: readonly LandmarkMark[], skipKey?: string): number {
+  private keepOff(x: number, y: number, marks: readonly LandmarkMark[], skipKey?: string): [number, number] {
     for (let pass = 0; pass < 2; pass++) {
       for (const m of marks) {
         if (m.key === skipKey) continue;
-        const hx = 78 + m.w * 9;
-        const above = 175, below = 55;
-        const inVert = y <= m.y ? m.y - y < above : y - m.y < below;
-        const dx = x - m.x;
-        if (inVert && Math.abs(dx) < hx) {
-          const dir = dx === 0 ? 1 : Math.sign(dx);
-          x = m.x + dir * hx;
+        const dx = x - m.x, dy = y - m.y;
+        const d = Math.hypot(dx, dy);
+        if (d < m.clear) {
+          const ang = d === 0 ? -Math.PI / 2 : Math.atan2(dy, dx);
+          x = m.x + Math.cos(ang) * m.clear;
+          y = m.y + Math.sin(ang) * m.clear;
         }
       }
     }
-    return x;
+    return [x, y];
   }
 }

@@ -781,6 +781,13 @@ export class SceneRenderer {
     // Campfire ring, welcome dock and calm beach stay on bare sand (clearings);
     // every other landmark gets a planted green ring around its base.
     const sandKeys = new Set<ZoneKey>(["campfire_circle", "welcome_dock", "calm_beach"]);
+    // Tree keep-out radius (world px). The campfire needs a real clearing, the
+    // lighthouse + arcade must stay clearly visible; the rest just avoid cover.
+    const clearById: Partial<Record<ZoneKey, number>> = {
+      campfire_circle: 185, lighthouse_point: 165, arcade_cove: 150,
+      welcome_dock: 150, calm_beach: 135, treehouse_hideaway: 130,
+      art_hut: 120, lazy_lagoon: 120, star_market: 115,
+    };
     return this.zones.map((z) => {
       const c = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
       return {
@@ -788,6 +795,7 @@ export class SceneRenderer {
         x: c.x,
         y: c.y,
         w: z.footprint.w,
+        clear: clearById[z.key] ?? 110,
         ground: sandKeys.has(z.key) ? "sand" : "grass",
       } satisfies LandmarkMark;
     });
