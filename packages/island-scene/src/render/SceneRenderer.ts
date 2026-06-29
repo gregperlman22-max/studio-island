@@ -38,7 +38,7 @@ import { buildZoneScene, LANDMARK_ART, BOAT_ART, ARRIVAL_BG_URL } from "./zones"
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
 import { ArrivalView } from "./ArrivalView";
-import { LayeredIsland, type IslandLayoutOpts } from "./LayeredIsland";
+import { LayeredIsland, type IslandLayoutOpts, type LandmarkMark } from "./LayeredIsland";
 
 // Individual illustrated world-map sprites (transparent cutouts; water solid).
 const spriteUrl = (name: string): string =>
@@ -769,7 +769,28 @@ export class SceneRenderer {
     const waterW = Math.max((sw / MIN_ZOOM) * 1.3, spanW * 1.3);
     const waterH = Math.max((sh / MIN_ZOOM) * 1.3, spanW * 1.3);
 
-    return { cx, cy, spanW, waterW, waterH };
+    return { cx, cy, spanW, waterW, waterH, landmarks: this.landmarkMarks() };
+  }
+
+  /**
+   * Landmark footprints in world space, handed to the layered island so its
+   * vegetation scatter can ring grassy structures with green, keep the
+   * campfire/dock/beach on bare sand, and push trees off the building sprites.
+   */
+  private landmarkMarks(): LandmarkMark[] {
+    // Campfire ring, welcome dock and calm beach stay on bare sand (clearings);
+    // every other landmark gets a planted green ring around its base.
+    const sandKeys = new Set<ZoneKey>(["campfire_circle", "welcome_dock", "calm_beach"]);
+    return this.zones.map((z) => {
+      const c = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
+      return {
+        key: z.key,
+        x: c.x,
+        y: c.y,
+        w: z.footprint.w,
+        ground: sandKeys.has(z.key) ? "sand" : "grass",
+      } satisfies LandmarkMark;
+    });
   }
 
   /**
