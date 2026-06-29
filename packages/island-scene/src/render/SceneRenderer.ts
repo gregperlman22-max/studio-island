@@ -53,8 +53,10 @@ const INK = 0x23201c;
 const AVATAR_SCALE = 1.6;
 /** Pointer travel (px) beyond which a press becomes a pan, not a tap. */
 const DRAG_THRESHOLD = 7;
-/** Zoom bounds: 0.5x sees the whole island, 2.5x zooms into a zone. */
-const MIN_ZOOM = 0.5;
+/** Zoom bounds: 0.36x frames the whole island (incl. the tall treehouse) with
+ *  headroom; 2.5x zooms into a zone. (Min lowered from 0.5 so the treehouse
+ *  roofline is no longer clipped at the most-zoomed-out level.) */
+const MIN_ZOOM = 0.36;
 const MAX_ZOOM = 2.5;
 /** Mode 1 ↔ Mode 2 camera-tilt + cross-fade duration (seconds). */
 const TILT_DURATION = 1.0;
@@ -1330,7 +1332,9 @@ export class SceneRenderer {
     if (this.zoomLocked) return; // user has taken control of zoom
     const sw = this.app.screen.width;
     const sh = this.app.screen.height;
-    this.camScale = Math.max(0.95, Math.min(1.6, Math.min(sw, sh) / 640));
+    // 0.85× the comfortable zoom so the initial view sits a touch wider (more
+    // of the island in frame on first load) while still following the avatar.
+    this.camScale = 0.85 * Math.max(0.95, Math.min(1.6, Math.min(sw, sh) / 640));
   }
 
   /** Zoom by a factor, keeping the world point under (sx, sy) fixed. */
