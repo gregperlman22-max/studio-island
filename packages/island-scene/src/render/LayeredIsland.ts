@@ -78,13 +78,16 @@ export interface IslandLayoutOpts {
  * centre/right) and a handful of lone trees around the edges.
  */
 const TREE_OFFSETS: ReadonlyArray<readonly [number, number]> = [
-  // Lighthouse grove — frames the beacon from beside/behind, ≥165px clear.
-  [0.901, 0.066], [0.787, -0.026], [0.607, -0.278], [0.871, -0.022],
-  // Southern grove — frames the arcade/lazy lagoon from below-right, ≥150px clear.
+  // Lighthouse — one framing tree to the west only. The three grove trees whose
+  // tall canopies crossed the (very tall) tower were removed and replaced with
+  // short bushes at the tower base (see GAP_BUSHES) so the beacon reads clearly.
+  [0.607, -0.278],
+  // Southern grove — frames the arcade/lazy lagoon from below.
   [0.198, 0.745], [0.289, 0.757], [0.710, 0.404], [0.469, 0.471], [0.409, 0.659],
-  // Scattered individuals — pulled inward/upward onto the interior slopes
-  // (off the flat sandy coast): star↔treehouse gap, north-centre, mid-east, mid.
-  [-0.420, -0.193], [0.118, -0.352], [0.688, 0.122], [0.196, 0.283],
+  // Scattered individuals on the interior slopes (north-centre, star↔treehouse
+  // gap). The mid tree by the campfire and the one behind the arcade were
+  // removed (their canopies overlapped the landmarks) and replaced with bushes.
+  [-0.420, -0.193], [0.118, -0.352],
 ];
 
 // Treehouse forest — the densest stand, tightly grouped around and behind the
@@ -102,6 +105,17 @@ const BUSH_OFFSETS: ReadonlyArray<readonly [number, number]> = [
   [-0.269, -0.607], [-0.126, -0.593], [-0.571, -0.461], [0.248, -0.457],
   [-0.243, -0.404], [-0.076, -0.133], [0.331, 0.060], [-0.758, 0.096],
   [0.527, 0.887],
+];
+
+// Small gap-filler bushes [nx, ny, scale] placed where canopy-overlapping trees
+// were removed near the campfire, arcade and lighthouse. Bushes are short, so
+// they fill the greenery without a tall canopy that could cover a landmark.
+const GAP_BUSHES: ReadonlyArray<readonly [number, number, number]> = [
+  [0.196, 0.284, 0.35], // SE of the campfire (centre stays open)
+  [0.688, 0.121, 0.34], // right of the arcade
+  [0.787, -0.026, 0.32], // lighthouse base — west
+  [0.871, -0.022, 0.33], // lighthouse base — east
+  [0.901, 0.066, 0.36], // lighthouse base — lower-right
 ];
 
 /** Small deterministic PRNG (mulberry32) — same seed ⇒ same island. */
@@ -439,6 +453,11 @@ export class LayeredIsland {
       const scale = 0.3 + r() * 0.3; // 0.3–0.6
       const rot = (r() - 0.5) * 0.16;
       this.stamp(this.bushes, tex, cx + nx * shx, cy + ny * shy, scale, rot);
+    });
+    // Gap fillers where overlapping trees were removed (fixed smaller scale).
+    GAP_BUSHES.forEach(([nx, ny, scale], i) => {
+      const tex = i % 2 === 0 ? this.tex.bush01 : this.tex.bush02;
+      this.stamp(this.bushes, tex, cx + nx * shx, cy + ny * shy, scale, (r() - 0.5) * 0.16);
     });
   }
 
