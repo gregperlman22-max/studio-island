@@ -126,6 +126,10 @@ export class SceneRenderer {
   private landMask = new Graphics();
   private coastLoop: Pt[] = [];
   private waves = new Graphics();
+  /** Warm packed-dirt paths radiating from the campfire hub to every zone.
+   *  Visual only (does not affect pathfinding); drawn above the terrain/water
+   *  and below all props + avatars. */
+  private paths = new Graphics();
   private flame = new Graphics();
   /** y-sorted props: zones, decorations, avatars. */
   private entities = new Container();
@@ -271,6 +275,7 @@ export class SceneRenderer {
       this.biomeLayer,
       this.landMask,
       this.waves,
+      this.paths,
       this.entities,
       this.flame,
       this.fireflies,
@@ -611,6 +616,7 @@ export class SceneRenderer {
     for (const e of this.staticEntities) e.destroy({ children: true });
     this.staticEntities = [];
     this.zoneScenes.clear();
+    this.drawPaths();
     this.buildZones();
     this.buildDecorations();
     // layout.pictureFrameAnchor is an invisible reserved coordinate only —
@@ -622,6 +628,69 @@ export class SceneRenderer {
       ? footprintCenter(fire.gridPosition, fire.footprint.w, fire.footprint.h)
       : null;
     this.setupCamera();
+  }
+
+  /**
+   * Warm packed-dirt trails connecting the landmarks. The Campfire Circle is
+   * the hub — a path radiates from it to every other zone — and the Welcome
+   * Dock → Campfire trail is the main entry route, drawn widest. Each trail is
+   * a gentle quadratic-bezier curve so the network reads hand-trodden rather
+   * than ruler-straight. Purely decorative: the walk grid is untouched.
+   */
+  private drawPaths(): void {
+    this.paths.clear();
+    const center = (key: ZoneKey): { x: number; y: number } | null => {
+      const z = this.zones.find((zz) => zz.key === key);
+      return z ? footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h) : null;
+    };
+    const hub = center("campfire_circle");
+    if (!hub) return;
+
+    // Every zone links back to the campfire hub. The dock is the front door, so
+    // its trail is the most prominent (widest).
+    const spokes: { key: ZoneKey; width: number }[] = [
+      { key: "welcome_dock", width: 28 },
+      { key: "lighthouse_point", width: 20 },
+      { key: "treehouse_hideaway", width: 20 },
+      { key: "art_hut", width: 20 },
+      { key: "arcade_cove", width: 20 },
+      { key: "calm_beach", width: 20 },
+    ];
+    for (const { key, width } of spokes) {
+      const end = center(key);
+      if (end) this.drawDirtPath(hub, end, width);
+    }
+  }
+
+  /** One warm packed-dirt trail: a soft darker rim under a warm fill, bowed into
+   *  a gentle quadratic curve. `a` is the campfire hub end, `b` the zone end. */
+  private drawDirtPath(
+    a: { x: number; y: number },
+    b: { x: number; y: number },
+    width: number,
+  ): void {
+    const DIRT = 0xb9925a; // warm packed dirt/sand
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    // Bow the trail perpendicular to its run; a stable per-endpoint sign keeps
+    // adjacent spokes from all curving the same way.
+    const bow = len * 0.1;
+    const sign = Math.round(a.x + b.x + a.y + b.y) % 2 === 0 ? 1 : -1;
+    const cx = mx + (-dy / len) * bow * sign;
+    const cy = my + (dx / len) * bow * sign;
+
+    // Darker dug-in rim first, then the warm trodden fill over it.
+    this.paths
+      .moveTo(a.x, a.y)
+      .quadraticCurveTo(cx, cy, b.x, b.y)
+      .stroke({ width: width + 5, color: shade(DIRT, -0.32), alpha: 0.3, cap: "round", join: "round" });
+    this.paths
+      .moveTo(a.x, a.y)
+      .quadraticCurveTo(cx, cy, b.x, b.y)
+      .stroke({ width, color: DIRT, alpha: 0.5, cap: "round", join: "round" });
   }
 
   /** Tall flickering campfire flame (animated), drawn above the props. */
