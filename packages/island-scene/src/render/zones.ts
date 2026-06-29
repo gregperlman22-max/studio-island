@@ -1,6 +1,7 @@
 import { Container, Graphics, Sprite, type Texture } from "pixi.js";
 import type { ThemePackConfig, ThemePalette, ZoneInstance, ZoneKey } from "../types";
 import { hexNum, shade } from "./iso";
+import { buildLandmarkFx } from "./landmarkFx";
 
 /**
  * Per-zone landmark art. The WORLD-MAP landmark (Mode 1) is now a finished
@@ -108,26 +109,12 @@ export function buildZoneScene(
     sprite.scale.set(cfg.scale);
     art.addChild(sprite);
 
-    switch (zone.key) {
-      case "lighthouse_point":
-        // The light beam is PAINTED into lighthouse.png (the old code-drawn
-        // rotating cone is removed). TODO(anim-pass): add a gentle beam sweep /
-        // lantern glow over the painted beam.
-        break;
-      case "treehouse_hideaway":
-        // Gentle canopy sway (pivots at the base anchor) — maps cleanly to the
-        // tall tree art.
-        fxFns.push((t) => { sprite.rotation = Math.sin(t * 0.6) * 0.02; });
-        break;
-      case "campfire_circle":
-        // Animated flame flicker is drawn by the renderer (drawFlame) over the
-        // painted fire ring.
-        break;
-      // TODO(anim-pass): art_hut palette dab, arcade screen glow, welcome_dock
-      // lantern + a permanently-moored rowboat, calm_beach umbrella sway — the
-      // old code-drawn versions were tied to the removed code structures and
-      // don't map onto the finished art, so they're dropped for this pass.
-    }
+    // Ambient "living landmark" effects (soft warm glow, chimney smoke, rotating
+    // beam, screen/marquee, water ripples, drifting leaves, gentle sways …),
+    // layered ABOVE the sprite. The campfire flame itself (drawFlame in the
+    // renderer) is left untouched — only its warm glow is added here.
+    const anim = buildLandmarkFx(zone.key, container, sprite);
+    if (anim) fxFns.push(anim);
   } else {
     // Fallback (PNG failed to load): draw the cel-shaded code structure so the
     // zone is never empty. No ground patch / beacon — just the landmark.
