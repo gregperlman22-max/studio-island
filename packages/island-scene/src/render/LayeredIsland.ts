@@ -6,7 +6,7 @@ import { Container, Sprite, Texture } from "pixi.js";
  * never reads input. Build it with the textures, then call `layout()` with the
  * island's world-space bounds, the landmark marks and the shared y-sort layer.
  *
- * Depth: the flat ground (water · beach rim · sand · beach patch) lives in this
+ * Depth: the flat ground (water · beach rim · sand) lives in this
  * container at the very back. Every *prop* (grass, rocks, flowers, bushes,
  * trees) is stamped into the renderer's shared `propLayer` — the SAME container
  * the landmark + avatar sprites live in — each keyed by its base world-Y. That
@@ -14,8 +14,8 @@ import { Container, Sprite, Texture } from "pixi.js";
  * correctly occludes it, and a tree behind does not.
  *
  * The terrain art (sand-base-v2) bakes in colour variation, hills and sandy
- * beach edges, so the only ground overlay is the thin beach-rim strip plus a
- * small sandy patch under the beach. The scatter is deterministic (seeded PRNG).
+ * beach edges, so the only ground overlay is the thin beach-rim strip. The
+ * scatter is deterministic (seeded PRNG).
  */
 export interface IslandTextures {
   water: Texture;
@@ -173,8 +173,6 @@ export class LayeredIsland {
   /** Thin warm "dry beach foam" strip around the coast. */
   private readonly beachRim: Sprite;
   private readonly beachRimMask: Sprite;
-  /** Soft golden sand clearing under the calm-beach landmark. */
-  private readonly beachPatch: Sprite;
 
   // Props go into the renderer's shared y-sort layer; we track them to clear on
   // each layout.
@@ -199,38 +197,15 @@ export class LayeredIsland {
     for (const s of [this.beachRim, this.beachRimMask]) s.anchor.set(0.5);
     this.beachRim.mask = this.beachRimMask;
 
-    // Golden, feathered sand patch (a beach should be on sand, not grass).
-    this.beachPatch = new Sprite(this.radialTexture([
-      [0.0, "rgba(232, 201, 122, 0.95)"],
-      [0.55, "rgba(232, 201, 122, 0.9)"],
-      [1.0, "rgba(232, 201, 122, 0)"],
-    ]) ?? Texture.EMPTY);
-    this.beachPatch.anchor.set(0.5);
-
-    // Flat ground only — water · beach rim · sand · beach patch. The props are
-    // added to the shared y-sort layer in layout().
+    // Flat ground only — water · beach rim · sand. The props are added to the
+    // shared y-sort layer in layout().
     this.container.addChild(
-      this.water, this.beachRim, this.beachRimMask, this.sand, this.beachPatch,
+      this.water, this.beachRim, this.beachRimMask, this.sand,
     );
     for (const c of [this.container, this.water, this.beachRim, this.beachRimMask,
-      this.sand, this.beachPatch]) {
+      this.sand]) {
       c.eventMode = "none";
     }
-  }
-
-  /** A centred radial-gradient canvas texture (undefined when there's no DOM). */
-  private radialTexture(stops: ReadonlyArray<readonly [number, string]>): Texture | undefined {
-    if (typeof document === "undefined") return undefined;
-    const S = 256;
-    const cnv = document.createElement("canvas");
-    cnv.width = cnv.height = S;
-    const ctx = cnv.getContext("2d");
-    if (!ctx) return undefined;
-    const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-    for (const [off, color] of stops) g.addColorStop(off, color);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, S, S);
-    return Texture.from(cnv);
   }
 
   layout(o: IslandLayoutOpts): void {
@@ -252,17 +227,6 @@ export class LayeredIsland {
     const shy = sandH / 2;
     this.cx0 = o.cx; this.cy0 = o.cy; this.shx0 = shx; this.shy0 = shy;
     const marks = o.landmarks ?? [];
-
-    // Sandy patch under the calm beach (≈200×140, feathered), below the grass.
-    const beach = marks.find((m) => m.key === "calm_beach");
-    if (beach) {
-      this.beachPatch.visible = true;
-      this.beachPatch.position.set(beach.x, beach.y);
-      this.beachPatch.width = 200;
-      this.beachPatch.height = 140;
-    } else {
-      this.beachPatch.visible = false;
-    }
 
     // Reset the prop layer + clear last build's props.
     for (const s of this.propSprites) s.destroy();
