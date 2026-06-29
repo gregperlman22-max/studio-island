@@ -51,7 +51,9 @@ export const LANDMARK_ART: Record<
   lighthouse_point: { url: landmarkUrl("lighthouse"), scale: 0.37, anchorX: 0.5464, anchorY: 0.8789, contentH: 839 },
   // Treehouse — the island's "epic destination": deliberately the largest
   // landmark so it towers over everything (deep in its own forest cluster).
-  treehouse_hideaway: { url: landmarkUrl("treehouse"), scale: 0.55, anchorX: 0.501, anchorY: 0.8848, contentH: 853 },
+  // Scaled up + anchor lifted ~10px so the roofline clearly emerges above the
+  // surrounding forest canopy rather than blending into it.
+  treehouse_hideaway: { url: landmarkUrl("treehouse"), scale: 0.64, anchorX: 0.501, anchorY: 0.9, contentH: 853 },
   art_hut: { url: landmarkUrl("art-hut"), scale: 0.29, anchorX: 0.5181, anchorY: 0.7236, contentH: 638 },
   arcade_cove: { url: landmarkUrl("arcade"), scale: 0.21, anchorX: 0.5103, anchorY: 0.8457, contentH: 734 },
   campfire_circle: { url: landmarkUrl("campfire"), scale: 0.31, anchorX: 0.499, anchorY: 0.75, contentH: 641 },

@@ -410,8 +410,13 @@ export class LayeredIsland {
       }
     };
 
-    // Calm-beach flowers stay near the shore (deep = false); the rest pull in.
-    near(at("calm_beach"), 3, false, 64, false);
+    // Calm beach: exactly ONE small flower offset to the clearer (east) side so
+    // the umbrella + towel stay the focus, not a pile of flowers. We still
+    // advance the PRNG by the same 12 draws the old 3-flower cluster used, so
+    // every OTHER flower on the island keeps its exact position.
+    const cb = at("calm_beach");
+    if (cb) this.stamp(this.tex.flower01, cb.x + 95, cb.y + 4, 0.6, 0, false);
+    for (let k = 0; k < 12; k++) r();
     near(at("lazy_lagoon"), 3, false, 60, true);
     for (let i = 0; i < 3; i++) {
       const a = Math.PI * (0.6 + i * 0.28) + (r() - 0.5) * 0.2;
