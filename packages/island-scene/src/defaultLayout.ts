@@ -123,7 +123,9 @@ export const sampleZones: ZoneInstance[] = [
   // Centre
   { key: "campfire_circle", displayName: "Campfire Circle", skinName: "Marshmallow Ring", gridPosition: { x: 26, y: 22 }, footprint: { w: 4, h: 4 }, unlocked: true },
   // Interior ring
-  { key: "treehouse_hideaway", displayName: "Treehouse Hideaway", skinName: "Treetop Hideaway", gridPosition: { x: 10, y: 16 }, footprint: { w: 5, h: 5 }, unlocked: true },
+  // Nudged ~48 world-units SOUTH of its forest cluster so the (enlarged) cabin
+  // sits clearly in front of the trees, which now frame it from behind.
+  { key: "treehouse_hideaway", displayName: "Treehouse Hideaway", skinName: "Treetop Hideaway", gridPosition: { x: 11, y: 18 }, footprint: { w: 5, h: 5 }, unlocked: true },
   // art_hut, lighthouse + calm_beach nudged inland a few cells so they sit on
   // the new (irregular) sand-base-v2 silhouette instead of floating in its coves.
   { key: "art_hut", displayName: "Art Hut", skinName: "Paint Cabin", gridPosition: { x: 14, y: 8 }, footprint: { w: 4, h: 4 }, unlocked: true },
