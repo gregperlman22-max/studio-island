@@ -73,74 +73,88 @@ export function buildLandmarkFx(
 
   switch (key) {
     case "campfire_circle": {
-      // No flame icon — the campfire is now pure warm firelight: a soft inner
-      // glow breathing over the embers, plus a larger, fainter wash pulsing out
-      // of phase so the light feels like it's alive.
+      // Warm firelight: a soft inner glow breathing over the embers plus a
+      // larger, fainter wash pulsing out of phase, AND a small code-drawn flame
+      // whose SCALE gently pulses (the painted campfire PNG can't be isolated,
+      // and the whole landmark sprite must never be animated, so the flame is a
+      // dedicated element layered above the embers).
       const PERIOD = 1.8;
       const inner = glow(0xff6600, 160); inner.position.set(0, -10); // radius ~80
       const outer = glow(0xff4400, 280); outer.position.set(0, -10); // radius ~140
       fx.addChild(outer, inner); // inner draws on top of the wider wash
+      // Flame sprite — cel triangles, base-pivoted at its local origin (y=0) so
+      // a uniform scale grows it upward from the fire bowl, not from its centre.
+      const flame = new Graphics();
+      flame.poly([0, -30, 8, -8, 0, 0, -8, -8]).fill(0xff7a2d);
+      flame.poly([0, -22, 4, -7, 0, 0, -4, -7]).fill(0xffd23d);
+      flame.poly([0, -13, 2, -5, 0, 0, -2, -5]).fill(0xfff1a8);
+      flame.position.set(0, -10);
+      fx.addChild(flame); // above the glow wash
       ups.push((t) => {
         const s = 0.5 + 0.5 * Math.sin(t * (TAU / PERIOD));
         inner.alpha = 0.10 + 0.15 * s; // 0.10 → 0.25
         const s2 = 0.5 + 0.5 * Math.sin((t - 0.9) * (TAU / PERIOD)); // +0.9s = antiphase
         outer.alpha = 0.03 + 0.05 * s2; // 0.03 → 0.08
+        // Flame scale pulse 0.92 → 1.08, period 0.6s, sine eased.
+        flame.scale.set(1 + 0.08 * Math.sin(t * (TAU / 0.6)));
       });
       break;
     }
 
     case "art_hut": {
-      // Chimney smoke: small grey puffs rising from the single chimney-top
-      // point (−18,−85) only — no longer drifting off the whole building.
+      // Chimney smoke ONLY — the flat painted hut never sways/rotates. Small grey
+      // puffs rise from the single chimney-top point (−18,−85). A fresh puff is
+      // emitted every 1.8s; each lives 2.5s, so up to two overlap in the air.
       const ox = -18, oy = -85;
-      const PUFF = 40; // puff diameter (px) at scale 1.0
-      const N = 3, puffs: { s: Sprite; age: number; jx: number }[] = [];
+      const PUFF = 40;    // puff diameter (px) at scale 1.0
+      const LIFE = 2.5;   // seconds a puff lives (fade 0.5 → 0)
+      const EMIT = 1.8;   // one new puff every 1.8s
+      const N = 3;        // pool large enough for the overlap (ceil(LIFE/EMIT)+1)
+      const puffs: { s: Sprite; age: number; jx: number }[] = [];
       for (let i = 0; i < N; i++) {
         const s = glow(0xcccccc, PUFF); s.alpha = 0; fx.addChild(s);
-        puffs.push({ s, age: 2.5 - (i * 2.5) / N, jx: 0 }); // staggered
+        puffs.push({ s, age: LIFE, jx: 0 }); // start inactive
       }
+      let emitClock = EMIT; // emit one immediately on the first tick
       ups.push((_t, dt) => {
+        emitClock += dt;
+        if (emitClock >= EMIT) {
+          emitClock -= EMIT;
+          const free = puffs.find((p) => p.age >= LIFE);
+          if (free) { free.age = 0; free.jx = (Math.random() - 0.5) * 10; }
+        }
         for (const p of puffs) {
+          if (p.age >= LIFE) { p.s.alpha = 0; continue; }
           p.age += dt;
-          if (p.age >= 2.5) { p.age = 0; p.jx = (Math.random() - 0.5) * 10; }
-          const f = p.age / 2.5;
-          const sc = lerp(0.2, 0.8, f); // start scale 0.2, grow to 0.8 max
-          p.s.position.set(ox + p.jx * f, oy - 45 * f);
+          const f = p.age / LIFE;
+          const sc = lerp(0.2, 0.8, f); // scale 0.2 → 0.8
+          p.s.position.set(ox + p.jx * f, oy - 45 * f); // drift up ~45px
           p.s.width = p.s.height = PUFF * sc;
-          p.s.alpha = 0.5 * (1 - f);
+          p.s.alpha = 0.5 * (1 - f); // fade 0.5 → 0
         }
       });
-      // Gentle whole-sprite breeze (the easel can't be isolated from the PNG).
-      ups.push((t) => { sprite.rotation = Math.sin(t * (TAU / 4)) * 0.009; });
       break;
     }
 
     case "lighthouse_point": {
       // Lamp-housing glow only. The beam is painted into the sprite — no
-      // rotating cone / overlay beam here. Just a warm light breathing on.
-      const lamp = glow(0xffee88, 32); lamp.position.set(5, -125); fx.addChild(lamp); // radius 16
+      // rotating cone / overlay beam here. A bright warm lamp pulse: a soft
+      // outer halo plus a tighter core, both at the lamp room (+5,−125).
+      const outer = glow(0xffcc44, 76); outer.position.set(5, -125); fx.addChild(outer); // radius 38
+      const lamp = glow(0xffee88, 44); lamp.position.set(5, -125); fx.addChild(lamp); // radius 22
       ups.push((t) => {
-        const s = 0.5 + 0.5 * Math.sin(t * (TAU / 1.8)); // ~1.8s period
-        lamp.alpha = 0.25 + 0.45 * s; // 0.25 → 0.70
+        const s = 0.5 + 0.5 * Math.sin(t * (TAU / 1.8)); // 1.8s period
+        lamp.alpha = 0.40 + 0.50 * s;  // 0.40 → 0.90
+        outer.alpha = 0.15 + 0.20 * s; // 0.15 → 0.35
       });
       break;
     }
 
     case "arcade_cove": {
-      // Festive party/string lights strung ABOVE the cabinet (no screen glow):
-      // 5 warm bulbs in a gentle arc, each pulsing independently with a slight
-      // stagger. The bunting flutter below is kept.
-      const BULB_COLORS = [0xff6b6b, 0xffd93d, 0x6bcb77, 0x4d96ff, 0xff6ba8];
-      const SPAN = 80, BULBS = 5;
-      const lights: Graphics[] = [];
-      for (let i = 0; i < BULBS; i++) {
-        const g = new Graphics();
-        g.circle(0, 0, 5).fill(BULB_COLORS[i]);
-        const nx = i / (BULBS - 1) - 0.5;        // -0.5 … 0.5 across the arc
-        const sag = 8 * (1 - (nx * 2) * (nx * 2)); // gentle sag, 0 at ends → 8 mid
-        g.position.set(nx * SPAN, -75 + sag);     // centered at (0,−75)
-        fx.addChild(g); lights.push(g);
-      }
+      // The festive party/string lights are built at the PARENT scene-container
+      // level (see buildOverlayFx) so they y-sort independently and float
+      // clearly ABOVE the cabinet — never occluded by it or by nearby props.
+      // Only the bunting flutter is layered here, just above the marquee.
       const flags: Graphics[] = [];
       const flagCols = [0xf6c945, 0xef8aa0, 0x8fc7e8, 0xf0b86a];
       for (let i = 0; i < 4; i++) {
@@ -150,10 +164,6 @@ export function buildLandmarkFx(
         fx.addChild(f); flags.push(f);
       }
       ups.push((t) => {
-        for (let i = 0; i < lights.length; i++) {
-          const s = 0.5 + 0.5 * Math.sin(((t - i * 0.25) / 1.2) * TAU); // ~1.2s, staggered 0.25s
-          lights[i].alpha = 0.3 + 0.7 * s; // 0.3 → 1.0
-        }
         for (let i = 0; i < flags.length; i++) {
           flags[i].y = -104 + Math.sin(t * (TAU / 2.5) + i * 0.7) * 3;
         }
@@ -162,8 +172,7 @@ export function buildLandmarkFx(
     }
 
     case "star_market": {
-      // Awning breeze sway + rising golden stars.
-      ups.push((t) => { sprite.rotation = Math.sin(t * (TAU / 3)) * 0.017; });
+      // Rising golden stars ONLY — the flat painted stall never sways/rotates.
       const N = 3, stars: { g: Graphics; age: number; x0: number }[] = [];
       for (let i = 0; i < N; i++) {
         const g = new Graphics();
@@ -186,21 +195,14 @@ export function buildLandmarkFx(
     }
 
     case "lazy_lagoon": {
-      // The lagoon-01.png is a flat image — never animate the sprite. Just draw
-      // ripple rings over its water + an occasional bubble pop.
+      // The lagoon-01.png is a flat image — never animate the sprite. The ripple
+      // rings are built at the PARENT scene-container level (see buildOverlayFx)
+      // so they sit on the water surface and are never clipped/hidden. Only the
+      // occasional bubble pop is layered here.
       const cx = 10, cy = -15;
-      const DUR = 2.5;
-      const starts = [0, 0.85, 1.7]; // staggered so a ring is always in motion
-      const rings = starts.map(() => { const g = new Graphics(); fx.addChild(g); return g; });
       const bub = new Graphics(); bub.circle(0, 0, 3).fill(0xffffff); bub.alpha = 0; fx.addChild(bub);
       let bubAge = 0, bubNext = 5.5;
-      ups.push((t, dt) => {
-        for (let i = 0; i < rings.length; i++) {
-          const p = (((t - starts[i]) / DUR) % 1 + 1) % 1; // 0..1
-          const r = lerp(6, 50, p); // expand 6px → 50px
-          rings[i].clear();
-          rings[i].circle(cx, cy, r).stroke({ width: 1.5, color: 0x7ec8e3, alpha: 0.8 * (1 - p) });
-        }
+      ups.push((_t, dt) => {
         bubAge += dt;
         if (bubAge >= bubNext) {
           bubAge = 0; bubNext = 5 + Math.random(); // every 5–6s
@@ -286,4 +288,73 @@ export function buildLandmarkFx(
     last = t;
     for (const u of ups) u(t, dt);
   };
+}
+
+/**
+ * Ambient effects that must live at the PARENT scene-container level (the
+ * renderer's `entities` layer) rather than inside a landmark's own container —
+ * so they y-sort independently and can never be occluded by the landmark sprite
+ * or clipped by it. The renderer creates these, adds the returned container to
+ * `entities` at the given landmark WORLD position (footprint centre), sets its
+ * own zIndex, and drives `animate(t)` from the same ticker as the in-container
+ * effects (absolute elapsed seconds).
+ *
+ *   • arcade_cove → 5 party-light bulbs strung in an arc 75px ABOVE the cabinet.
+ *   • lazy_lagoon → 3 expanding ripple rings on the water surface.
+ */
+export function buildOverlayFx(
+  key: ZoneKey,
+  worldX: number,
+  worldY: number,
+): { container: Container; animate: (t: number) => void } | undefined {
+  const TAU = Math.PI * 2;
+
+  switch (key) {
+    case "arcade_cove": {
+      // Bulbs centred at (arcade X, arcade Y − 75), in an arc spanning 100px.
+      const fx = new Container();
+      fx.eventMode = "none";
+      fx.position.set(worldX, worldY - 75);
+      const BULB_COLORS = [0xff6b6b, 0xffd93d, 0x6bcb77, 0x4d96ff, 0xff6ba8];
+      const SPAN = 100, BULBS = 5;
+      const lights: Graphics[] = [];
+      for (let i = 0; i < BULBS; i++) {
+        const g = new Graphics();
+        g.circle(0, 0, 6).fill(BULB_COLORS[i]); // filled circle, radius 6
+        const nx = i / (BULBS - 1) - 0.5;          // -0.5 … 0.5 across the arc
+        const sag = 12 * (1 - (nx * 2) * (nx * 2)); // gentle arc (0 at ends → dip mid)
+        g.position.set(nx * SPAN, sag);
+        fx.addChild(g); lights.push(g);
+      }
+      const animate = (t: number) => {
+        for (let i = 0; i < lights.length; i++) {
+          const s = 0.5 + 0.5 * Math.sin(((t - i * 0.25) / 1.2) * TAU); // 1.2s, staggered 0.25s
+          lights[i].alpha = 0.4 + 0.6 * s; // 0.4 → 1.0
+        }
+      };
+      return { container: fx, animate };
+    }
+
+    case "lazy_lagoon": {
+      // Rings centred at (lagoon X + 10, lagoon Y − 15) on the water surface.
+      const fx = new Container();
+      fx.eventMode = "none";
+      fx.position.set(worldX + 10, worldY - 15);
+      const DUR = 2.5;
+      const starts = [0, 0.85, 1.7]; // staggered so a ring is always in motion
+      const rings = starts.map(() => { const g = new Graphics(); fx.addChild(g); return g; });
+      const animate = (t: number) => {
+        for (let i = 0; i < rings.length; i++) {
+          const p = (((t - starts[i]) / DUR) % 1 + 1) % 1; // 0..1
+          const r = lerp(8, 55, p); // expand 8px → 55px
+          rings[i].clear();
+          rings[i].circle(0, 0, r).stroke({ width: 2, color: 0x7ec8e3, alpha: 1 - p }); // 1.0 → 0
+        }
+      };
+      return { container: fx, animate };
+    }
+
+    default:
+      return undefined;
+  }
 }
