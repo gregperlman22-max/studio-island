@@ -43,6 +43,13 @@ function glow(color: number, diameter: number): Sprite {
 }
 
 function lerp(a: number, b: number, t: number): number { return a + (b - a) * t; }
+/** Channel-wise lerp between two 0xRRGGBB colors (for the arcade tint wash). */
+function lerpColor(a: number, b: number, t: number): number {
+  const r = Math.round(lerp((a >> 16) & 0xff, (b >> 16) & 0xff, t));
+  const g = Math.round(lerp((a >> 8) & 0xff, (b >> 8) & 0xff, t));
+  const bl = Math.round(lerp(a & 0xff, b & 0xff, t));
+  return (r << 16) | (g << 8) | bl;
+}
 function starPath(R: number, r: number): number[] {
   const p: number[] = [];
   for (let i = 0; i < 10; i++) {
@@ -73,46 +80,35 @@ export function buildLandmarkFx(
 
   switch (key) {
     case "campfire_circle": {
-      // Warm firelight: a soft inner glow breathing over the embers plus a
-      // larger, fainter wash pulsing out of phase, AND a small code-drawn flame
-      // whose SCALE gently pulses (the painted campfire PNG can't be isolated,
-      // and the whole landmark sprite must never be animated, so the flame is a
-      // dedicated element layered above the embers).
+      // Warm firelight ONLY — a soft inner glow breathing over the embers plus a
+      // larger, fainter wash pulsing out of phase. No code-drawn flame/diamond
+      // icon: the painted campfire PNG provides the fire itself, so we add the
+      // ambient glow and nothing else.
       const PERIOD = 1.8;
       const inner = glow(0xff6600, 160); inner.position.set(0, -10); // radius ~80
       const outer = glow(0xff4400, 280); outer.position.set(0, -10); // radius ~140
       fx.addChild(outer, inner); // inner draws on top of the wider wash
-      // Flame sprite — cel triangles, base-pivoted at its local origin (y=0) so
-      // a uniform scale grows it upward from the fire bowl, not from its centre.
-      const flame = new Graphics();
-      flame.poly([0, -30, 8, -8, 0, 0, -8, -8]).fill(0xff7a2d);
-      flame.poly([0, -22, 4, -7, 0, 0, -4, -7]).fill(0xffd23d);
-      flame.poly([0, -13, 2, -5, 0, 0, -2, -5]).fill(0xfff1a8);
-      flame.position.set(0, -10);
-      fx.addChild(flame); // above the glow wash
       ups.push((t) => {
         const s = 0.5 + 0.5 * Math.sin(t * (TAU / PERIOD));
         inner.alpha = 0.10 + 0.15 * s; // 0.10 → 0.25
         const s2 = 0.5 + 0.5 * Math.sin((t - 0.9) * (TAU / PERIOD)); // +0.9s = antiphase
         outer.alpha = 0.03 + 0.05 * s2; // 0.03 → 0.08
-        // Flame scale pulse 0.92 → 1.08, period 0.6s, sine eased.
-        flame.scale.set(1 + 0.08 * Math.sin(t * (TAU / 0.6)));
       });
       break;
     }
 
     case "art_hut": {
-      // Chimney smoke ONLY — the flat painted hut never sways/rotates. Small grey
+      // Chimney smoke ONLY — the flat painted hut never sways/rotates. Soft grey
       // puffs rise from the single chimney-top point (−18,−85). A fresh puff is
-      // emitted every 1.8s; each lives 2.5s, so up to two overlap in the air.
+      // emitted every 1.4s; each lives 2.5s, so up to two overlap in the air.
       const ox = -18, oy = -85;
       const PUFF = 40;    // puff diameter (px) at scale 1.0
-      const LIFE = 2.5;   // seconds a puff lives (fade 0.5 → 0)
-      const EMIT = 1.8;   // one new puff every 1.8s
+      const LIFE = 2.5;   // seconds a puff lives (fade 0.65 → 0)
+      const EMIT = 1.4;   // one new puff every 1.4s
       const N = 3;        // pool large enough for the overlap (ceil(LIFE/EMIT)+1)
       const puffs: { s: Sprite; age: number; jx: number }[] = [];
       for (let i = 0; i < N; i++) {
-        const s = glow(0xcccccc, PUFF); s.alpha = 0; fx.addChild(s);
+        const s = glow(0xdddddd, PUFF); s.alpha = 0; fx.addChild(s);
         puffs.push({ s, age: LIFE, jx: 0 }); // start inactive
       }
       let emitClock = EMIT; // emit one immediately on the first tick
@@ -127,34 +123,45 @@ export function buildLandmarkFx(
           if (p.age >= LIFE) { p.s.alpha = 0; continue; }
           p.age += dt;
           const f = p.age / LIFE;
-          const sc = lerp(0.2, 0.8, f); // scale 0.2 → 0.8
-          p.s.position.set(ox + p.jx * f, oy - 45 * f); // drift up ~45px
+          const sc = lerp(0.35, 1.2, f); // scale 0.35 → 1.2
+          p.s.position.set(ox + p.jx * f, oy - 55 * f); // drift up ~55px
           p.s.width = p.s.height = PUFF * sc;
-          p.s.alpha = 0.5 * (1 - f); // fade 0.5 → 0
+          p.s.alpha = 0.65 * (1 - f); // fade 0.65 → 0
         }
       });
       break;
     }
 
     case "lighthouse_point": {
-      // Lamp-housing glow only. The beam is painted into the sprite — no
-      // rotating cone / overlay beam here. A bright warm lamp pulse: a soft
-      // outer halo plus a tighter core, both at the lamp room (+5,−125).
-      const outer = glow(0xffcc44, 76); outer.position.set(5, -125); fx.addChild(outer); // radius 38
-      const lamp = glow(0xffee88, 44); lamp.position.set(5, -125); fx.addChild(lamp); // radius 22
+      // Lamp-housing glow only, pinned to the lamp room at the VERY TOP of the
+      // tower (+5,−155) where the painted beam originates — not mid-tower. The
+      // beam is painted into the sprite; no rotating cone / overlay beam here. A
+      // bright warm lamp pulse: a soft outer halo plus a tighter, brighter core.
+      const outer = glow(0xffcc44, 88); outer.position.set(5, -155); fx.addChild(outer); // radius 44
+      const lamp = glow(0xffee88, 52); lamp.position.set(5, -155); fx.addChild(lamp); // radius 26
       ups.push((t) => {
-        const s = 0.5 + 0.5 * Math.sin(t * (TAU / 1.8)); // 1.8s period
-        lamp.alpha = 0.40 + 0.50 * s;  // 0.40 → 0.90
-        outer.alpha = 0.15 + 0.20 * s; // 0.15 → 0.35
+        const s = 0.5 + 0.5 * Math.sin(t * (TAU / 1.6)); // 1.6s period
+        lamp.alpha = 0.50 + 0.45 * s;  // 0.50 → 0.95
+        outer.alpha = 0.20 + 0.20 * s; // 0.20 → 0.40
       });
       break;
     }
 
     case "arcade_cove": {
-      // The festive party/string lights are built at the PARENT scene-container
-      // level (see buildOverlayFx) so they y-sort independently and float
-      // clearly ABOVE the cabinet — never occluded by it or by nearby props.
-      // Only the bunting flutter is layered here, just above the marquee.
+      // A gentle screen-cast tint cycle washed directly over the cabinet SPRITE
+      // (no extra graphics / particles) — it reads as the arcade screen casting
+      // soft colored light on the cabinet. White → soft blue → soft pink → warm
+      // yellow → white, one full loop every 4s, smoothly lerped, always kept
+      // subtle so the sprite still looks like itself. Plus the bunting flutter.
+      const TINTS = [0xffffff, 0xadd8ff, 0xffb3d9, 0xffeda0];
+      const TINT_CYCLE = 4; // seconds for a full color loop
+      ups.push((t) => {
+        const u = ((t % TINT_CYCLE) / TINT_CYCLE) * TINTS.length; // 0 → 4
+        const i = Math.floor(u) % TINTS.length;
+        const frac = 0.5 - 0.5 * Math.cos((u - Math.floor(u)) * Math.PI); // smooth lerp
+        sprite.tint = lerpColor(TINTS[i], TINTS[(i + 1) % TINTS.length], frac);
+      });
+      // Bunting flutter, just above the marquee.
       const flags: Graphics[] = [];
       const flagCols = [0xf6c945, 0xef8aa0, 0x8fc7e8, 0xf0b86a];
       for (let i = 0; i < 4; i++) {
@@ -194,24 +201,10 @@ export function buildLandmarkFx(
       break;
     }
 
-    case "lazy_lagoon": {
-      // The lagoon-01.png is a flat image — never animate the sprite. The ripple
-      // rings are built at the PARENT scene-container level (see buildOverlayFx)
-      // so they sit on the water surface and are never clipped/hidden. Only the
-      // occasional bubble pop is layered here.
-      const cx = 10, cy = -15;
-      const bub = new Graphics(); bub.circle(0, 0, 3).fill(0xffffff); bub.alpha = 0; fx.addChild(bub);
-      let bubAge = 0, bubNext = 5.5;
-      ups.push((_t, dt) => {
-        bubAge += dt;
-        if (bubAge >= bubNext) {
-          bubAge = 0; bubNext = 5 + Math.random(); // every 5–6s
-          bub.position.set(cx + (Math.random() - 0.5) * 40, cy + (Math.random() - 0.5) * 40); // ±20px
-        }
-        bub.alpha = bubAge < 0.35 ? Math.sin((bubAge / 0.35) * Math.PI) : 0; // 0→1→0 over 0.35s
-      });
-      break;
-    }
+    // lazy_lagoon has no in-container effect — the periodic fish jump (with its
+    // own splash + entry ripple) lives at the PARENT scene-container level (see
+    // buildFishFx) so it renders above the flat lagoon sprite and is never
+    // clipped. It falls through to `default` (returns undefined) below.
 
     case "calm_beach": {
       // Umbrella sway (whole sprite — it IS mostly umbrella) + waterline wash.
@@ -291,70 +284,129 @@ export function buildLandmarkFx(
 }
 
 /**
- * Ambient effects that must live at the PARENT scene-container level (the
- * renderer's `entities` layer) rather than inside a landmark's own container —
- * so they y-sort independently and can never be occluded by the landmark sprite
- * or clipped by it. The renderer creates these, adds the returned container to
- * `entities` at the given landmark WORLD position (footprint centre), sets its
- * own zIndex, and drives `animate(t)` from the same ticker as the in-container
- * effects (absolute elapsed seconds).
+ * Periodic fish jump at the Lazy Lagoon water surface. Built at the PARENT
+ * scene-container level (the renderer's `entities` layer) rather than inside the
+ * lagoon's own container — so it y-sorts independently and renders ABOVE the
+ * flat lagoon sprite, never clipped or occluded. The renderer adds the returned
+ * container to `entities` at the lagoon WORLD position (footprint centre), sets
+ * its own zIndex, and drives `animate(t)` from the same ticker as the
+ * in-container effects (absolute elapsed seconds).
  *
- *   • arcade_cove → 5 party-light bulbs strung in an arc 75px ABOVE the cabinet.
- *   • lazy_lagoon → 3 expanding ripple rings on the water surface.
+ * Every ~7–8s a hand-drawn fish arcs out of the water: it rises from below the
+ * surface over 0.6s (rotating to follow the arc), throws a tiny splash at the
+ * peak, descends over 0.4s, and leaves a single expanding ripple ring at the
+ * entry point. The fish is hidden below the surface between jumps.
  */
-export function buildOverlayFx(
-  key: ZoneKey,
+export function buildFishFx(
   worldX: number,
   worldY: number,
-): { container: Container; animate: (t: number) => void } | undefined {
+): { container: Container; animate: (t: number) => void } {
+  const fx = new Container();
+  fx.eventMode = "none";
+  // Jump origin: over the painted water, (+5,−10) from the lagoon anchor.
+  fx.position.set(worldX + 5, worldY - 10);
+
+  // ── Fish: a blue-grey body ellipse (14×7) with a small triangular tail flick
+  //    behind it. Drawn nose-toward +x so rotation can follow the arc heading.
+  const fish = new Container();
+  const body = new Graphics();
+  body.ellipse(0, 0, 7, 3.5).fill(0x4a90d9); // 14px × 7px
+  const tail = new Graphics();
+  tail.poly([-6, 0, -13, -4.5, -13, 4.5]).fill(0x4a90d9); // tail flick behind the body
+  fish.addChild(tail, body);
+  fish.visible = false;
+  fx.addChild(fish);
+
+  // ── Splash: 4 tiny white circles that expand outward + fade over 0.3s. ──
+  const splash = new Container();
+  const drops: Graphics[] = [];
+  for (let i = 0; i < 4; i++) {
+    const g = new Graphics();
+    g.circle(0, 0, 3).fill(0xffffff);
+    splash.addChild(g); drops.push(g);
+  }
+  splash.alpha = 0;
+  fx.addChild(splash);
+
+  // ── Entry ripple: a single expanding outline ring (5px → 30px) at the spot
+  //    where the fish re-enters the water, fading 0.8 → 0 over 1.0s. ──
+  const ripple = new Graphics();
+  ripple.alpha = 0;
+  fx.addChild(ripple);
+
+  const BELOW = 20;   // fish y below the surface (start + end, hidden)
+  const PEAK = -45;   // fish y at the apex (above the surface)
+  const RISE = 0.6;   // seconds rising to the peak
+  const FALL = 0.4;   // seconds falling back below
+  const ACTIVE = RISE + FALL; // 1.0s of visible jump per cycle
   const TAU = Math.PI * 2;
 
-  switch (key) {
-    case "arcade_cove": {
-      // Bulbs centred at (arcade X, arcade Y − 75), in an arc spanning 100px.
-      const fx = new Container();
-      fx.eventMode = "none";
-      fx.position.set(worldX, worldY - 75);
-      const BULB_COLORS = [0xff6b6b, 0xffd93d, 0x6bcb77, 0x4d96ff, 0xff6ba8];
-      const SPAN = 100, BULBS = 5;
-      const lights: Graphics[] = [];
-      for (let i = 0; i < BULBS; i++) {
-        const g = new Graphics();
-        g.circle(0, 0, 6).fill(BULB_COLORS[i]); // filled circle, radius 6
-        const nx = i / (BULBS - 1) - 0.5;          // -0.5 … 0.5 across the arc
-        const sag = 12 * (1 - (nx * 2) * (nx * 2)); // gentle arc (0 at ends → dip mid)
-        g.position.set(nx * SPAN, sag);
-        fx.addChild(g); lights.push(g);
+  let lastT = -1;
+  let clock = 0, cycle = 7 + Math.random();   // 7–8s between jumps
+  let prevY = BELOW, prevX = 0;
+  let splashT = -1, splashX = 0;               // <0 = inactive
+  let rippleT = -1, rippleX = 0;               // <0 = inactive
+
+  const animate = (t: number) => {
+    const dt = lastT < 0 ? 0 : Math.min(0.06, t - lastT);
+    lastT = t;
+    const wasClock = clock;
+    clock += dt;
+    if (clock >= cycle) { clock -= cycle; cycle = 7 + Math.random(); prevX = -12; prevY = BELOW; }
+    const p = clock;
+
+    // Splash fires the moment the fish reaches the apex (p crosses RISE).
+    if (p >= RISE && wasClock < RISE) { splashT = 0; splashX = lerp(-12, 12, RISE / ACTIVE); }
+
+    if (p < ACTIVE) {
+      fish.visible = true;
+      const prog = p / ACTIVE;
+      const x = lerp(-12, 12, prog); // gentle horizontal travel across the arc
+      let y: number;
+      if (p < RISE) {
+        const a = p / RISE;
+        y = BELOW + (PEAK - BELOW) * (1 - (1 - a) * (1 - a)); // ease-out toward the peak
+      } else {
+        const b = (p - RISE) / FALL;
+        y = PEAK + (BELOW - PEAK) * b * b;                    // ease-in back down
       }
-      const animate = (t: number) => {
-        for (let i = 0; i < lights.length; i++) {
-          const s = 0.5 + 0.5 * Math.sin(((t - i * 0.25) / 1.2) * TAU); // 1.2s, staggered 0.25s
-          lights[i].alpha = 0.4 + 0.6 * s; // 0.4 → 1.0
-        }
-      };
-      return { container: fx, animate };
+      fish.position.set(x, y);
+      fish.rotation = Math.atan2(y - prevY, (x - prevX) || 1e-3); // nose follows velocity
+      // Entry ripple fires as the fish crosses the surface (y = 0) on the way down.
+      if (p > RISE && prevY < 0 && y >= 0) { rippleT = 0; rippleX = x; }
+      prevX = x; prevY = y;
+    } else {
+      fish.visible = false;
     }
 
-    case "lazy_lagoon": {
-      // Rings centred at (lagoon X + 10, lagoon Y − 15) on the water surface.
-      const fx = new Container();
-      fx.eventMode = "none";
-      fx.position.set(worldX + 10, worldY - 15);
-      const DUR = 2.5;
-      const starts = [0, 0.85, 1.7]; // staggered so a ring is always in motion
-      const rings = starts.map(() => { const g = new Graphics(); fx.addChild(g); return g; });
-      const animate = (t: number) => {
-        for (let i = 0; i < rings.length; i++) {
-          const p = (((t - starts[i]) / DUR) % 1 + 1) % 1; // 0..1
-          const r = lerp(8, 55, p); // expand 8px → 55px
-          rings[i].clear();
-          rings[i].circle(0, 0, r).stroke({ width: 2, color: 0x7ec8e3, alpha: 1 - p }); // 1.0 → 0
+    // Splash animation — drops fly outward and fade over 0.3s.
+    if (splashT >= 0) {
+      splashT += dt;
+      const f = splashT / 0.3;
+      if (f >= 1) { splash.alpha = 0; splashT = -1; }
+      else {
+        splash.position.set(splashX, PEAK);
+        splash.alpha = 1 - f;
+        for (let i = 0; i < drops.length; i++) {
+          const ang = (i / drops.length) * TAU;
+          const rad = lerp(0, 9, f);
+          drops[i].position.set(Math.cos(ang) * rad, Math.sin(ang) * rad - 3 * f);
         }
-      };
-      return { container: fx, animate };
+      }
     }
 
-    default:
-      return undefined;
-  }
+    // Entry ripple — a single ring expanding 5 → 30px, fading 0.8 → 0 over 1.0s.
+    if (rippleT >= 0) {
+      rippleT += dt;
+      const f = rippleT / 1.0;
+      if (f >= 1) { ripple.alpha = 0; rippleT = -1; }
+      else {
+        ripple.alpha = 1;
+        ripple.clear();
+        ripple.circle(rippleX, 0, lerp(5, 30, f)).stroke({ width: 1.5, color: 0x7ec8e3, alpha: 0.8 * (1 - f) });
+      }
+    }
+  };
+
+  return { container: fx, animate };
 }
