@@ -16,6 +16,14 @@ import { Container, Sprite, Texture } from "pixi.js";
  * The terrain art (sand-base-v2) bakes in colour variation, hills and sandy
  * beach edges, so the only ground overlay is the thin beach-rim strip. The
  * scatter is deterministic (seeded PRNG).
+ *
+ * INVARIANT — props render on transparent backgrounds. The flower/grass/rock
+ * sprites are clean RGBA cutouts and Pixi uploads them premultiplied, so they
+ * sit directly on the terrain with no halo or box. Do NOT stamp an opaque or
+ * near-opaque "clearing"/"sand patch" sprite behind a prop cluster to set it
+ * off: over the green interior such a patch reads as a hard pale rectangle
+ * behind the flowers. (A calm-beach `beachPatch` did exactly this and was
+ * removed; let the baked terrain art carry any ground colour variation.)
  */
 export interface IslandTextures {
   water: Texture;
