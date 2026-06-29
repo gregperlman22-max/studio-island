@@ -79,66 +79,19 @@ export function buildLandmarkFx(
   const TAU = Math.PI * 2;
 
   switch (key) {
-    case "campfire_circle": {
-      // Warm firelight ONLY — a soft inner glow breathing over the embers plus a
-      // larger, fainter wash pulsing out of phase. No code-drawn flame/diamond
-      // icon: the painted campfire PNG provides the fire itself, so we add the
-      // ambient glow and nothing else.
-      const PERIOD = 1.8;
-      const inner = glow(0xff6600, 160); inner.position.set(0, -10); // radius ~80
-      const outer = glow(0xff4400, 280); outer.position.set(0, -10); // radius ~140
-      fx.addChild(outer, inner); // inner draws on top of the wider wash
-      ups.push((t) => {
-        const s = 0.5 + 0.5 * Math.sin(t * (TAU / PERIOD));
-        inner.alpha = 0.10 + 0.15 * s; // 0.10 → 0.25
-        const s2 = 0.5 + 0.5 * Math.sin((t - 0.9) * (TAU / PERIOD)); // +0.9s = antiphase
-        outer.alpha = 0.03 + 0.05 * s2; // 0.03 → 0.08
-      });
-      break;
-    }
-
-    case "art_hut": {
-      // Chimney smoke ONLY — the flat painted hut never sways/rotates. Soft grey
-      // puffs rise from the single chimney-top point (−18,−85). A fresh puff is
-      // emitted every 1.4s; each lives 2.5s, so up to two overlap in the air.
-      const ox = -18, oy = -85;
-      const PUFF = 40;    // puff diameter (px) at scale 1.0
-      const LIFE = 2.5;   // seconds a puff lives (fade 0.65 → 0)
-      const EMIT = 1.4;   // one new puff every 1.4s
-      const N = 3;        // pool large enough for the overlap (ceil(LIFE/EMIT)+1)
-      const puffs: { s: Sprite; age: number; jx: number }[] = [];
-      for (let i = 0; i < N; i++) {
-        const s = glow(0xdddddd, PUFF); s.alpha = 0; fx.addChild(s);
-        puffs.push({ s, age: LIFE, jx: 0 }); // start inactive
-      }
-      let emitClock = EMIT; // emit one immediately on the first tick
-      ups.push((_t, dt) => {
-        emitClock += dt;
-        if (emitClock >= EMIT) {
-          emitClock -= EMIT;
-          const free = puffs.find((p) => p.age >= LIFE);
-          if (free) { free.age = 0; free.jx = (Math.random() - 0.5) * 10; }
-        }
-        for (const p of puffs) {
-          if (p.age >= LIFE) { p.s.alpha = 0; continue; }
-          p.age += dt;
-          const f = p.age / LIFE;
-          const sc = lerp(0.35, 1.2, f); // scale 0.35 → 1.2
-          p.s.position.set(ox + p.jx * f, oy - 55 * f); // drift up ~55px
-          p.s.width = p.s.height = PUFF * sc;
-          p.s.alpha = 0.65 * (1 - f); // fade 0.65 → 0
-        }
-      });
-      break;
-    }
+    // campfire_circle and art_hut have NO in-container effect. Their warm glow /
+    // chimney smoke now live at the PARENT scene-container level (see
+    // buildCampfireFx / buildArtHutFx below) so they y-sort independently and
+    // render ABOVE the landmark sprite — never behind the stone ring / building.
+    // Both fall through to `default` (returns undefined) here.
 
     case "lighthouse_point": {
       // Lamp-housing glow only, pinned to the lamp room at the VERY TOP of the
-      // tower (+5,−155) where the painted beam originates — not mid-tower. The
+      // tower (+5,−175) where the painted beam originates — not mid-tower. The
       // beam is painted into the sprite; no rotating cone / overlay beam here. A
       // bright warm lamp pulse: a soft outer halo plus a tighter, brighter core.
-      const outer = glow(0xffcc44, 88); outer.position.set(5, -155); fx.addChild(outer); // radius 44
-      const lamp = glow(0xffee88, 52); lamp.position.set(5, -155); fx.addChild(lamp); // radius 26
+      const outer = glow(0xffcc44, 88); outer.position.set(5, -175); fx.addChild(outer); // radius 44
+      const lamp = glow(0xffee88, 52); lamp.position.set(5, -175); fx.addChild(lamp); // radius 26
       ups.push((t) => {
         const s = 0.5 + 0.5 * Math.sin(t * (TAU / 1.6)); // 1.6s period
         lamp.alpha = 0.50 + 0.45 * s;  // 0.50 → 0.95
@@ -281,6 +234,85 @@ export function buildLandmarkFx(
     last = t;
     for (const u of ups) u(t, dt);
   };
+}
+
+/**
+ * Campfire warm glow, built at the PARENT scene-container level (the renderer's
+ * `entities` layer) rather than inside the campfire's own container — so it
+ * y-sorts independently and renders ABOVE the campfire sprite (and its painted
+ * stone ring), never behind it. The renderer adds the returned container to
+ * `entities` at the campfire WORLD position (footprint centre) and sets its own
+ * zIndex. A soft inner glow breathes over the embers plus a larger, fainter
+ * wash pulsing out of phase; the painted PNG provides the fire itself.
+ */
+export function buildCampfireFx(
+  worldX: number,
+  worldY: number,
+): { container: Container; animate: (t: number) => void } {
+  const fx = new Container();
+  fx.eventMode = "none";
+  fx.position.set(worldX, worldY); // glow offsets are relative to the anchor
+  const TAU = Math.PI * 2;
+  const PERIOD = 1.8;
+  const inner = glow(0xff6600, 160); inner.position.set(0, -10); // radius ~80
+  const outer = glow(0xff4400, 280); outer.position.set(0, -10); // radius ~140
+  fx.addChild(outer, inner); // inner draws on top of the wider wash
+  const animate = (t: number) => {
+    const s = 0.5 + 0.5 * Math.sin(t * (TAU / PERIOD));
+    inner.alpha = 0.10 + 0.15 * s; // 0.10 → 0.25
+    const s2 = 0.5 + 0.5 * Math.sin((t - 0.9) * (TAU / PERIOD)); // +0.9s = antiphase
+    outer.alpha = 0.03 + 0.05 * s2; // 0.03 → 0.08
+  };
+  return { container: fx, animate };
+}
+
+/**
+ * Art Hut chimney smoke, built at the PARENT scene-container level (the
+ * renderer's `entities` layer) rather than inside the hut's own container — so
+ * it y-sorts independently and renders IN FRONT of the building sprite, never
+ * behind it. Soft grey puffs rise from the chimney-top point (−18,−95), on top
+ * of the building, slightly left of centre. A fresh puff is emitted every 1.4s;
+ * each lives 2.5s, so up to two overlap in the air.
+ */
+export function buildArtHutFx(
+  worldX: number,
+  worldY: number,
+): { container: Container; animate: (t: number) => void } {
+  const fx = new Container();
+  fx.eventMode = "none";
+  fx.position.set(worldX, worldY); // puff offsets are relative to the anchor
+  const ox = -18, oy = -95;
+  const PUFF = 40;    // puff diameter (px) at scale 1.0
+  const LIFE = 2.5;   // seconds a puff lives (fade 0.65 → 0)
+  const EMIT = 1.4;   // one new puff every 1.4s
+  const N = 3;        // pool large enough for the overlap (ceil(LIFE/EMIT)+1)
+  const puffs: { s: Sprite; age: number; jx: number }[] = [];
+  for (let i = 0; i < N; i++) {
+    const s = glow(0xdddddd, PUFF); s.alpha = 0; fx.addChild(s);
+    puffs.push({ s, age: LIFE, jx: 0 }); // start inactive
+  }
+  let emitClock = EMIT; // emit one immediately on the first tick
+  let last = -1;
+  const animate = (t: number) => {
+    const dt = last < 0 ? 0 : Math.min(0.06, t - last);
+    last = t;
+    emitClock += dt;
+    if (emitClock >= EMIT) {
+      emitClock -= EMIT;
+      const free = puffs.find((p) => p.age >= LIFE);
+      if (free) { free.age = 0; free.jx = (Math.random() - 0.5) * 10; }
+    }
+    for (const p of puffs) {
+      if (p.age >= LIFE) { p.s.alpha = 0; continue; }
+      p.age += dt;
+      const f = p.age / LIFE;
+      const sc = lerp(0.35, 1.2, f); // scale 0.35 → 1.2
+      p.s.position.set(ox + p.jx * f, oy - 55 * f); // drift up ~55px
+      p.s.width = p.s.height = PUFF * sc;
+      p.s.alpha = 0.65 * (1 - f); // fade 0.65 → 0
+    }
+  };
+  return { container: fx, animate };
 }
 
 /**

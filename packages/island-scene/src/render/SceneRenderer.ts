@@ -34,7 +34,7 @@ import { buildAvatarSprite, type AvatarSprite } from "./avatar";
 import { biomeAt, landContext } from "./biome";
 import { islandOutline, flatten, insetLoop, clusterOutline, type Pt } from "./coast";
 import { buildZoneScene, LANDMARK_ART, BOAT_ART, ARRIVAL_BG_URL } from "./zones";
-import { buildFishFx } from "./landmarkFx";
+import { buildCampfireFx, buildArtHutFx, buildFishFx } from "./landmarkFx";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
 import { ArrivalView } from "./ArrivalView";
@@ -1014,10 +1014,31 @@ export class SceneRenderer {
       this.staticEntities.push(scene.container);
       this.zoneScenes.set(z.key, { setHover: scene.setHover });
 
-      // Parent-level ambient overlay: the Lazy Lagoon fish jump. It lives in
-      // `entities` — NOT inside the lagoon container — so it y-sorts
-      // independently and renders above the flat lagoon sprite (with its splash
-      // and entry ripple) instead of being clipped or occluded by it.
+      // Parent-level ambient overlays. These live in `entities` — NOT inside the
+      // zone container — so they y-sort independently and render ABOVE the
+      // landmark sprite (which sorts at center.y + 0.05) instead of behind it.
+
+      // Campfire warm glow: just above the sprite so it sits ON the stone ring.
+      if (z.key === "campfire_circle") {
+        const fire = buildCampfireFx(center.x, center.y);
+        fire.container.zIndex = center.y + 1;
+        this.entities.addChild(fire.container);
+        this.staticEntities.push(fire.container);
+        this.zoneAnimators.push(fire.animate);
+      }
+
+      // Art Hut chimney smoke: in front of the building, not behind it.
+      if (z.key === "art_hut") {
+        const smoke = buildArtHutFx(center.x, center.y);
+        smoke.container.zIndex = center.y + 1;
+        this.entities.addChild(smoke.container);
+        this.staticEntities.push(smoke.container);
+        this.zoneAnimators.push(smoke.animate);
+      }
+
+      // Lazy Lagoon fish jump: well above all sprites + flowers in the lagoon
+      // area so the arc is always visible in front of everything (with its
+      // splash and entry ripple) instead of being clipped or occluded.
       if (z.key === "lazy_lagoon") {
         const fish = buildFishFx(center.x, center.y);
         fish.container.zIndex = center.y + 2;
