@@ -49,7 +49,9 @@ export const LANDMARK_ART: Record<
   // same child-scale door (~42 world px). Towers are taller; the treehouse is
   // capped (its door is a tiny fraction of the all-tree image).
   lighthouse_point: { url: landmarkUrl("lighthouse"), scale: 0.37, anchorX: 0.5464, anchorY: 0.8789, contentH: 839 },
-  treehouse_hideaway: { url: landmarkUrl("treehouse"), scale: 0.42, anchorX: 0.501, anchorY: 0.8848, contentH: 853 },
+  // Treehouse — the island's "epic destination": deliberately the largest
+  // landmark so it towers over everything (deep in its own forest cluster).
+  treehouse_hideaway: { url: landmarkUrl("treehouse"), scale: 0.55, anchorX: 0.501, anchorY: 0.8848, contentH: 853 },
   art_hut: { url: landmarkUrl("art-hut"), scale: 0.29, anchorX: 0.5181, anchorY: 0.7236, contentH: 638 },
   arcade_cove: { url: landmarkUrl("arcade"), scale: 0.21, anchorX: 0.5103, anchorY: 0.8457, contentH: 734 },
   campfire_circle: { url: landmarkUrl("campfire"), scale: 0.31, anchorX: 0.499, anchorY: 0.75, contentH: 641 },

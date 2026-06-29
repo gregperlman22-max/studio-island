@@ -21,7 +21,6 @@ import type {
 } from "../types";
 import { CLIFF, TILE_H, TILE_W } from "./constants";
 import {
-  depth,
   footprintCenter,
   hexNum,
   lerpHex,
@@ -769,7 +768,13 @@ export class SceneRenderer {
     const waterW = Math.max((sw / MIN_ZOOM) * 1.3, spanW * 1.3);
     const waterH = Math.max((sh / MIN_ZOOM) * 1.3, spanW * 1.3);
 
-    return { cx, cy, spanW, waterW, waterH, landmarks: this.landmarkMarks() };
+    return {
+      cx, cy, spanW, waterW, waterH,
+      landmarks: this.landmarkMarks(),
+      // The nature props are stamped into the same y-sorted container as the
+      // landmarks + avatars, so depth interleaves correctly across all of them.
+      propLayer: this.entities,
+    };
   }
 
   /**
@@ -1026,12 +1031,11 @@ export class SceneRenderer {
       if (scene.animate) this.zoneAnimators.push(scene.animate);
       const center = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
       scene.container.position.set(center.x, center.y);
-      // Zone art y-sorts just behind props/avatars on the same row.
-      scene.container.zIndex =
-        depth(
-          z.gridPosition.x + z.footprint.w / 2,
-          z.gridPosition.y + z.footprint.h / 2,
-        ) + 0.05;
+      // Y-SORT: landmarks share one depth key (their base world-Y) with all the
+      // nature props, so a tree in front (lower on screen) occludes the building
+      // and a tree behind does not. The +0.05 keeps a landmark just ahead of a
+      // prop on the exact same row.
+      scene.container.zIndex = center.y + 0.05;
       this.entities.addChild(scene.container);
       this.staticEntities.push(scene.container);
       this.zoneScenes.set(z.key, { setHover: scene.setHover });
@@ -1109,7 +1113,7 @@ export class SceneRenderer {
       sprite.position.set(c.x, c.y);
       sprite.scale.set(d.scale ?? 1);
       if (d.rotation) sprite.angle = d.rotation;
-      sprite.zIndex = depth(d.position.x, d.position.y) + 0.2;
+      sprite.zIndex = c.y + 0.2; // Y-sort by base world-Y
 
       // Soft contact shadow.
       const shadow = new Graphics();
@@ -1262,7 +1266,9 @@ export class SceneRenderer {
     const hop =
       view.hopT > 0 ? Math.sin((1 - view.hopT / HOP_DUR) * Math.PI) * 7 : 0;
     view.container.position.set(c.x, c.y - bob - hop);
-    view.container.zIndex = depth(view.pos.x, view.pos.y) + 0.3;
+    // Y-SORT by base world-Y (shared with landmarks + props); +0.3 keeps the
+    // avatar just in front of a landmark/prop on the same row.
+    view.container.zIndex = c.y + 0.3;
   }
 
   private requestZoneTap(zone: ZoneInstance): void {

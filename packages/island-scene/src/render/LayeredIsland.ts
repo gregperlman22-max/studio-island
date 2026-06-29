@@ -4,19 +4,18 @@ import { Container, Sprite, Texture } from "pixi.js";
  * LayeredIsland — the world map composed from individual illustrated sprites
  * over the painted terrain base. Pure presentation: it owns no world data and
  * never reads input. Build it with the textures, then call `layout()` with the
- * island's world-space bounds (and the landmark marks); it sizes + scatters
- * every layer to fit and keeps vegetation on the sand and off the landmarks.
+ * island's world-space bounds, the landmark marks and the shared y-sort layer.
  *
- * Layer stack (bottom → top): water · beach rim · sand · rocks · grass ·
- * bushes · flowers · trees. Landmarks and avatars are drawn ABOVE this
- * container by the renderer, so a landmark is always visible on top of nature.
+ * Depth: the flat ground (water · beach rim · sand · beach patch) lives in this
+ * container at the very back. Every *prop* (grass, rocks, flowers, bushes,
+ * trees) is stamped into the renderer's shared `propLayer` — the SAME container
+ * the landmark + avatar sprites live in — each keyed by its base world-Y. That
+ * single sorted pass means a tree in front of a building (lower on screen)
+ * correctly occludes it, and a tree behind does not.
  *
- * The terrain art (sand-base-v2) already bakes in colour variation, hills and
- * sandy beach edges, so there are no code colour/elevation overlays — only the
- * thin beach-rim strip that helps the island pop off the water.
- *
- * The scatter is fully deterministic (seeded PRNG) so the island looks the
- * same on every load and every build.
+ * The terrain art (sand-base-v2) bakes in colour variation, hills and sandy
+ * beach edges, so the only ground overlay is the thin beach-rim strip plus a
+ * small sandy patch under the beach. The scatter is deterministic (seeded PRNG).
  */
 export interface IslandTextures {
   water: Texture;
@@ -31,98 +30,77 @@ export interface IslandTextures {
   flowerBush01: Texture;
 }
 
-/**
- * A landmark's world-space footprint, handed in so the vegetation scatter can
- * (a) ring grassy structures with green so they feel planted, (b) keep small
- * sandy clearings at the beach/dock/campfire, and (c) push trees off the
- * building sprites so they frame rather than cover them.
- */
 export interface LandmarkMark {
-  /** Zone key (so the flower scatter can target specific landmarks). */
   key: string;
-  /** World-pixel centre x of the footprint. */
   x: number;
-  /** World-pixel base/centre y of the footprint. */
   y: number;
-  /** Footprint width in grid tiles (sizes the grass ring). */
   w: number;
   /** Tree keep-out radius in world pixels — no tree base may sit inside it. */
   clear: number;
-  /**
-   * "grass" structures get a green ring + base tufts; "sand" structures
-   * (campfire, welcome dock, calm beach) stay on bare sand and act as a grass
-   * exclusion clearing.
-   */
   ground: "grass" | "sand";
 }
 
 export interface IslandLayoutOpts {
-  /**
-   * Sand/island footprint, pinned to the painted-ground registration so the
-   * landmarks line up. The sand is centered at (cx, cy) and scaled so its
-   * width equals `spanW`.
-   */
   cx: number;
   cy: number;
   spanW: number;
-  /** World rect (centered on cx, cy) the water must blanket edge-to-edge —
-   *  sized to the viewport at the most-zoomed-out level so there are no gaps. */
   waterW: number;
   waterH: number;
-  /** Landmark footprints in world space (for grass rings + tree keep-out). */
   landmarks?: readonly LandmarkMark[];
+  /** Shared y-sorted container (renderer's `entities`) that the props join so
+   *  they interleave by depth with the landmark + avatar sprites. */
+  propLayer?: Container;
 }
 
 /**
- * Baked tree positions, as offsets normalised to the sand half-extents
- * (x = cx + nx·shx, y = cy + ny·shy). Off-shape positions are snapped onto the
- * sand at runtime (see snapToSand) so they stay on the new irregular silhouette.
- * The trees form natural groves: a lighthouse-adjacent tree, a southern grove
- * and a couple of lone slope trees.
+ * Grove + scattered trees as [nx, ny, texNum(1|2), scale]. Positions, textures
+ * and scales were chosen (by sampling the sand alpha + every landmark's sprite
+ * box) so that under the global y-sort NO tree canopy occludes a landmark from
+ * the front — they sit in the open gaps and frame the structures.
  */
-const TREE_OFFSETS: ReadonlyArray<readonly [number, number]> = [
-  // Lighthouse — one framing tree to the west only (grove trees that crossed
-  // the tall tower were removed and replaced with short bushes at its base).
-  [0.607, -0.278],
-  // Southern grove — frames the arcade/lazy lagoon from below.
-  [0.198, 0.745], [0.289, 0.757], [0.710, 0.404], [0.469, 0.471], [0.409, 0.659],
-  // Scattered individuals on the interior slopes.
-  [-0.420, -0.193], [0.118, -0.352],
+const TREE_DEFS: ReadonlyArray<readonly [number, number, 1 | 2, number]> = [
+  [0.49, -0.328, 1, 0.45],  // west of the lighthouse
+  [-0.027, 0.647, 1, 0.40], // southern gap (between campfire + dock)
+  [0.264, 0.65, 1, 0.40],
+  [0.257, 0.552, 2, 0.40],
+  [-0.084, 0.59, 2, 0.36],
+  [0.103, 0.88, 1, 0.45],
+  [0.689, 0.283, 2, 0.32], // east, beside the arcade/lagoon
+  [0.744, 0.416, 1, 0.45],
 ];
 
-// Treehouse forest — the densest stand, tightly grouped around and behind the
-// Treehouse Hideaway so it reads as a structure standing IN the woods. These
-// are exempt from the treehouse keep-out so they can sit intentionally close.
+// Treehouse forest — a dense stand kept strictly BEHIND (north of) the
+// treehouse so the towering building always reads in front of it. Smaller
+// trees; exempt from the treehouse keep-out so they crowd in close.
 const CLUSTER_TREE_OFFSETS: ReadonlyArray<readonly [number, number]> = [
-  [-0.389, -0.683], [-0.197, -0.246], [-0.446, -0.402], [-0.573, -0.667],
-  [-0.536, -0.385], [-0.574, -0.217], [-0.645, -0.684],
+  [-0.412, -0.577], [-0.566, -0.647], [-0.286, -0.56], [-0.484, -0.742],
+  [-0.323, -0.701], [-0.621, -0.7], [-0.175, -0.557],
 ];
 
-// Illustrated bushes (bush-01 / bush-02), clustered near the treehouse forest
-// and scattered along landmark edges.
+// Three EXTRA-large ancient trees (tree-01 @0.5) tucked right behind the
+// treehouse to make it feel deep in a legendary forest.
+const EPIC_TREE_OFFSETS: ReadonlyArray<readonly [number, number]> = [
+  [-0.48, -0.531], [-0.352, -0.537], [-0.403, -0.477],
+];
+
+// Illustrated bushes (bush-01 / bush-02).
 const BUSH_OFFSETS: ReadonlyArray<readonly [number, number]> = [
   [-0.269, -0.607], [-0.126, -0.593], [-0.571, -0.461], [0.248, -0.457],
   [-0.243, -0.404], [-0.076, -0.133], [0.331, 0.060], [-0.758, 0.096],
   [0.527, 0.887],
 ];
 
-// Small gap-filler bushes [nx, ny, scale] placed where canopy-overlapping trees
-// were removed near the campfire, arcade and lighthouse. Bushes are short, so
-// they fill the greenery without a tall canopy that could cover a landmark.
+// Small gap-filler bushes [nx, ny, scale] near the campfire/arcade/lighthouse.
 const GAP_BUSHES: ReadonlyArray<readonly [number, number, number]> = [
-  [0.196, 0.284, 0.35], // SE of the campfire (centre stays open)
-  [0.688, 0.121, 0.34], // right of the arcade
-  [0.787, -0.026, 0.32], // lighthouse base — west
-  [0.871, -0.022, 0.33], // lighthouse base — east
-  [0.901, 0.066, 0.36], // lighthouse base — lower-right
+  [0.196, 0.284, 0.35], [0.688, 0.121, 0.34],
+  [0.787, -0.026, 0.32], [0.871, -0.022, 0.33], [0.901, 0.066, 0.36],
 ];
 
 /**
- * Coarse on-sand mask for sand-base-v2, sampled from the (eroded) alpha so
- * sprites sit a touch inside the coastline. Cell (i, j) of an SAND_MASK_W ×
- * SAND_MASK_H grid covers normalised x = i/W·2−1 … and y = j/H·2−1; a set bit
- * means "sand here". Packed 4 cells per hex char, row-major. snapToSand uses it
- * to move any off-shape sprite to the nearest valid on-sand position.
+ * Coarse on-sand masks for sand-base-v2, packed 4 cells/hex char, row-major,
+ * over an SAND_MASK_W × SAND_MASK_H grid covering normalised [-1,1]². SAND_MASK
+ * is eroded ~12px (props sit just inside the coast); FLOWER_MASK is eroded
+ * ~50px (flowers sit well clear of the waterline).
  */
 const SAND_MASK_W = 80, SAND_MASK_H = 64;
 const SAND_MASK = [
@@ -143,20 +121,38 @@ const SAND_MASK = [
   "0007ffe00ffffffffe00", "0007ffc03ffffffffc00", "0000f8003ffe1ff84000", "000000003ff80fe00000",
   "000000003ff807c00000", "000000001ff000000000", "0000000007e000000000", "00000000000000000000",
 ].join("");
+const FLOWER_MASK = [
+  "00000000000000000000", "00000000000000000000", "00000000000000000000", "000001f8000000000000",
+  "000003ff000000000000", "00000fff800000000000", "00001fffe00000000000", "00007fffe00000000000",
+  "0000ffffe00000000000", "0003fffff00000000000", "0003fffff80000000000", "0007fffffe0000000000",
+  "0007ffffffe000000000", "003fffffffc000000000", "007fffffffc000000000", "007fffffffc000000000",
+  "00ffffffffc000000000", "007fffffffe000070000", "001ffffffff0001f8000", "0007ffffffffc03f0000",
+  "0003ffffffffe03f0000", "0001fffffffff0ff0000", "0000ffffffffffff8000", "0000ffffffffffff8000",
+  "0000ffffffffffffe000", "0000ffffffffffffc000", "0000ffffffffffffc000", "0001ffffffffffffc000",
+  "0003ffffffffffffc000", "00ffffffffffffffc000", "03ffffffffffffffe000", "07fffffffffffffff000",
+  "0ffffffffffffffff800", "0ffffffffffffffffe00", "1fffffffffffffffff80", "1fffffffffffffffffe0",
+  "1e0ffffffffffffffff0", "0803fffffffffffffff0", "0000fffffffffffffff8", "00007ffffffffffffff8",
+  "00007ffffffffffffff8", "00003ffffffffffffff0", "00003fffffffffffffc0", "00007ffffffffffffc00",
+  "00007ffffffffffff000", "00007fffffffffffe000", "00007fffffffffffe000", "0000ffffffffffffc000",
+  "0001ffffffffffffc000", "00ffffffffffffffc000", "003fffffffffffffc000", "001fffff7fffffffc000",
+  "000ffff80fffffffe000", "000ffff007fffffff000", "0007ffe003fffffff800", "0003ff8003fffffff800",
+  "0000f80003fc1ff84000", "0000000003f807e00000", "0000000007f003c00000", "000000000fe000000000",
+  "0000000007e000000000", "00000000000000000000", "00000000000000000000", "00000000000000000000",
+].join("");
 
-/** Decode the packed hex mask once into a flat 0/1 lookup. */
-const SAND_BITS: Uint8Array = (() => {
+function decodeMask(hex: string): Uint8Array {
   const bits = new Uint8Array(SAND_MASK_W * SAND_MASK_H);
   const hexPerRow = Math.ceil(SAND_MASK_W / 4);
   for (let j = 0; j < SAND_MASK_H; j++) {
-    const row = SAND_MASK.slice(j * hexPerRow, j * hexPerRow + hexPerRow);
+    const row = hex.slice(j * hexPerRow, j * hexPerRow + hexPerRow);
     for (let i = 0; i < SAND_MASK_W; i++) {
-      const v = parseInt(row[i >> 2], 16);
-      bits[j * SAND_MASK_W + i] = (v >> (3 - (i & 3))) & 1;
+      bits[j * SAND_MASK_W + i] = (parseInt(row[i >> 2], 16) >> (3 - (i & 3))) & 1;
     }
   }
   return bits;
-})();
+}
+const SAND_BITS = decodeMask(SAND_MASK);
+const FLOWER_BITS = decodeMask(FLOWER_MASK);
 
 /** Small deterministic PRNG (mulberry32) — same seed ⇒ same island. */
 function rng(seed: number): () => number {
@@ -174,18 +170,18 @@ export class LayeredIsland {
 
   private readonly water: Sprite;
   private readonly sand: Sprite;
-  /** Warm, slightly-lighter sand silhouette peeking out around the coast —
-   *  a thin "dry beach foam" strip that separates the island from the water. */
+  /** Thin warm "dry beach foam" strip around the coast. */
   private readonly beachRim: Sprite;
   private readonly beachRimMask: Sprite;
-  private readonly grass = new Container();
-  private readonly rocks = new Container();
-  private readonly flowers = new Container();
-  private readonly bushes = new Container();
-  private readonly trees = new Container();
+  /** Soft golden sand clearing under the calm-beach landmark. */
+  private readonly beachPatch: Sprite;
 
-  // Current sand registration (set each layout), used to map world ↔ normalised
-  // for the on-sand snap.
+  // Props go into the renderer's shared y-sort layer; we track them to clear on
+  // each layout.
+  private propLayer: Container = this.container;
+  private propSprites: Sprite[] = [];
+
+  // Current sand registration (set each layout), for world ↔ normalised maths.
   private cx0 = 0;
   private cy0 = 0;
   private shx0 = 0;
@@ -197,63 +193,81 @@ export class LayeredIsland {
     this.water.anchor.set(0.5);
     this.sand.anchor.set(0.5);
 
-    // Beach rim: a flat warm-cream fill in the island's silhouette, scaled a
-    // touch larger than the sand and sitting just beneath it, so only a thin
-    // lighter strip shows around the coastline.
     this.beachRim = new Sprite(Texture.WHITE);
     this.beachRim.tint = 0xffedb0;
     this.beachRimMask = new Sprite(tex.sand);
     for (const s of [this.beachRim, this.beachRimMask]) s.anchor.set(0.5);
     this.beachRim.mask = this.beachRimMask;
 
-    // Bottom → top: water · beach rim · sand · rocks · grass · bushes ·
-    // flowers · trees. Landmarks/avatars draw above this whole container
-    // (the renderer's `entities`), so structures always sit on top of nature.
+    // Golden, feathered sand patch (a beach should be on sand, not grass).
+    this.beachPatch = new Sprite(this.radialTexture([
+      [0.0, "rgba(232, 201, 122, 0.95)"],
+      [0.55, "rgba(232, 201, 122, 0.9)"],
+      [1.0, "rgba(232, 201, 122, 0)"],
+    ]) ?? Texture.EMPTY);
+    this.beachPatch.anchor.set(0.5);
+
+    // Flat ground only — water · beach rim · sand · beach patch. The props are
+    // added to the shared y-sort layer in layout().
     this.container.addChild(
-      this.water, this.beachRim, this.beachRimMask, this.sand,
-      this.rocks, this.grass, this.bushes, this.flowers, this.trees,
+      this.water, this.beachRim, this.beachRimMask, this.sand, this.beachPatch,
     );
     for (const c of [this.container, this.water, this.beachRim, this.beachRimMask,
-      this.sand, this.grass, this.rocks, this.flowers, this.bushes, this.trees]) {
+      this.sand, this.beachPatch]) {
       c.eventMode = "none";
     }
-    this.trees.sortableChildren = true;
-    this.rocks.sortableChildren = true;
-    this.grass.sortableChildren = true;
-    this.bushes.sortableChildren = true;
-    this.flowers.sortableChildren = true;
   }
 
-  /**
-   * Size + place every layer. The sand is pinned to the painted-ground
-   * registration (cx/cy/spanW); the water blankets the requested rect; the
-   * props scatter over the sand (snapped onto the silhouette). Idempotent and
-   * deterministic, so it is safe to re-run on rebuild/resize.
-   */
+  /** A centred radial-gradient canvas texture (undefined when there's no DOM). */
+  private radialTexture(stops: ReadonlyArray<readonly [number, string]>): Texture | undefined {
+    if (typeof document === "undefined") return undefined;
+    const S = 256;
+    const cnv = document.createElement("canvas");
+    cnv.width = cnv.height = S;
+    const ctx = cnv.getContext("2d");
+    if (!ctx) return undefined;
+    const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    for (const [off, color] of stops) g.addColorStop(off, color);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, S, S);
+    return Texture.from(cnv);
+  }
+
   layout(o: IslandLayoutOpts): void {
-    // SAND — pinned to the registration.
     const sandW = o.spanW;
     const sandScale = sandW / this.tex.sand.width;
     const sandH = this.tex.sand.height * sandScale;
     this.sand.scale.set(sandScale);
     this.sand.position.set(o.cx, o.cy);
 
-    // BEACH RIM — same silhouette, nudged ~2% larger and pinned under the sand
-    // so a thin warmer strip shows around the coast (≈10–16px dry-sand foam).
     this.beachRimMask.scale.set(sandScale * 1.02);
     this.beachRimMask.position.set(o.cx, o.cy);
     this.beachRim.width = sandW * 1.02;
     this.beachRim.height = sandH * 1.02;
     this.beachRim.position.set(o.cx, o.cy);
 
-    // WATER — blanket the requested rect edge-to-edge (no gaps at any zoom).
     this.coverWater(o.cx, o.cy, o.waterW, o.waterH);
 
-    // Half-extents of the sand used for scatter placement + the on-sand snap.
     const shx = sandW / 2;
     const shy = sandH / 2;
     this.cx0 = o.cx; this.cy0 = o.cy; this.shx0 = shx; this.shy0 = shy;
     const marks = o.landmarks ?? [];
+
+    // Sandy patch under the calm beach (≈200×140, feathered), below the grass.
+    const beach = marks.find((m) => m.key === "calm_beach");
+    if (beach) {
+      this.beachPatch.visible = true;
+      this.beachPatch.position.set(beach.x, beach.y);
+      this.beachPatch.width = 200;
+      this.beachPatch.height = 140;
+    } else {
+      this.beachPatch.visible = false;
+    }
+
+    // Reset the prop layer + clear last build's props.
+    for (const s of this.propSprites) s.destroy();
+    this.propSprites = [];
+    this.propLayer = o.propLayer ?? this.container;
 
     const rockUnit = (sandH * 0.14) / this.tex.rock.height;
 
@@ -264,24 +278,20 @@ export class LayeredIsland {
     this.scatterTrees(o.cx, o.cy, shx, shy, marks);
   }
 
-  /** True if the normalised point (nx, ny ∈ [-1, 1]) is on sand. */
-  private onSand(nx: number, ny: number): boolean {
+  private onSand(nx: number, ny: number, bits: Uint8Array): boolean {
     const i = Math.floor(((nx + 1) / 2) * SAND_MASK_W);
     const j = Math.floor(((ny + 1) / 2) * SAND_MASK_H);
     if (i < 0 || j < 0 || i >= SAND_MASK_W || j >= SAND_MASK_H) return false;
-    return SAND_BITS[j * SAND_MASK_W + i] === 1;
+    return bits[j * SAND_MASK_W + i] === 1;
   }
 
-  /**
-   * Snap a world point onto the sand: if it's already on the silhouette, return
-   * it unchanged; otherwise spiral out through the mask to the nearest sand cell
-   * and return that cell's world centre. Keeps every prop on the irregular shape.
-   */
-  private snapToSand(x: number, y: number): [number, number] {
+  /** Snap a world point onto sand (deep = pull well inside, for flowers). */
+  private snapToSand(x: number, y: number, deep = false): [number, number] {
     if (this.shx0 === 0) return [x, y];
+    const bits = deep ? FLOWER_BITS : SAND_BITS;
     const nx = (x - this.cx0) / this.shx0;
     const ny = (y - this.cy0) / this.shy0;
-    if (this.onSand(nx, ny)) return [x, y];
+    if (this.onSand(nx, ny, bits)) return [x, y];
     const i0 = Math.floor(((nx + 1) / 2) * SAND_MASK_W);
     const j0 = Math.floor(((ny + 1) / 2) * SAND_MASK_H);
     for (let rad = 1; rad < SAND_MASK_W; rad++) {
@@ -292,7 +302,7 @@ export class LayeredIsland {
           if (Math.max(Math.abs(di), Math.abs(dj)) !== rad) continue;
           const i = i0 + di, j = j0 + dj;
           if (i < 0 || j < 0 || i >= SAND_MASK_W || j >= SAND_MASK_H) continue;
-          if (SAND_BITS[j * SAND_MASK_W + i] !== 1) continue;
+          if (bits[j * SAND_MASK_W + i] !== 1) continue;
           const d = di * di + dj * dj;
           if (d < bestD) { bestD = d; best = [i, j]; }
         }
@@ -306,204 +316,163 @@ export class LayeredIsland {
     return [x, y];
   }
 
-  /**
-   * Heavy, lush grass coverage (grass-01). Three passes: a green ring + base
-   * tufts around every grassy landmark; an inner-edge band; interior fill.
-   * Small sandy clearings are preserved around the campfire, welcome dock and
-   * calm beach (the "sand" landmarks), which double as grass exclusion zones.
-   */
-  private scatterGrass(
-    cx: number, cy: number, shx: number, shy: number, marks: readonly LandmarkMark[],
-  ): void {
-    this.grass.removeChildren();
-    const r = rng(0x6a55);
-    const clearings = marks.filter((m) => m.ground === "sand");
-    const inClearing = (x: number, y: number): boolean =>
-      clearings.some((m) => {
-        const rad = 56 + m.w * 11; // keep the dock approach / beach / fire bare
-        return Math.hypot(x - m.x, y - m.y) < rad;
-      });
-
-    // A green patch = a few tufts jittered around a point.
-    const patch = (x: number, y: number, n: number, lo: number, hi: number): void => {
-      for (let k = 0; k < n; k++) {
-        const jx = x + (r() - 0.5) * 46;
-        const jy = y + (r() - 0.5) * 22;
-        this.stamp(this.grass, this.tex.grass, jx, jy, lo + r() * (hi - lo), (r() - 0.5) * 0.3);
-      }
-    };
-
-    // Pass 1 — green clearings: a planted pad + ring patches at each grassy
-    // landmark so the structure feels rooted in the landscape.
-    for (const m of marks) {
-      if (m.ground !== "grass") continue;
-      const spread = 24 + m.w * 7;
-      for (let k = 0; k < 4; k++) {
-        const a = (k / 4) * Math.PI * 2 + r() * 1.0;
-        const x = m.x + Math.cos(a) * spread * (0.55 + r() * 0.5);
-        const y = m.y + 8 + Math.abs(Math.sin(a)) * spread * 0.35;
-        this.stamp(this.grass, this.tex.grass, x, y, 0.2 + r() * 0.15, (r() - 0.5) * 0.3);
-      }
-      for (let k = 0; k < 3; k++) {
-        const a = r() * Math.PI * 2;
-        const x = m.x + Math.cos(a) * spread * (1.3 + r() * 0.7);
-        const y = m.y + 4 + Math.sin(a) * spread * 0.5;
-        patch(x, y, 2, 0.38, 0.62);
-      }
-    }
-
-    // Pass 2 — inner-edge band just inside the treeline.
-    const EDGE = 16;
-    for (let i = 0; i < EDGE; i++) {
-      const a = (i / EDGE) * Math.PI * 2 + (r() - 0.5) * 0.5;
-      const rad = 0.72 + r() * 0.16; // 0.72–0.88
-      const x = cx + Math.cos(a) * shx * rad;
-      const y = cy + Math.sin(a) * shy * rad;
-      if (inClearing(x, y)) continue;
-      patch(x, y, 2, 0.32, 0.66);
-    }
-
-    // Pass 3 — interior fill between the landmarks (dense, clustered).
-    const FILL = 18;
-    for (let i = 0; i < FILL; i++) {
-      const a = (i / FILL) * Math.PI * 2 + (r() - 0.5) * 0.9;
-      const rad = 0.16 + r() * 0.56; // 0.16–0.72
-      const x = cx + Math.cos(a) * shx * rad;
-      const y = cy + Math.sin(a) * shy * rad;
-      if (inClearing(x, y)) continue;
-      patch(x, y, 2 + (r() < 0.5 ? 1 : 0), 0.34, 0.7);
-    }
-  }
-
-  // Rocks on the sand, some clustered near the edges.
-  private scatterRocks(cx: number, cy: number, shx: number, shy: number, unit: number): void {
-    this.rocks.removeChildren();
-    const r = rng(0x12c9);
-    const N = 5;
-    for (let i = 0; i < N; i++) {
-      const a = (i / N) * Math.PI * 2 + (r() - 0.5) * 0.8;
-      const rad = 0.55 + r() * 0.4;
-      const x = cx + Math.cos(a) * shx * rad;
-      const y = cy + Math.sin(a) * shy * rad;
-      const scale = (0.3 + r() * 0.3) * unit;
-      this.stamp(this.rocks, this.tex.rock, x, y, scale);
-    }
-  }
-
-  /**
-   * Illustrated flower clusters (flower-01 / flower-bush-01), scale 0.25–0.5.
-   * flower-01 hugs the water edges (calm beach, lazy lagoon, inner shore);
-   * flower-bush-01 clusters by the treehouse, art hut and star market; a few
-   * are scattered across the interior for discovery moments.
-   */
-  private scatterFlowers(
-    cx: number, cy: number, shx: number, shy: number, marks: readonly LandmarkMark[],
-  ): void {
-    this.flowers.removeChildren();
-    const r = rng(0xf10a);
-    const at = (key: string) => marks.find((m) => m.key === key);
-
-    const flower = (x: number, y: number, bush: boolean): void => {
-      const tex = bush ? this.tex.flowerBush01 : this.tex.flower01;
-      this.stamp(this.flowers, tex, x, y, 0.25 + r() * 0.25, (r() - 0.5) * 0.16);
-    };
-    const near = (m: LandmarkMark | undefined, n: number, bush: boolean, spread: number): void => {
-      if (!m) return;
-      for (let k = 0; k < n; k++) {
-        const a = r() * Math.PI * 2;
-        flower(m.x + Math.cos(a) * spread * (0.8 + r() * 0.7),
-          m.y + 6 + Math.sin(a) * spread * 0.5, bush);
-      }
-    };
-
-    near(at("calm_beach"), 3, false, 64);
-    near(at("lazy_lagoon"), 3, false, 60);
-    for (let i = 0; i < 3; i++) {
-      const a = Math.PI * (0.6 + i * 0.28) + (r() - 0.5) * 0.2; // SW arc
-      const rad = 0.7 + r() * 0.16;
-      flower(cx + Math.cos(a) * shx * rad, cy + Math.sin(a) * shy * rad, false);
-    }
-
-    near(at("treehouse_hideaway"), 2, true, 70);
-    near(at("art_hut"), 2, true, 58);
-    near(at("star_market"), 2, true, 56);
-
-    const interior: ReadonlyArray<readonly [number, number, boolean]> = [
-      [-0.05, 0.30, true], [0.30, -0.10, false], [-0.30, 0.05, false],
-    ];
-    for (const [nx, ny, bush] of interior) {
-      flower(cx + nx * shx, cy + ny * shy, bush);
-    }
-  }
-
-  // Illustrated bushes (bush-01 / bush-02), mix of both, scale 0.3–0.6.
-  private scatterBushes(cx: number, cy: number, shx: number, shy: number): void {
-    this.bushes.removeChildren();
-    const r = rng(0xb05e);
-    BUSH_OFFSETS.forEach(([nx, ny], i) => {
-      const tex = i % 2 === 0 ? this.tex.bush01 : this.tex.bush02;
-      const scale = 0.3 + r() * 0.3; // 0.3–0.6
-      const rot = (r() - 0.5) * 0.16;
-      this.stamp(this.bushes, tex, cx + nx * shx, cy + ny * shy, scale, rot);
-    });
-    // Gap fillers where overlapping trees were removed (fixed smaller scale).
-    GAP_BUSHES.forEach(([nx, ny, scale], i) => {
-      const tex = i % 2 === 0 ? this.tex.bush01 : this.tex.bush02;
-      this.stamp(this.bushes, tex, cx + nx * shx, cy + ny * shy, scale, (r() - 0.5) * 0.16);
-    });
-  }
-
-  /**
-   * Position + uniform-scale the water sprite so it blankets a world rect of
-   * `w × h` centered on (cx, cy), with no gaps. Cheap; call on resize so the
-   * ocean keeps filling the viewport at every zoom level.
-   */
-  coverWater(cx: number, cy: number, w: number, h: number): void {
-    const s = Math.max(w / this.tex.water.width, h / this.tex.water.height);
-    this.water.scale.set(s);
-    this.water.position.set(cx, cy);
-  }
-
-  /** A sprite anchored at its base, snapped onto the sand silhouette. */
-  private stamp(layer: Container, tex: Texture, x: number, y: number, scale: number, rot = 0): void {
-    [x, y] = this.snapToSand(x, y);
+  /** Stamp a base-anchored prop into the shared y-sort layer (snapped to sand). */
+  private stamp(tex: Texture, x: number, y: number, scale: number, rot = 0, deep = false): void {
+    [x, y] = this.snapToSand(x, y, deep);
     const s = new Sprite(tex);
     s.anchor.set(0.5, 1);
     s.position.set(x, y);
     s.scale.set(scale);
     s.rotation = rot;
     s.eventMode = "none";
-    s.zIndex = y; // y-sort: lower on screen draws in front
-    layer.addChild(s);
+    s.zIndex = y; // y-sort across all nature + landmarks
+    this.propLayer.addChild(s);
+    this.propSprites.push(s);
   }
 
-  // Trees. Baked grove/scatter offsets, kept off the landmark sprites via the
-  // per-landmark keep-out and snapped onto the sand silhouette by `stamp`.
-  private scatterTrees(
+  private scatterGrass(
     cx: number, cy: number, shx: number, shy: number, marks: readonly LandmarkMark[],
   ): void {
-    this.trees.removeChildren();
-    const r = rng(0x9e3d);
-    const place = (nx: number, ny: number, tex: Texture, scale: number, skipKey?: string): void => {
-      const [x, y] = this.keepOff(cx + nx * shx, cy + ny * shy, marks, skipKey);
-      this.stamp(this.trees, tex, x, y, scale);
+    const r = rng(0x6a55);
+    const clearings = marks.filter((m) => m.ground === "sand");
+    const inClearing = (x: number, y: number): boolean =>
+      clearings.some((m) => Math.hypot(x - m.x, y - m.y) < 56 + m.w * 11);
+
+    const patch = (x: number, y: number, n: number, lo: number, hi: number): void => {
+      for (let k = 0; k < n; k++) {
+        this.stamp(this.tex.grass, x + (r() - 0.5) * 46, y + (r() - 0.5) * 22,
+          lo + r() * (hi - lo), (r() - 0.5) * 0.3);
+      }
     };
-    TREE_OFFSETS.forEach(([nx, ny], i) => {
-      const even = i % 2 === 0;
-      place(nx, ny, even ? this.tex.tree01 : this.tex.tree02, even ? 0.35 + r() * 0.1 : 0.28 + r() * 0.1);
-    });
-    // Treehouse forest cluster: smaller, dense trees, allowed to sit close to
-    // the treehouse (skip its keep-out) so it reads as IN the woods.
-    CLUSTER_TREE_OFFSETS.forEach(([nx, ny], i) => {
-      place(nx, ny, i % 2 === 0 ? this.tex.tree01 : this.tex.tree02, 0.25 + r() * 0.07, "treehouse_hideaway");
-    });
+
+    for (const m of marks) {
+      if (m.ground !== "grass") continue;
+      const spread = 24 + m.w * 7;
+      for (let k = 0; k < 4; k++) {
+        const a = (k / 4) * Math.PI * 2 + r() * 1.0;
+        this.stamp(this.tex.grass, m.x + Math.cos(a) * spread * (0.55 + r() * 0.5),
+          m.y + 8 + Math.abs(Math.sin(a)) * spread * 0.35, 0.2 + r() * 0.15, (r() - 0.5) * 0.3);
+      }
+      for (let k = 0; k < 3; k++) {
+        const a = r() * Math.PI * 2;
+        patch(m.x + Math.cos(a) * spread * (1.3 + r() * 0.7),
+          m.y + 4 + Math.sin(a) * spread * 0.5, 2, 0.38, 0.62);
+      }
+    }
+
+    const EDGE = 16;
+    for (let i = 0; i < EDGE; i++) {
+      const a = (i / EDGE) * Math.PI * 2 + (r() - 0.5) * 0.5;
+      const rad = 0.72 + r() * 0.16;
+      const x = cx + Math.cos(a) * shx * rad, y = cy + Math.sin(a) * shy * rad;
+      if (!inClearing(x, y)) patch(x, y, 2, 0.32, 0.66);
+    }
+
+    const FILL = 18;
+    for (let i = 0; i < FILL; i++) {
+      const a = (i / FILL) * Math.PI * 2 + (r() - 0.5) * 0.9;
+      const rad = 0.16 + r() * 0.56;
+      const x = cx + Math.cos(a) * shx * rad, y = cy + Math.sin(a) * shy * rad;
+      if (!inClearing(x, y)) patch(x, y, 2 + (r() < 0.5 ? 1 : 0), 0.34, 0.7);
+    }
+  }
+
+  private scatterRocks(cx: number, cy: number, shx: number, shy: number, unit: number): void {
+    const r = rng(0x12c9);
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 + (r() - 0.5) * 0.8;
+      const rad = 0.55 + r() * 0.4;
+      this.stamp(this.tex.rock, cx + Math.cos(a) * shx * rad, cy + Math.sin(a) * shy * rad,
+        (0.3 + r() * 0.3) * unit);
+    }
   }
 
   /**
-   * If (x, y) falls inside any landmark's circular keep-out, push it radially
-   * outward to the keep-out edge so the tree sits clear of the structure.
-   * Returns the nudged [x, y].
+   * Flower clusters. flower-01 hugs the calm beach (kept near the shore); every
+   * other flower is snapped to the DEEP mask so it sits well clear of the water
+   * edge (no flowers appearing to grow in the ocean).
    */
+  private scatterFlowers(
+    cx: number, cy: number, shx: number, shy: number, marks: readonly LandmarkMark[],
+  ): void {
+    const r = rng(0xf10a);
+    const at = (key: string) => marks.find((m) => m.key === key);
+    const flower = (x: number, y: number, bush: boolean, deep: boolean): void => {
+      this.stamp(bush ? this.tex.flowerBush01 : this.tex.flower01, x, y,
+        0.25 + r() * 0.25, (r() - 0.5) * 0.16, deep);
+    };
+    const near = (m: LandmarkMark | undefined, n: number, bush: boolean, spread: number, deep: boolean): void => {
+      if (!m) return;
+      for (let k = 0; k < n; k++) {
+        const a = r() * Math.PI * 2;
+        flower(m.x + Math.cos(a) * spread * (0.8 + r() * 0.7),
+          m.y + 6 + Math.sin(a) * spread * 0.5, bush, deep);
+      }
+    };
+
+    // Calm-beach flowers stay near the shore (deep = false); the rest pull in.
+    near(at("calm_beach"), 3, false, 64, false);
+    near(at("lazy_lagoon"), 3, false, 60, true);
+    for (let i = 0; i < 3; i++) {
+      const a = Math.PI * (0.6 + i * 0.28) + (r() - 0.5) * 0.2;
+      const rad = 0.7 + r() * 0.16;
+      flower(cx + Math.cos(a) * shx * rad, cy + Math.sin(a) * shy * rad, false, true);
+    }
+    near(at("treehouse_hideaway"), 2, true, 70, true);
+    near(at("art_hut"), 2, true, 58, true);
+    near(at("star_market"), 2, true, 56, true);
+
+    const interior: ReadonlyArray<readonly [number, number, boolean]> = [
+      [-0.05, 0.30, true], [0.30, -0.10, false], [-0.30, 0.05, false],
+    ];
+    for (const [nx, ny, bush] of interior) flower(cx + nx * shx, cy + ny * shy, bush, true);
+  }
+
+  private scatterBushes(cx: number, cy: number, shx: number, shy: number): void {
+    const r = rng(0xb05e);
+    BUSH_OFFSETS.forEach(([nx, ny], i) => {
+      this.stamp(i % 2 === 0 ? this.tex.bush01 : this.tex.bush02,
+        cx + nx * shx, cy + ny * shy, 0.3 + r() * 0.3, (r() - 0.5) * 0.16);
+    });
+    GAP_BUSHES.forEach(([nx, ny, scale], i) => {
+      this.stamp(i % 2 === 0 ? this.tex.bush01 : this.tex.bush02,
+        cx + nx * shx, cy + ny * shy, scale, (r() - 0.5) * 0.16);
+    });
+  }
+
+  coverWater(cx: number, cy: number, w: number, h: number): void {
+    const s = Math.max(w / this.tex.water.width, h / this.tex.water.height);
+    this.water.scale.set(s);
+    this.water.position.set(cx, cy);
+  }
+
+  /**
+   * Trees. Grove/scatter trees carry an explicit texture + scale chosen to stay
+   * clear of every landmark under the y-sort. The treehouse forest (cluster +
+   * epic) sits behind the treehouse and is exempt from its keep-out.
+   */
+  private scatterTrees(
+    cx: number, cy: number, shx: number, shy: number, marks: readonly LandmarkMark[],
+  ): void {
+    const r = rng(0x9e3d);
+    const place = (nx: number, ny: number, tex: Texture, scale: number, skipKey?: string): void => {
+      const [x, y] = this.keepOff(cx + nx * shx, cy + ny * shy, marks, skipKey);
+      this.stamp(tex, x, y, scale);
+    };
+    for (const [nx, ny, texNum, scale] of TREE_DEFS) {
+      place(nx, ny, texNum === 1 ? this.tex.tree01 : this.tex.tree02, scale);
+    }
+    // Treehouse forest — smaller trees, behind the building.
+    CLUSTER_TREE_OFFSETS.forEach(([nx, ny], i) => {
+      place(nx, ny, i % 2 === 0 ? this.tex.tree02 : this.tex.tree01, 0.28 + r() * 0.05, "treehouse_hideaway");
+    });
+    // Epic ancient trees — large, directly behind the treehouse.
+    for (const [nx, ny] of EPIC_TREE_OFFSETS) {
+      place(nx, ny, this.tex.tree01, 0.5, "treehouse_hideaway");
+    }
+  }
+
+  /** Push (x, y) radially out of any landmark's circular keep-out. */
   private keepOff(x: number, y: number, marks: readonly LandmarkMark[], skipKey?: string): [number, number] {
     for (let pass = 0; pass < 2; pass++) {
       for (const m of marks) {
