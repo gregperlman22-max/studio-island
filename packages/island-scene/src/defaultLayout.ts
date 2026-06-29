@@ -124,13 +124,15 @@ export const sampleZones: ZoneInstance[] = [
   { key: "campfire_circle", displayName: "Campfire Circle", skinName: "Marshmallow Ring", gridPosition: { x: 26, y: 22 }, footprint: { w: 4, h: 4 }, unlocked: true },
   // Interior ring
   { key: "treehouse_hideaway", displayName: "Treehouse Hideaway", skinName: "Treetop Hideaway", gridPosition: { x: 10, y: 16 }, footprint: { w: 5, h: 5 }, unlocked: true },
-  { key: "art_hut", displayName: "Art Hut", skinName: "Paint Cabin", gridPosition: { x: 16, y: 6 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  // art_hut, lighthouse + calm_beach nudged inland a few cells so they sit on
+  // the new (irregular) sand-base-v2 silhouette instead of floating in its coves.
+  { key: "art_hut", displayName: "Art Hut", skinName: "Paint Cabin", gridPosition: { x: 14, y: 8 }, footprint: { w: 4, h: 4 }, unlocked: true },
   { key: "arcade_cove", displayName: "Arcade Cove", skinName: "Arcade Cove", gridPosition: { x: 34, y: 18 }, footprint: { w: 5, h: 4 }, unlocked: true },
   { key: "star_market", displayName: "Star Market", skinName: "Star Market", gridPosition: { x: 18, y: 28 }, footprint: { w: 4, h: 4 }, unlocked: true },
   // Coastal
-  { key: "lighthouse_point", displayName: "Lighthouse Point", skinName: "Beacon Point", gridPosition: { x: 30, y: 4 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  { key: "lighthouse_point", displayName: "Lighthouse Point", skinName: "Beacon Point", gridPosition: { x: 30, y: 6 }, footprint: { w: 4, h: 4 }, unlocked: true },
   { key: "welcome_dock", displayName: "Welcome Dock", skinName: "Welcome Dock", gridPosition: { x: 44, y: 38 }, footprint: { w: 6, h: 4 }, unlocked: true },
-  { key: "calm_beach", displayName: "Calm Beach", skinName: "Calm Beach", gridPosition: { x: 24, y: 38 }, footprint: { w: 6, h: 4 }, unlocked: true },
+  { key: "calm_beach", displayName: "Calm Beach", skinName: "Calm Beach", gridPosition: { x: 25, y: 37 }, footprint: { w: 6, h: 4 }, unlocked: true },
   { key: "lazy_lagoon", displayName: "Lazy Lagoon", skinName: "Lazy Lagoon", gridPosition: { x: 45, y: 26 }, footprint: { w: 5, h: 4 }, unlocked: true },
 ];
 

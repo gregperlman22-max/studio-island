@@ -812,7 +812,7 @@ export class SceneRenderer {
       const [water, sand, grass, rock, tree01, tree02, bush01, bush02, flower01, flowerBush01] =
         (await Promise.all([
           Assets.load(spriteUrl("water-base")),
-          Assets.load(spriteUrl("sand-base")),
+          Assets.load(spriteUrl("sand-base-v2")),
           Assets.load(spriteUrl("grass-01")),
           Assets.load(spriteUrl("rock-01")),
           Assets.load(spriteUrl("tree-01")),
