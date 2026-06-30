@@ -87,8 +87,10 @@ export class ArrivalView {
   private shoreX(): number { return this.w * 0.8; }       // avatar's landing spot on the sand
   private shoreY(): number { return this.h * 0.58; }
   private boatScale(): number { return (this.h * 0.34) / (this.boatTex?.height ?? 1254); }
-  // Small enough to ride seated inside the hull (~55% of the earlier size).
-  private avatarScale(): number { return Math.max(1.3, Math.min(2.0, this.h / 420)); }
+  // Passenger-sized: small enough to read as sitting IN the hull rather than
+  // looming behind it. Tuned down from the earlier (too-large) take so the
+  // animal's head + shoulders clear the gunwale while the body tucks inside.
+  private avatarScale(): number { return Math.max(0.8, Math.min(1.25, this.h / 640)); }
 
   private build(w: number, h: number): void {
     this.w = w;
@@ -128,12 +130,15 @@ export class ArrivalView {
     }
   }
 
-  /** Feet height for the seated rider: set so the avatar's head & shoulders sit
-   *  clearly above the hull gunwale while its lower body stays tucked behind the
-   *  rim (split between the earlier too-high and too-low takes). */
-  private riderOffsetY(): number { return -this.boat.height * 0.27; }
-  /** Seat the rider slightly toward the stern so the sail doesn't cover it. */
-  private riderOffsetX(): number { return -this.boat.width * 0.06; }
+  /** Feet height for the seated rider: drop the avatar's feet onto the deck
+   *  floor (just below the front gunwale) so the hull's front rim overlaps its
+   *  lower body — it reads as sitting IN the boat, not floating above the rim.
+   *  The earlier -0.27 perched the feet at the rim top, so the whole avatar sat
+   *  above the hull. */
+  private riderOffsetY(): number { return -this.boat.height * 0.23; }
+  /** Seat the rider toward the stern, in the open deck left of the mast, so the
+   *  sail + mast don't cover its face. */
+  private riderOffsetX(): number { return -this.boat.width * 0.08; }
 
   update(dt: number): void {
     if (!this.container.visible || this._done) return;

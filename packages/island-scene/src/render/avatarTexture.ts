@@ -33,8 +33,50 @@ export async function loadAvatarTexture(url: string): Promise<Texture> {
   ctx.drawImage(img, 0, 0, w, h);
   const image = ctx.getImageData(0, 0, w, h);
   keyOutBackground(image, w, h);
+  defringeEdges(image, w, h);
   ctx.putImageData(image, 0, 0);
   return Texture.from(canvas);
+}
+
+/** Outline ink colour — matches the bold dark outline baked into the animal art. */
+const INK_R = 0x23, INK_G = 0x20, INK_B = 0x1c;
+
+/**
+ * Clean up the silhouette after the background knockout. The flood-fill leaves a
+ * 1px ring of anti-aliased pixels (a blend of the dark outline and the light
+ * background) that survives the colour cut and reads as a pale "white fringe"
+ * halo around the animal. This pass walks the edge pixels — every still-opaque
+ * pixel that borders transparency — and blends them firmly toward the outline
+ * ink. That swallows the fringe into a crisp dark rim, so the avatar sits clean
+ * against the boat / island instead of carrying a bright outline.
+ */
+function defringeEdges(image: ImageData, w: number, h: number): void {
+  const d = image.data;
+  // Snapshot alpha so darkening earlier pixels doesn't change edge detection.
+  const alpha = new Uint8Array(w * h);
+  for (let p = 0; p < w * h; p++) alpha[p] = d[p * 4 + 3];
+
+  // Off-canvas is NOT a silhouette edge: if the knockout bailed (no pixels were
+  // cleared) we must stay a no-op rather than ring the whole frame in ink.
+  const transparent = (x: number, y: number): boolean =>
+    x >= 0 && y >= 0 && x < w && y < h && alpha[y * w + x] === 0;
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const p = y * w + x;
+      if (alpha[p] === 0) continue; // already background
+      const edge =
+        transparent(x - 1, y) || transparent(x + 1, y) ||
+        transparent(x, y - 1) || transparent(x, y + 1);
+      if (!edge) continue;
+      const i = p * 4;
+      // Blend toward ink (0.65 ink / 0.35 original): masks pale fringe pixels
+      // while keeping a hint of the art's own colour at the rim.
+      d[i] = Math.round(d[i] * 0.35 + INK_R * 0.65);
+      d[i + 1] = Math.round(d[i + 1] * 0.35 + INK_G * 0.65);
+      d[i + 2] = Math.round(d[i + 2] * 0.35 + INK_B * 0.65);
+    }
+  }
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {
