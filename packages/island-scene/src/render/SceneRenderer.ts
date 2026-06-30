@@ -30,7 +30,10 @@ import {
   tileToScreen,
 } from "./iso";
 import { ProgrammaticTextureProvider } from "./TextureProvider";
-import { buildAvatarSprite, type AvatarSprite } from "./avatar";
+import { buildAvatarSprite, buildImageAvatarSprite, type AvatarSprite } from "./avatar";
+import { AvatarSelect } from "./AvatarSelect";
+import { AVATARS, avatarByKey, avatarFileUrl } from "./avatarCatalog";
+import { loadAvatarTexture } from "./avatarTexture";
 import { biomeAt, landContext } from "./biome";
 import { islandOutline, flatten, insetLoop, clusterOutline, type Pt } from "./coast";
 import { buildZoneScene, LANDMARK_ART, BOAT_ART, ARRIVAL_BG_URL } from "./zones";
@@ -94,6 +97,8 @@ export interface RendererCallbacks {
   onZoneTap?: (zoneKey: ZoneKey) => void;
   onObjectInteract?: (objectId: string, zoneKey: ZoneKey | null) => void;
   onAvatarMove?: (avatarId: string, position: GridPosition) => void;
+  /** Fires when the child confirms a character on the avatar selection screen. */
+  onAvatarSelect?: (avatarKey: string) => void;
   /** Fires when the player reaches + taps the zone's activity beacon (Mode 2). */
   onActivityEnter?: (zoneKey: ZoneKey) => void;
   /** Fires when the player taps the in-scene exit path in the zone view (Mode 2). */
@@ -169,10 +174,18 @@ export class SceneRenderer {
     scale0: number; scale1: number;
   } | null = null;
 
-  // Arrival sequence state. "cinematic" = third-person boat-to-dock open;
-  // "fade" = cross-fading that cinematic up into the world map; "done" = normal.
-  private arrival: "cinematic" | "fade" | "done" = "cinematic";
+  // Arrival sequence state. "select" = avatar selection screen (Phase 1, shown
+  // first); "cinematic" = third-person boat-to-dock open; "fade" = cross-fading
+  // that cinematic up into the world map; "done" = normal.
+  private arrival: "select" | "cinematic" | "fade" | "done" = "cinematic";
   private arrivalView?: ArrivalView;
+  /** Avatar selection overlay (Phase 1) — shown before the arrival cinematic. */
+  private avatarSelect?: AvatarSelect;
+  /** Preloaded avatar PNGs, keyed by their served URL. */
+  private avatarTextures = new Map<string, Texture>();
+  /** Chosen avatar image URL (in-session). Overrides the local avatar art even
+   *  if the host doesn't echo it back through the avatars prop. */
+  private selectedImageUrl: string | null = null;
   private arrivalFadeT = 0;
   /** Painted full-screen stage texture for the arrival cinematic. */
   private arrivalBgTex?: Texture;
@@ -310,13 +323,26 @@ export class SceneRenderer {
 
     await this.loadIsland();
     await this.loadLandmarks();
+    await this.loadAvatars();
 
     this.rebuild();
     this.drawFadeRect();
     this.fade.alpha = 0;
 
-    // Boat starts off-shore; the local avatar is hidden until it steps off.
-    this.setupArrival();
+    // Phase 1: a new child (no avatar chosen yet) picks a friend BEFORE the
+    // boat arrival. Once the local avatar already carries a chosen image (the
+    // host seeds config.imageUrl from its own persistence), skip straight to
+    // the cinematic. Reduced motion / starting in a zone skip both.
+    if (this.arrival !== "done" && !this.localImageUrl()) {
+      this.arrival = "select";
+    }
+
+    if (this.arrival === "select") {
+      this.setupSelect();
+    } else {
+      // Boat starts off-shore; the local avatar is hidden until it steps off.
+      this.setupArrival();
+    }
     // Start inside a zone if the host asked for it.
     if (initialZone) this.applyMode(initialZone);
 
@@ -373,12 +399,80 @@ export class SceneRenderer {
         this.boatTex,
         this.app.screen.width,
         this.app.screen.height,
+        this.localAvatarTexture(),
       );
     } else {
       // No cinematic: place the avatar straight onto the dock.
       this.placeAvatarOnDock();
     }
     this.arrivalFadeT = 0;
+  }
+
+  // ── Avatar selection (Phase 1) ──────────────────────────────────
+
+  /** Preload the 16 illustrated animal PNGs (selection grid + island sprite).
+   *  A failed load just leaves that entry without a texture — the card shows
+   *  its name and the island avatar falls back to the programmatic compositor. */
+  private async loadAvatars(): Promise<void> {
+    await Promise.all(
+      AVATARS.map(async (a) => {
+        const url = avatarFileUrl(a.file);
+        try {
+          // The PNGs have no alpha; loadAvatarTexture knocks the baked-in
+          // background out to transparency before handing Pixi a texture.
+          const tex = await loadAvatarTexture(url);
+          if (!this.destroyed) this.avatarTextures.set(url, tex);
+        } catch (err) {
+          console.warn(`[island-scene] avatar art failed to load: ${a.file}`, err);
+        }
+      }),
+    );
+  }
+
+  /** The local avatar's chosen image URL, from the in-session pick or the
+   *  host-provided config (so a returning child skips the picker). */
+  private localImageUrl(): string | null {
+    const cfg = this.localCfg();
+    return cfg?.imageUrl ?? this.selectedImageUrl;
+  }
+
+  /** Preloaded texture for the local avatar's chosen image, if any. */
+  private localAvatarTexture(): Texture | undefined {
+    const url = this.localImageUrl();
+    return url ? this.avatarTextures.get(url) : undefined;
+  }
+
+  /** Show the full-screen avatar selection overlay; hide the local avatar until
+   *  a friend is chosen and the arrival cinematic begins. */
+  private setupSelect(): void {
+    const local = this.localId ? this.avatarViews.get(this.localId) : null;
+    if (local) local.container.visible = false;
+
+    const select = new AvatarSelect(this.avatarTextures, (key) => this.onAvatarChosen(key));
+    this.avatarSelect = select;
+    this.app.stage.addChild(select.container);
+    this.app.stage.setChildIndex(this.fade, this.app.stage.children.length - 1); // keep fade on top
+    select.layout(this.app.screen.width, this.app.screen.height);
+  }
+
+  /** A friend was confirmed: swap the chosen art onto the local avatar, notify
+   *  the host (for persistence), tear the picker down, and roll into the boat
+   *  arrival cinematic with the chosen animal riding along. */
+  private onAvatarChosen(key: string): void {
+    const entry = avatarByKey(key);
+    if (entry) {
+      this.selectedImageUrl = avatarFileUrl(entry.file);
+      // Rebuild the local view with the chosen image (runtime state preserved).
+      this.reconcileAvatars();
+    }
+    this.opts.onAvatarSelect?.(key);
+
+    this.avatarSelect?.destroy();
+    this.avatarSelect = undefined;
+
+    // Reduced motion skips the cinematic; otherwise sail in with the new friend.
+    this.arrival = this.opts.reducedMotion ? "done" : "cinematic";
+    this.setupArrival();
   }
 
   /** Stand the local avatar ON the dock's front edge after arrival. This cell is
@@ -609,6 +703,7 @@ export class SceneRenderer {
     }
     if (this.currentZone) this.zoneView.resize(this.app.screen.width, this.app.screen.height);
     this.arrivalView?.resize(this.app.screen.width, this.app.screen.height);
+    this.avatarSelect?.resize(this.app.screen.width, this.app.screen.height);
   }
 
   // ── Build ───────────────────────────────────────────────────────
@@ -1140,10 +1235,17 @@ export class SceneRenderer {
 
   // ── Avatars (persistent animal views + movement) ────────────────
 
+  /** The image URL that should drive this avatar's art: the config's imageUrl,
+   *  or (for the local avatar) the in-session pick. Returns "" for programmatic. */
+  private effectiveImageUrl(a: AvatarInstance): string {
+    return a.config.imageUrl ?? (a.isLocal ? this.selectedImageUrl : null) ?? "";
+  }
+
   private configHash(a: AvatarInstance): string {
     const c = a.config;
     return [
       c.species, c.bodyColor, c.accessoryKey, c.displayColor,
+      this.effectiveImageUrl(a),
       a.label ?? "", this.opts.hideTextLabels ? "1" : "0",
     ].join("|");
   }
@@ -1207,7 +1309,14 @@ export class SceneRenderer {
 
   private createAvatarView(a: AvatarInstance, hash: string): AvatarView {
     const container = new Container();
-    const sprite = buildAvatarSprite(a.config);
+    // Chosen illustrated animal (Phase 1) when an image is selected + loaded;
+    // otherwise the programmatic compositor. Same AvatarSprite contract, so the
+    // movement/idle system is untouched — just a swapped texture.
+    const imageUrl = this.effectiveImageUrl(a);
+    const imageTex = imageUrl ? this.avatarTextures.get(imageUrl) : undefined;
+    const sprite = imageTex
+      ? buildImageAvatarSprite(imageTex, a.config.displayColor)
+      : buildAvatarSprite(a.config);
     sprite.container.scale.set(AVATAR_SCALE);
     container.addChild(sprite.container);
 
@@ -1433,7 +1542,7 @@ export class SceneRenderer {
   }
 
   private onWheel = (e: WheelEvent): void => {
-    if (this.currentZone !== null) return;
+    if (this.currentZone !== null || this.arrival !== "done") return;
     e.preventDefault();
     const rect = this.app.canvas.getBoundingClientRect();
     this.zoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - rect.left, e.clientY - rect.top);
@@ -1637,6 +1746,10 @@ export class SceneRenderer {
    *  map with the avatar landed on the dock. */
   private tickArrival(dt: number): void {
     if (this.currentZone !== null || this.arrival === "done") return;
+    if (this.arrival === "select") {
+      this.avatarSelect?.update(dt);
+      return;
+    }
     if (this.arrival === "cinematic") {
       this.arrivalView?.update(dt);
       if (!this.arrivalView || this.arrivalView.done) {
@@ -1744,6 +1857,7 @@ export class SceneRenderer {
     }
     this.textures?.destroy();
     this.arrivalView?.destroy();
+    this.avatarSelect?.destroy();
     try {
       this.app.destroy({ removeView: true }, { children: true });
     } catch {

@@ -193,6 +193,13 @@ export interface AvatarConfig {
   accessoryKey: AccessoryKey;
   /** Display color used for the name tag and selection ring. */
   displayColor: string;
+  /**
+   * Optional illustrated-animal PNG (the Phase 1 avatar selection screen). When
+   * set, the renderer draws this image for the avatar instead of the
+   * programmatic compositor — same feet anchor + idle bob, just a swapped
+   * texture. Resolve catalog keys to URLs with `avatarImageUrl` (see index).
+   */
+  imageUrl?: string;
 }
 
 /**
@@ -232,6 +239,15 @@ export interface IslandSceneCallbacks {
   onObjectInteract?: (objectId: string, zoneKey: ZoneKey | null) => void;
   /** Fires on arrival at the destination tile (host may broadcast later). */
   onAvatarMove?: (avatarId: string, position: GridPosition) => void;
+  /**
+   * Fires when the child confirms a character on the avatar selection screen
+   * (Phase 1), before the boat arrival cinematic begins. `avatarKey` is a
+   * catalog key (see AVATARS); the host typically persists it and feeds the
+   * matching `imageUrl` back into the local avatar's config. The renderer also
+   * applies the chosen art immediately, so the callback is for persistence/sync
+   * — not required for the avatar to appear.
+   */
+  onAvatarSelect?: (avatarKey: string) => void;
   /** Fires once after all assets are preloaded and the first frame is rendered. */
   onReady?: () => void;
   /** Fires for any non-recoverable runtime error inside the renderer. */

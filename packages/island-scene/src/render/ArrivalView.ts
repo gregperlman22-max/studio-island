@@ -1,6 +1,6 @@
 import { Container, Sprite, type Texture } from "pixi.js";
 import type { AvatarConfig } from "../types";
-import { buildAvatarSprite, type AvatarSprite } from "./avatar";
+import { buildAvatarSprite, buildImageAvatarSprite, type AvatarSprite } from "./avatar";
 
 /**
  * Arrival cinematic — a flat, side-view close-up scene, fully separate from the
@@ -32,6 +32,8 @@ export class ArrivalView {
   private cfg: AvatarConfig | null = null;
   private bgTex?: Texture;
   private boatTex?: Texture;
+  /** Chosen illustrated-animal texture (Phase 1), riding the boat if present. */
+  private avatarTex?: Texture;
 
   private w = 0;
   private h = 0;
@@ -54,10 +56,12 @@ export class ArrivalView {
     boatTex: Texture | undefined,
     w: number,
     h: number,
+    avatarTex?: Texture,
   ): void {
     this.cfg = cfg;
     this.bgTex = bgTex;
     this.boatTex = boatTex;
+    this.avatarTex = avatarTex;
     if (bgTex) this.bg.texture = bgTex;
     if (boatTex) this.boat.texture = boatTex;
     this.t = 0;
@@ -112,7 +116,12 @@ export class ArrivalView {
     // Avatar built once, riding in the boat hull.
     this.charLayer.removeChildren();
     this.avatar = null;
-    if (this.cfg) {
+    if (this.avatarTex) {
+      // The chosen illustrated animal rides in (Phase 1 continuity).
+      this.avatar = buildImageAvatarSprite(this.avatarTex, this.cfg?.displayColor ?? "#c47b9a");
+      this.avatar.container.scale.set(this.avatarScale());
+      this.charLayer.addChild(this.avatar.container);
+    } else if (this.cfg) {
       this.avatar = buildAvatarSprite(this.cfg);
       this.avatar.container.scale.set(this.avatarScale());
       this.charLayer.addChild(this.avatar.container);

@@ -1,4 +1,4 @@
-import { Container, Graphics } from "pixi.js";
+import { Container, Graphics, Sprite, type Texture } from "pixi.js";
 import type { AccessoryKey, AvatarConfig, Species } from "../types";
 import { hexNum, shade } from "./iso";
 
@@ -49,6 +49,48 @@ export function buildAvatarSprite(config: AvatarConfig): AvatarSprite {
   if (config.accessoryKey !== "none") {
     container.addChild(buildAccessory(config.accessoryKey, config.bodyColor));
   }
+
+  return {
+    container,
+    setSelected: (selected: boolean) => { ring.visible = selected; },
+  };
+}
+
+/**
+ * Image-based avatar: the chosen illustrated animal PNG, anchored at the feet
+ * (bottom-centre) exactly like the programmatic compositor so the renderer can
+ * place + y-sort it identically. Same {container, setSelected} contract, so the
+ * movement system swaps one for the other with no other changes.
+ *
+ * `displayColor` tints the selection ring + a soft golden glow shown when this
+ * is the local (selected) avatar.
+ */
+const IMG_AVATAR_H = 50; // rendered art height in avatar-local px (pre-AVATAR_SCALE)
+
+export function buildImageAvatarSprite(
+  texture: Texture,
+  displayColor: string,
+): AvatarSprite {
+  const container = new Container();
+
+  const shadow = new Graphics();
+  shadow.ellipse(0, 0, 14, 5).fill({ color: 0x000000, alpha: 0.22 });
+  container.addChild(shadow);
+
+  // Golden ground glow + ring, revealed for the local avatar (matches the
+  // selection highlight used on the picker).
+  const ring = new Graphics();
+  ring.ellipse(0, -1, 17, 7).fill({ color: 0xffd76a, alpha: 0.28 });
+  ring.ellipse(0, -1, 17, 7).stroke({ width: 3, color: hexNum(displayColor), alpha: 0.95 });
+  ring.visible = false;
+  container.addChild(ring);
+
+  const spr = new Sprite(texture);
+  const scale = IMG_AVATAR_H / (texture.height || IMG_AVATAR_H);
+  spr.anchor.set(0.5, 1); // bottom-centre = feet/ground contact
+  spr.scale.set(scale);
+  spr.position.set(0, 2); // sit just above the contact shadow
+  container.addChild(spr);
 
   return {
     container,

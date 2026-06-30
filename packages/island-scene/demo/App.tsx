@@ -6,6 +6,7 @@ import {
   sampleZones,
   ACCESSORY_KEYS,
   SPECIES,
+  avatarImageUrl,
   type AccessoryKey,
   type AvatarConfig,
   type AvatarInstance,
@@ -15,6 +16,24 @@ import {
   type ThemePackKey,
   type ZoneKey,
 } from "../src";
+
+// Phase 1 persistence: remember the child's chosen island friend so a returning
+// visitor skips the picker. localStorage is fine for now (host owns this).
+const AVATAR_STORE_KEY = "engage-island.avatarKey";
+const loadAvatarKey = (): string | null => {
+  try {
+    return typeof window !== "undefined" ? window.localStorage.getItem(AVATAR_STORE_KEY) : null;
+  } catch {
+    return null;
+  }
+};
+const saveAvatarKey = (key: string): void => {
+  try {
+    window.localStorage.setItem(AVATAR_STORE_KEY, key);
+  } catch {
+    /* storage unavailable (private mode / quota) — selection just won't persist */
+  }
+};
 
 /**
  * Demo harness. The island is full-screen (the child-facing product view).
@@ -31,11 +50,16 @@ export function DemoApp() {
   const [lockLighthouse, setLockLighthouse] = useState(false);
   const [currentZone, setCurrentZone] = useState<ZoneKey | null>(null);
 
-  const [avatarCfg, setAvatarCfg] = useState<AvatarConfig>({
-    species: "bunny",
-    bodyColor: "#f3c1d6",
-    accessoryKey: "scarf",
-    displayColor: "#c47b9a",
+  const [avatarCfg, setAvatarCfg] = useState<AvatarConfig>(() => {
+    const savedKey = loadAvatarKey();
+    return {
+      species: "bunny",
+      bodyColor: "#f3c1d6",
+      accessoryKey: "scarf",
+      displayColor: "#c47b9a",
+      // Seed the chosen illustrated friend so a returning child skips the picker.
+      imageUrl: savedKey ? avatarImageUrl(savedKey) ?? undefined : undefined,
+    };
   });
 
   const [log, setLog] = useState<string[]>([]);
@@ -90,6 +114,11 @@ export function DemoApp() {
         onLoadProgress={(p) => append(`onLoadProgress(${p.toFixed(2)})`)}
         onZoneTap={(z: ZoneKey) => { append(`onZoneTap(${z}) → enter`); setCurrentZone(z); }}
         onZoneExit={() => { append("onZoneExit → world"); setCurrentZone(null); }}
+        onAvatarSelect={(key: string) => {
+          append(`onAvatarSelect(${key})`);
+          saveAvatarKey(key);
+          setAvatarCfg((c) => ({ ...c, imageUrl: avatarImageUrl(key) ?? undefined }));
+        }}
         onActivityEnter={(z: ZoneKey) => append(`onActivityEnter(${z})`)}
         onObjectInteract={(id) => append(`onObjectInteract(${id})`)}
         onAvatarMove={(id, p) => append(`onAvatarMove(${id}, ${p.x},${p.y})`)}
