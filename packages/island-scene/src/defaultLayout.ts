@@ -115,20 +115,32 @@ const OBSTACLE_ROWS: Array<[number, Array<[number, number]>]> = [
 
 const landCells: GridPosition[] = expand(LAND_ROWS);
 
-// Seven landmark zones, snapped onto open clearings in the illustration.
+// Nine landmark zones, positioned from the drag-and-drop layout editor (the
+// editor's percentage offsets mapped onto the sand ellipse). Campfire at the
+// centre; the dock is pushed to the southern waterline so its planks reach the
+// ocean. Verified: no footprint overlaps, all reachable from spawn.
 export const sampleZones: ZoneInstance[] = [
-  { key: "lighthouse_point", displayName: "Lighthouse Point", skinName: "Beacon Point", gridPosition: { x: 30, y: 4 }, footprint: { w: 4, h: 4 }, unlocked: true },
-  { key: "treehouse_hideaway", displayName: "Treehouse Hideaway", skinName: "Treetop Hideaway", gridPosition: { x: 4, y: 20 }, footprint: { w: 5, h: 5 }, unlocked: true },
-  { key: "art_hut", displayName: "Art Hut", skinName: "Paint Cabin", gridPosition: { x: 28, y: 20 }, footprint: { w: 4, h: 4 }, unlocked: true },
-  { key: "campfire_circle", displayName: "Campfire Circle", skinName: "Marshmallow Ring", gridPosition: { x: 19, y: 24 }, footprint: { w: 4, h: 4 }, unlocked: true },
-  { key: "arcade_cove", displayName: "Arcade Cove", skinName: "Arcade Cove", gridPosition: { x: 42, y: 24 }, footprint: { w: 5, h: 4 }, unlocked: true },
-  { key: "calm_beach", displayName: "Calm Beach", skinName: "Calm Beach", gridPosition: { x: 5, y: 31 }, footprint: { w: 6, h: 4 }, unlocked: true },
-  { key: "welcome_dock", displayName: "Welcome Dock", skinName: "Welcome Dock", gridPosition: { x: 43, y: 37 }, footprint: { w: 6, h: 4 }, unlocked: true },
+  // Centre
+  { key: "campfire_circle", displayName: "Campfire Circle", skinName: "Marshmallow Ring", gridPosition: { x: 26, y: 22 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  // Interior ring
+  // Nudged ~48 world-units SOUTH of its forest cluster so the (enlarged) cabin
+  // sits clearly in front of the trees, which now frame it from behind.
+  { key: "treehouse_hideaway", displayName: "Treehouse Hideaway", skinName: "Treetop Hideaway", gridPosition: { x: 11, y: 18 }, footprint: { w: 5, h: 5 }, unlocked: true },
+  // art_hut, lighthouse + calm_beach nudged inland a few cells so they sit on
+  // the new (irregular) sand-base-v2 silhouette instead of floating in its coves.
+  { key: "art_hut", displayName: "Art Hut", skinName: "Paint Cabin", gridPosition: { x: 14, y: 8 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  { key: "arcade_cove", displayName: "Arcade Cove", skinName: "Arcade Cove", gridPosition: { x: 34, y: 18 }, footprint: { w: 5, h: 4 }, unlocked: true },
+  { key: "star_market", displayName: "Star Market", skinName: "Star Market", gridPosition: { x: 18, y: 28 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  // Coastal
+  { key: "lighthouse_point", displayName: "Lighthouse Point", skinName: "Beacon Point", gridPosition: { x: 30, y: 6 }, footprint: { w: 4, h: 4 }, unlocked: true },
+  { key: "welcome_dock", displayName: "Welcome Dock", skinName: "Welcome Dock", gridPosition: { x: 44, y: 38 }, footprint: { w: 6, h: 4 }, unlocked: true },
+  { key: "calm_beach", displayName: "Calm Beach", skinName: "Calm Beach", gridPosition: { x: 25, y: 37 }, footprint: { w: 6, h: 4 }, unlocked: true },
+  { key: "lazy_lagoon", displayName: "Lazy Lagoon", skinName: "Lazy Lagoon", gridPosition: { x: 45, y: 26 }, footprint: { w: 5, h: 4 }, unlocked: true },
 ];
 
 // Spawn just inland (up-screen) of the welcome dock — the arrival sequence
 // drops the avatar here after the boat pulls up.
-const spawnPoint: GridPosition = { x: 44, y: 33 };
+const spawnPoint: GridPosition = { x: 41, y: 37 };
 
 // Obstacle set = the painted tree/rock masses, with their frayed edges shaved.
 // The classifier dilates each mass slightly, leaving thin 1-cell tendrils that

@@ -1,6 +1,7 @@
 import { Container, Graphics, Sprite, type Texture } from "pixi.js";
 import type { ThemePackConfig, ThemePalette, ZoneInstance, ZoneKey } from "../types";
 import { hexNum, shade } from "./iso";
+import { buildLandmarkFx } from "./landmarkFx";
 
 /**
  * Per-zone landmark art. The WORLD-MAP landmark (Mode 1) is now a finished
@@ -45,13 +46,29 @@ export const LANDMARK_ART: Record<
   ZoneKey,
   { url: string; scale: number; anchorX: number; anchorY: number; contentH: number }
 > = {
-  lighthouse_point: { url: landmarkUrl("lighthouse"), scale: 0.675, anchorX: 0.5464, anchorY: 0.8789, contentH: 839 },
-  treehouse_hideaway: { url: landmarkUrl("treehouse"), scale: 0.475, anchorX: 0.501, anchorY: 0.8848, contentH: 853 },
-  art_hut: { url: landmarkUrl("art-hut"), scale: 0.445, anchorX: 0.5181, anchorY: 0.7236, contentH: 638 },
-  arcade_cove: { url: landmarkUrl("arcade"), scale: 0.324, anchorX: 0.5103, anchorY: 0.8457, contentH: 734 },
-  campfire_circle: { url: landmarkUrl("campfire"), scale: 0.255, anchorX: 0.499, anchorY: 0.75, contentH: 641 },
-  calm_beach: { url: landmarkUrl("calm-beach"), scale: 0.33, anchorX: 0.4385, anchorY: 0.7598, contentH: 657 },
-  welcome_dock: { url: landmarkUrl("welcome-dock"), scale: 0.395, anchorX: 0.5205, anchorY: 0.7676, contentH: 484 },
+  // Scales normalized by door/entrance size so every structure reads at the
+  // same child-scale door (~42 world px). Towers are taller; the treehouse is
+  // capped (its door is a tiny fraction of the all-tree image).
+  lighthouse_point: { url: landmarkUrl("lighthouse"), scale: 0.37, anchorX: 0.5464, anchorY: 0.8789, contentH: 839 },
+  // Treehouse — the island's "epic destination": deliberately the largest
+  // landmark so it towers over everything (deep in its own forest cluster).
+  // Hero landmark: scaled up large and (in defaultLayout) nudged SOUTH so it
+  // sits clearly IN FRONT of its forest cluster — the trees frame it from
+  // behind instead of burying the cabin.
+  treehouse_hideaway: { url: landmarkUrl("treehouse"), scale: 0.74, anchorX: 0.501, anchorY: 0.9, contentH: 853 },
+  art_hut: { url: landmarkUrl("art-hut"), scale: 0.29, anchorX: 0.5181, anchorY: 0.7236, contentH: 638 },
+  arcade_cove: { url: landmarkUrl("arcade"), scale: 0.21, anchorX: 0.5103, anchorY: 0.8457, contentH: 734 },
+  campfire_circle: { url: landmarkUrl("campfire"), scale: 0.31, anchorX: 0.499, anchorY: 0.75, contentH: 641 },
+  calm_beach: { url: landmarkUrl("calm-beach"), scale: 0.25, anchorX: 0.4385, anchorY: 0.7598, contentH: 657 },
+  welcome_dock: { url: landmarkUrl("welcome-dock"), scale: 0.25, anchorX: 0.5205, anchorY: 0.7676, contentH: 484 },
+  // New zones. store-01 is a tall stall (base-pinned); lagoon-01 is a flat
+  // top-down pond, so it is centre-pinned (anchorY 0.5) and uses a reduced
+  // contentH just for the floating label height.
+  star_market: { url: landmarkUrl("store-01"), scale: 0.19, anchorX: 0.4995, anchorY: 0.9941, contentH: 1167 },
+  lazy_lagoon: { url: landmarkUrl("lagoon-01"), scale: 0.25, anchorX: 0.4996, anchorY: 0.5, contentH: 440 },
+  // TODO: fishing-dock-01.png placeholder — asset is coming; wire a new zone
+  // once it is finalized (it is already uploaded to the repo root but skipped
+  // for this pass per the layout brief).
 };
 
 /**
@@ -92,26 +109,12 @@ export function buildZoneScene(
     sprite.scale.set(cfg.scale);
     art.addChild(sprite);
 
-    switch (zone.key) {
-      case "lighthouse_point":
-        // The light beam is PAINTED into lighthouse.png (the old code-drawn
-        // rotating cone is removed). TODO(anim-pass): add a gentle beam sweep /
-        // lantern glow over the painted beam.
-        break;
-      case "treehouse_hideaway":
-        // Gentle canopy sway (pivots at the base anchor) — maps cleanly to the
-        // tall tree art.
-        fxFns.push((t) => { sprite.rotation = Math.sin(t * 0.6) * 0.02; });
-        break;
-      case "campfire_circle":
-        // Animated flame flicker is drawn by the renderer (drawFlame) over the
-        // painted fire ring.
-        break;
-      // TODO(anim-pass): art_hut palette dab, arcade screen glow, welcome_dock
-      // lantern + a permanently-moored rowboat, calm_beach umbrella sway — the
-      // old code-drawn versions were tied to the removed code structures and
-      // don't map onto the finished art, so they're dropped for this pass.
-    }
+    // Ambient "living landmark" effects (soft warm glow, chimney smoke, rotating
+    // beam, screen/marquee, water ripples, drifting leaves, gentle sways …),
+    // layered ABOVE the sprite. The campfire flame itself (drawFlame in the
+    // renderer) is left untouched — only its warm glow is added here.
+    const anim = buildLandmarkFx(zone.key, container, sprite);
+    if (anim) fxFns.push(anim);
   } else {
     // Fallback (PNG failed to load): draw the cel-shaded code structure so the
     // zone is never empty. No ground patch / beacon — just the landmark.
@@ -148,6 +151,8 @@ const STRUCTURE_SCALE: Record<ZoneKey, number> = {
   arcade_cove: 2.8,
   calm_beach: 2.4,
   welcome_dock: 3.0,
+  star_market: 2.8,
+  lazy_lagoon: 2.6,
 };
 
 // Cel-shaded box helper: flat fill + bold outline + soft top highlight.
@@ -170,6 +175,8 @@ export const INTERIOR_BG: Record<ZoneKey, string> = {
   arcade_cove: "#c9d2ff",
   calm_beach: "#d6f0ee",
   welcome_dock: "#bfe6ee",
+  star_market: "#f6e7c8",
+  lazy_lagoon: "#cdeef0",
 };
 
 // ── Landmark painters (large, bold-outlined) ────────────────────────
@@ -308,5 +315,26 @@ const ZONE_PAINT: Record<ZoneKey, (g: Graphics, p: ThemePalette) => void> = {
     g.roundRect(-22, -16, 5, 12, 1).fill(0x6e4a2a).stroke({ width: 2.5, color: INK });
     g.roundRect(17, -16, 5, 12, 1).fill(0x6e4a2a).stroke({ width: 2.5, color: INK });
     g.circle(-19.5, -20, 4).fill(0xfff1a8).stroke({ width: 2, color: INK });
+  },
+  star_market: (g, p) => {
+    // Little market stall: counter, posts and a striped awning.
+    const wood = 0xb07a44;
+    celBox(g, -20, -8, 40, 16, 2, wood); // counter
+    g.roundRect(-20, -34, 4, 26, 1).fill(0x6e4a2a).stroke({ width: 2.5, color: INK });
+    g.roundRect(16, -34, 4, 26, 1).fill(0x6e4a2a).stroke({ width: 2.5, color: INK });
+    // striped awning
+    for (let i = 0; i < 6; i++) {
+      g.poly([-22 + i * 7.3, -34, -22 + (i + 1) * 7.3, -34, -22 + (i + 1) * 7.3 - 3, -26, -22 + i * 7.3 - 3, -26])
+        .fill(i % 2 ? 0xf4f0e6 : hexNum(shade(p.accent, 0.1)));
+    }
+    g.poly([-24, -34, 24, -34, 18, -26, -18, -26]).stroke({ width: 3, color: INK });
+  },
+  lazy_lagoon: (g, p) => {
+    // Flat top-down pond: water oval with a sandy rim and a couple of rocks.
+    g.ellipse(0, 0, 34, 20).fill(hexNum(shade(p.landAlt, 0.05))).stroke({ width: 3, color: INK });
+    g.ellipse(0, 0, 28, 15).fill(hexNum(p.water));
+    g.ellipse(-3, -2, 20, 9).fill({ color: hexNum(shade(p.water, 0.18)), alpha: 0.5 });
+    g.ellipse(12, 4, 5, 3).fill(0x8d8475).stroke({ width: 2, color: INK });
+    g.ellipse(-14, 5, 4, 2.5).fill(0x8d8475).stroke({ width: 2, color: INK });
   },
 };

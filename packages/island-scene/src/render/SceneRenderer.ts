@@ -21,7 +21,6 @@ import type {
 } from "../types";
 import { CLIFF, TILE_H, TILE_W } from "./constants";
 import {
-  depth,
   footprintCenter,
   hexNum,
   lerpHex,
@@ -35,9 +34,15 @@ import { buildAvatarSprite, type AvatarSprite } from "./avatar";
 import { biomeAt, landContext } from "./biome";
 import { islandOutline, flatten, insetLoop, clusterOutline, type Pt } from "./coast";
 import { buildZoneScene, LANDMARK_ART, BOAT_ART, ARRIVAL_BG_URL } from "./zones";
+import { buildCampfireFx, buildArtHutFx, buildFishFx } from "./landmarkFx";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
 import { ArrivalView } from "./ArrivalView";
+import { LayeredIsland, type IslandLayoutOpts, type LandmarkMark } from "./LayeredIsland";
+
+// Individual illustrated world-map sprites (transparent cutouts; water solid).
+const spriteUrl = (name: string): string =>
+  new URL(`../assets/sprites/${name}.png`, import.meta.url).href;
 
 /** Walk speed in grid tiles per second. */
 const WALK_SPEED = 4.5;
@@ -49,8 +54,10 @@ const INK = 0x23201c;
 const AVATAR_SCALE = 1.6;
 /** Pointer travel (px) beyond which a press becomes a pan, not a tap. */
 const DRAG_THRESHOLD = 7;
-/** Zoom bounds: 0.5x sees the whole island, 2.5x zooms into a zone. */
-const MIN_ZOOM = 0.5;
+/** Zoom bounds: 0.36x frames the whole island (incl. the tall treehouse) with
+ *  headroom; 2.5x zooms into a zone. (Min lowered from 0.5 so the treehouse
+ *  roofline is no longer clipped at the most-zoomed-out level.) */
+const MIN_ZOOM = 0.36;
 const MAX_ZOOM = 2.5;
 /** Mode 1 ↔ Mode 2 camera-tilt + cross-fade duration (seconds). */
 const TILT_DURATION = 1.0;
@@ -119,6 +126,9 @@ export class SceneRenderer {
   /** Finished illustrated ground sprite (replaces the procedural terrain when
    *  layout.terrainImage is set); pinned into world space via the registration. */
   private ground?: Sprite;
+  /** Layered sprite world map (water/sand/grass/rocks/trees), drawn at the
+   *  very bottom of the world beneath landmarks + avatars. */
+  private island?: LayeredIsland;
   /** Smooth island blob (base fill + cliff + bold coast outline). */
   private terrain = new Graphics();
   /** Per-tile biome coloring, masked to the smooth coastline. */
@@ -126,7 +136,6 @@ export class SceneRenderer {
   private landMask = new Graphics();
   private coastLoop: Pt[] = [];
   private waves = new Graphics();
-  private flame = new Graphics();
   /** y-sorted props: zones, decorations, avatars. */
   private entities = new Container();
   /** Ambient firefly overlay (world space, drawn above props). */
@@ -183,7 +192,6 @@ export class SceneRenderer {
   private hoveredZone: ZoneKey | null = null;
   private localId: string | null = null;
   private grid: WalkGrid = { walkable: () => false };
-  private flamePos: { x: number; y: number } | null = null;
   /** Trees that gently sway. */
   private swayers: { sprite: Sprite; phase: number }[] = [];
   /** Per-zone idle animators (lighthouse beam, lantern flicker, etc.). */
@@ -272,7 +280,6 @@ export class SceneRenderer {
       this.landMask,
       this.waves,
       this.entities,
-      this.flame,
       this.fireflies,
     );
     this.biomeLayer.mask = this.landMask;
@@ -301,7 +308,7 @@ export class SceneRenderer {
     this.textures.refresh(theme.palette);
     this.opts.onLoadProgress?.(0.6);
 
-    await this.loadGround();
+    await this.loadIsland();
     await this.loadLandmarks();
 
     this.rebuild();
@@ -595,6 +602,11 @@ export class SceneRenderer {
     this.updateCamScale();
     this.clampCamera();
     this.applyCamera();
+    // Keep the ocean blanketing the (now larger/smaller) viewport — no gaps.
+    if (this.island) {
+      const o = this.islandLayout();
+      this.island.coverWater(o.cx, o.cy, o.waterW, o.waterH);
+    }
     if (this.currentZone) this.zoneView.resize(this.app.screen.width, this.app.screen.height);
     this.arrivalView?.resize(this.app.screen.width, this.app.screen.height);
   }
@@ -606,6 +618,9 @@ export class SceneRenderer {
     this.drawTerrain();
     this.buildGrid();
     this.computeWorldBounds();
+    // Pin the layered sprite island to the painted-ground registration so the
+    // (unchanged) landmarks sit on the sand.
+    this.island?.layout(this.islandLayout());
     // Tear down only the static props; avatar views persist across theme/zone
     // changes so in-progress walks aren't interrupted.
     for (const e of this.staticEntities) e.destroy({ children: true });
@@ -617,35 +632,9 @@ export class SceneRenderer {
     // nothing is rendered for it (a future phase docks a video window there).
     this.reconcileAvatars();
     this.buildFireflies();
-    const fire = this.zones.find((z) => z.key === "campfire_circle");
-    this.flamePos = fire
-      ? footprintCenter(fire.gridPosition, fire.footprint.w, fire.footprint.h)
-      : null;
+    // The campfire's animated light is now a warm ambient glow built into its
+    // landmark fx layer (landmarkFx.ts) — no separate code-drawn flame icon.
     this.setupCamera();
-  }
-
-  /** Tall flickering campfire flame (animated), drawn above the props. */
-  private drawFlame(): void {
-    this.flame.clear();
-    if (!this.flamePos) return;
-    const t = this.elapsed / 1000;
-    // Gentle, unhurried flicker: slow primary sway + a small soft tremble.
-    const sway = Math.sin(t * 3.2) * 1.6 + Math.sin(t * 6.5) * 0.6;
-    const grow = 1 + 0.12 * Math.sin(t * 2.4 + 1) + 0.05 * Math.sin(t * 5.5);
-    const bx = this.flamePos.x;
-    const by = this.flamePos.y - 4;
-    const H = 27 * grow; // cozy campfire, ~40% of the old bonfire
-    // Soft warm glow pulse pooling around the base (drawn first, behind flame).
-    const gp = 0.5 + 0.5 * Math.sin(t * 1.2);
-    this.flame.ellipse(bx, by - 4, 18 + gp * 4, 11 + gp * 2).fill({ color: 0xffb24d, alpha: 0.08 + 0.05 * gp });
-    // outer → mid → inner, bold outline on the outer flame.
-    this.flame.poly([bx, by - H, bx + 7, by - 6, bx + sway, by, bx - 7, by - 6])
-      .fill(0xff7a2d).stroke({ width: 2.5, color: INK });
-    this.flame.poly([bx, by - H * 0.72, bx + 4, by - 5, bx + sway * 0.6, by, bx - 4, by - 5])
-      .fill(0xffd23d);
-    this.flame.poly([bx, by - H * 0.45, bx + 2, by - 3.5, bx, by, bx - 2, by - 3.5])
-      .fill(0xfff1a8);
-    this.flame.ellipse(bx, by + 2, 11, 3).fill({ color: 0xff9a3d, alpha: 0.22 }); // ember glow
   }
 
   /** Soft fireflies drifting by the forest treehouse — calm, magical. */
@@ -729,6 +718,101 @@ export class SceneRenderer {
     this.sky.ellipse(w / 2, h / 2, vig * 0.62, vig * 0.62).fill({ color: 0xffd98a, alpha: 0.05 });
   }
 
+  // Sand width in world pixels. Sized so the island reads as ~60-65% of a
+  // typical screen at full zoom-out, leaving visible ocean on all sides. The
+  // landmark grid positions in defaultLayout are placed to fit this footprint.
+  private static readonly ISLAND_SPAN_W = 1600;
+
+  /**
+   * Placement for the layered island. Sand is centered on the world-bounds
+   * centre (where the camera frames the island when zoomed out) and sized to
+   * ISLAND_SPAN_W; water is sized to blanket the viewport at the most-zoomed-out
+   * level so it fills edge-to-edge with no gaps.
+   */
+  private islandLayout(): IslandLayoutOpts {
+    const b = this.worldBounds;
+    const cx = (b.minX + b.maxX) / 2;
+    const cy = (b.minY + b.maxY) / 2;
+    const spanW = SceneRenderer.ISLAND_SPAN_W;
+
+    // Water must cover the world region visible at MIN_ZOOM, plus margin for
+    // camera offset, and never be smaller than the island itself.
+    const sw = this.app.screen.width;
+    const sh = this.app.screen.height;
+    const waterW = Math.max((sw / MIN_ZOOM) * 1.3, spanW * 1.3);
+    const waterH = Math.max((sh / MIN_ZOOM) * 1.3, spanW * 1.3);
+
+    return {
+      cx, cy, spanW, waterW, waterH,
+      landmarks: this.landmarkMarks(),
+      // The nature props are stamped into the same y-sorted container as the
+      // landmarks + avatars, so depth interleaves correctly across all of them.
+      propLayer: this.entities,
+    };
+  }
+
+  /**
+   * Landmark footprints in world space, handed to the layered island so its
+   * vegetation scatter can ring grassy structures with green, keep the
+   * campfire/dock/beach on bare sand, and push trees off the building sprites.
+   */
+  private landmarkMarks(): LandmarkMark[] {
+    // Campfire ring, welcome dock and calm beach stay on bare sand (clearings);
+    // every other landmark gets a planted green ring around its base.
+    const sandKeys = new Set<ZoneKey>(["campfire_circle", "welcome_dock", "calm_beach"]);
+    // Tree keep-out radius (world px). The campfire needs a real clearing, the
+    // lighthouse + arcade must stay clearly visible; the rest just avoid cover.
+    const clearById: Partial<Record<ZoneKey, number>> = {
+      campfire_circle: 185, lighthouse_point: 165, arcade_cove: 150,
+      welcome_dock: 150, calm_beach: 135, treehouse_hideaway: 130,
+      art_hut: 120, lazy_lagoon: 120, star_market: 115,
+    };
+    return this.zones.map((z) => {
+      const c = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
+      return {
+        key: z.key,
+        x: c.x,
+        y: c.y,
+        w: z.footprint.w,
+        clear: clearById[z.key] ?? 110,
+        ground: sandKeys.has(z.key) ? "sand" : "grass",
+      } satisfies LandmarkMark;
+    });
+  }
+
+  /**
+   * Build the layered sprite world map (water/sand/grass/rocks/trees) and pin
+   * it at the very bottom of the world, beneath landmarks + avatars. Replaces
+   * the single painted ground sprite. A failed texture load just leaves the
+   * island unbuilt; the procedural terrain (drawTerrain) then draws instead.
+   */
+  private async loadIsland(): Promise<void> {
+    try {
+      const [water, sand, grass, rock, tree01, tree02, bush01, bush02, flower01, flowerBush01] =
+        (await Promise.all([
+          Assets.load(spriteUrl("water-base")),
+          Assets.load(spriteUrl("sand-base-v2")),
+          Assets.load(spriteUrl("grass-01")),
+          Assets.load(spriteUrl("rock-01")),
+          Assets.load(spriteUrl("tree-01")),
+          Assets.load(spriteUrl("tree-02")),
+          Assets.load(spriteUrl("bush-01")),
+          Assets.load(spriteUrl("bush-02")),
+          Assets.load(spriteUrl("flower-01")),
+          Assets.load(spriteUrl("flower-bush-01")),
+        ])) as Texture[];
+      if (this.destroyed) return;
+      const island = new LayeredIsland({
+        water, sand, grass, rock, tree01, tree02, bush01, bush02, flower01, flowerBush01,
+      });
+      this.island = island;
+      // Very bottom of the world; landmarks/avatars (in entities) stay on top.
+      this.world.addChildAt(island.container, 0);
+    } catch (err) {
+      console.warn("[island-scene] island sprites failed to load; using code terrain", err);
+    }
+  }
+
   /** Load the finished terrain illustration and pin it into the world. */
   private async loadGround(): Promise<void> {
     const img = this.layout.terrainImage;
@@ -800,7 +884,7 @@ export class SceneRenderer {
     // sky/sea backdrop. We DO keep a coast loop (derived from the same grid the
     // art was registered to) purely so drawWaves can lap a soft water shimmer
     // just off the painted shore.
-    if (this.layout.terrainImage && this.ground) {
+    if (this.layout.terrainImage && (this.ground || this.island)) {
       this.terrain.clear();
       this.biomeLayer.clear();
       this.landMask.clear();
@@ -921,15 +1005,48 @@ export class SceneRenderer {
       if (scene.animate) this.zoneAnimators.push(scene.animate);
       const center = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
       scene.container.position.set(center.x, center.y);
-      // Zone art y-sorts just behind props/avatars on the same row.
-      scene.container.zIndex =
-        depth(
-          z.gridPosition.x + z.footprint.w / 2,
-          z.gridPosition.y + z.footprint.h / 2,
-        ) + 0.05;
+      // Y-SORT: landmarks share one depth key (their base world-Y) with all the
+      // nature props, so a tree in front (lower on screen) occludes the building
+      // and a tree behind does not. The +0.05 keeps a landmark just ahead of a
+      // prop on the exact same row.
+      scene.container.zIndex = center.y + 0.05;
       this.entities.addChild(scene.container);
       this.staticEntities.push(scene.container);
       this.zoneScenes.set(z.key, { setHover: scene.setHover });
+
+      // Parent-level ambient overlays. These live in `entities` — NOT inside the
+      // zone container — so they y-sort independently and render ABOVE the
+      // landmark sprite (which sorts at center.y + 0.05) instead of behind it.
+
+      // Campfire warm glow: just above the sprite so it sits ON the stone ring.
+      if (z.key === "campfire_circle") {
+        const fire = buildCampfireFx(center.x, center.y);
+        fire.container.zIndex = center.y + 1.5;
+        this.entities.addChild(fire.container);
+        this.staticEntities.push(fire.container);
+        this.zoneAnimators.push(fire.animate);
+      }
+
+      // Art Hut chimney smoke: in front of the building, not behind it.
+      if (z.key === "art_hut") {
+        const smoke = buildArtHutFx(center.x, center.y);
+        smoke.container.zIndex = center.y + 1.5;
+        this.entities.addChild(smoke.container);
+        this.staticEntities.push(smoke.container);
+        this.zoneAnimators.push(smoke.animate);
+      }
+
+      // Lazy Lagoon fish jump: pinned to a hardcoded very-high zIndex so the arc
+      // (with its splash and entry ripple) always renders in front of everything
+      // on the island — flowers, grass, and the lagoon sprite — never clipped or
+      // occluded by a same-row prop.
+      if (z.key === "lazy_lagoon") {
+        const fish = buildFishFx(center.x, center.y);
+        fish.container.zIndex = 99999;
+        this.entities.addChild(fish.container);
+        this.staticEntities.push(fish.container);
+        this.zoneAnimators.push(fish.animate);
+      }
     }
     this.buildZoneLabels();
   }
@@ -1004,7 +1121,7 @@ export class SceneRenderer {
       sprite.position.set(c.x, c.y);
       sprite.scale.set(d.scale ?? 1);
       if (d.rotation) sprite.angle = d.rotation;
-      sprite.zIndex = depth(d.position.x, d.position.y) + 0.2;
+      sprite.zIndex = c.y + 0.2; // Y-sort by base world-Y
 
       // Soft contact shadow.
       const shadow = new Graphics();
@@ -1157,7 +1274,9 @@ export class SceneRenderer {
     const hop =
       view.hopT > 0 ? Math.sin((1 - view.hopT / HOP_DUR) * Math.PI) * 7 : 0;
     view.container.position.set(c.x, c.y - bob - hop);
-    view.container.zIndex = depth(view.pos.x, view.pos.y) + 0.3;
+    // Y-SORT by base world-Y (shared with landmarks + props); +0.3 keeps the
+    // avatar just in front of a landmark/prop on the same row.
+    view.container.zIndex = c.y + 0.3;
   }
 
   private requestZoneTap(zone: ZoneInstance): void {
@@ -1219,7 +1338,9 @@ export class SceneRenderer {
     if (this.zoomLocked) return; // user has taken control of zoom
     const sw = this.app.screen.width;
     const sh = this.app.screen.height;
-    this.camScale = Math.max(0.95, Math.min(1.6, Math.min(sw, sh) / 640));
+    // 0.85× the comfortable zoom so the initial view sits a touch wider (more
+    // of the island in frame on first load) while still following the avatar.
+    this.camScale = 0.85 * Math.max(0.95, Math.min(1.6, Math.min(sw, sh) / 640));
   }
 
   /** Zoom by a factor, keeping the world point under (sx, sy) fixed. */
@@ -1247,9 +1368,14 @@ export class SceneRenderer {
   private setupCamera(): void {
     this.updateCamScale();
     if (!this.cameraInit) {
+      // On first load, frame the WHOLE island rather than the avatar (which
+      // spawns at the southern dock). Centering vertically on the island's
+      // bounding box pulls the view north so the treehouse up top is visible
+      // without scrolling. Zoom is untouched; clampCamera keeps it in bounds.
       const focus = this.localFocus();
+      const islandCenterY = (this.worldBounds.minY + this.worldBounds.maxY) / 2;
       this.camX = this.app.screen.width / 2 - focus.x * this.camScale;
-      this.camY = this.app.screen.height / 2 - focus.y * this.camScale;
+      this.camY = this.app.screen.height / 2 - islandCenterY * this.camScale;
       this.cameraInit = true;
     }
     this.clampCamera();
@@ -1484,17 +1610,14 @@ export class SceneRenderer {
 
     if (this.opts.reducedMotion) {
       this.fireflies.visible = false;
-      this.flame.visible = false;
     } else {
       // Animate the world map whenever it's on screen — including while it
       // tilts/fades through a transition.
       this.fireflies.visible = this.world.visible;
-      this.flame.visible = this.world.visible;
       if (this.world.visible) {
         const t = this.elapsed / 1000;
         this.drawShimmer();
         this.drawWaves();
-        this.drawFlame();
         // Trees sway their canopy; zone landmarks have idle details.
         for (const s of this.swayers) s.sprite.rotation = Math.sin(t * 1.0 + s.phase) * 0.088;
         for (const anim of this.zoneAnimators) anim(t);
