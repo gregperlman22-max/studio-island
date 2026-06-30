@@ -35,6 +35,7 @@ import { buildAvatarSprite, type AvatarSprite } from "./avatar";
 import { biomeAt, landContext } from "./biome";
 import { islandOutline, flatten, insetLoop, clusterOutline, type Pt } from "./coast";
 import { buildZoneScene, LANDMARK_ART, BOAT_ART, ARRIVAL_BG_URL } from "./zones";
+import { buildPaths } from "./paths";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
 import { ArrivalView } from "./ArrivalView";
@@ -127,6 +128,9 @@ export class SceneRenderer {
   private coastLoop: Pt[] = [];
   private waves = new Graphics();
   private flame = new Graphics();
+  /** Worn dirt/sand trails (hub-and-spoke from Campfire Circle). Sits on the
+   *  terrain, below all landmarks/decorations/avatars. */
+  private paths = new Container();
   /** y-sorted props: zones, decorations, avatars. */
   private entities = new Container();
   /** Ambient firefly overlay (world space, drawn above props). */
@@ -271,11 +275,13 @@ export class SceneRenderer {
       this.biomeLayer,
       this.landMask,
       this.waves,
+      this.paths,
       this.entities,
       this.flame,
       this.fireflies,
     );
     this.biomeLayer.mask = this.landMask;
+    this.paths.eventMode = "none";
     this.entities.sortableChildren = true;
     this.fade.eventMode = "none";
 
@@ -612,6 +618,7 @@ export class SceneRenderer {
     this.staticEntities = [];
     this.zoneScenes.clear();
     this.buildZones();
+    this.buildPathNetwork();
     this.buildDecorations();
     // layout.pictureFrameAnchor is an invisible reserved coordinate only —
     // nothing is rendered for it (a future phase docks a video window there).
@@ -934,6 +941,14 @@ export class SceneRenderer {
     this.buildZoneLabels();
   }
 
+  /** (Re)build the worn dirt/sand trails connecting Campfire Circle (hub) to
+   *  every other zone. Lives in its own container so it draws on the terrain but
+   *  under all landmarks/decorations/avatars. */
+  private buildPathNetwork(): void {
+    this.paths.removeChildren().forEach((c) => c.destroy());
+    for (const g of buildPaths(this.zones)) this.paths.addChild(g);
+  }
+
   /** (Re)create the screen-space zone name labels. Positioned every frame by
    *  positionZoneLabels (projected from world + clamped into the viewport). */
   private buildZoneLabels(): void {
@@ -1208,6 +1223,28 @@ export class SceneRenderer {
       maxX = Math.max(maxX, x + TILE_W / 2);
       minY = Math.min(minY, y - 40);
       maxY = Math.max(maxY, y + TILE_H + CLIFF);
+    }
+    // A tall landmark (treehouse, lighthouse, …) rises FAR above its
+    // ground-contact cell — much higher than the 40px of land headroom above.
+    // The land-cell box alone therefore clamps the camera before you can pan/
+    // zoom up to its crown, so when zoomed in the top of the sprite falls off
+    // the viewport (it only shows fully when zoomed out far enough that the
+    // clamp relaxes). Fold each landmark's painted bounding box into the world
+    // bounds so the camera can always frame the whole sprite. General: every
+    // zone sprite is measured by its anchor + scale, not just the tall ones.
+    const LABEL_HEADROOM = 24; // a little air above the crown for the name label
+    for (const z of this.zones) {
+      const cfg = LANDMARK_ART[z.key];
+      if (!cfg) continue;
+      const center = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
+      const tex = this.landmarkTextures.get(z.key);
+      // Fall back to the opaque content height (square-ish) if art isn't loaded.
+      const w = (tex?.width ?? cfg.contentH) * cfg.scale;
+      const h = (tex?.height ?? cfg.contentH) * cfg.scale;
+      minX = Math.min(minX, center.x - cfg.anchorX * w);
+      maxX = Math.max(maxX, center.x + (1 - cfg.anchorX) * w);
+      minY = Math.min(minY, center.y - cfg.anchorY * h - LABEL_HEADROOM);
+      maxY = Math.max(maxY, center.y + (1 - cfg.anchorY) * h);
     }
     if (!Number.isFinite(minX)) { minX = maxX = minY = maxY = 0; }
     this.worldBounds = { minX, maxX, minY, maxY };
