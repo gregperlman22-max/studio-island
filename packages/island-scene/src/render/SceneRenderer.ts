@@ -40,6 +40,8 @@ import { buildZoneScene, LANDMARK_ART, BOAT_ART, ARRIVAL_BG_URL } from "./zones"
 import { buildCampfireFx, buildArtHutFx, buildFishFx } from "./landmarkFx";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
+import { GuideOverlay } from "./GuideOverlay";
+import { GUIDES, guideFileUrl, guideForZone } from "./guideCatalog";
 import { ArrivalView } from "./ArrivalView";
 import { LayeredIsland, type IslandLayoutOpts, type LandmarkMark } from "./LayeredIsland";
 
@@ -150,6 +152,10 @@ export class SceneRenderer {
   }[] = [];
   /** Mode 2 — third-person zone view (parallax, screen space). */
   private zoneView!: ZoneView;
+  /** Phase 2 — landmark guide overlay (screen space, top layer). */
+  private guideOverlay!: GuideOverlay;
+  /** Preloaded, background-knocked-out guide PNGs, keyed by zone. */
+  private guideTextures = new Map<ZoneKey, Texture>();
   /** Zone name labels — SCREEN space, clamped into the viewport so a tall
    *  landmark can never push its label off-screen or sit in front of it. */
   private zoneLabels = new Container();
@@ -273,6 +279,7 @@ export class SceneRenderer {
     }
 
     this.zoneView = new ZoneView({ reducedMotion: this.opts.reducedMotion });
+    this.guideOverlay = new GuideOverlay({ reducedMotion: this.opts.reducedMotion });
 
     this.app.canvas.style.display = "block";
     // Mount invisible: Pixi's auto-started ticker can paint a frame at the
@@ -284,7 +291,16 @@ export class SceneRenderer {
     // The zone view sits BELOW the world map so the enter transition can fade
     // the (tilting) world out to reveal the parallax beneath, and the exit
     // transition can fade the world back in over it.
-    this.app.stage.addChild(this.backdrop, this.zoneView.container, this.world, this.zoneLabels, this.fade);
+    // The guide overlay is a NEW top layer over the world map + labels; it sits
+    // just under `fade` so the existing island containers keep their relative
+    // order and `fade` stays topmost (arrival/select re-assert that below).
+    this.app.stage.addChild(
+      this.backdrop, this.zoneView.container, this.world, this.zoneLabels,
+      this.guideOverlay.container, this.fade,
+    );
+    // Sliding the guide back out returns to the world map (already behind it);
+    // re-enable follow so the camera settles gently on the avatar.
+    this.guideOverlay.onExitDone = () => { this.followEnabled = true; };
     this.zoneLabels.eventMode = "none";
     this.backdrop.addChild(this.sky, this.shimmer);
     this.world.addChild(
@@ -324,6 +340,7 @@ export class SceneRenderer {
     await this.loadIsland();
     await this.loadLandmarks();
     await this.loadAvatars();
+    await this.loadGuides();
 
     this.rebuild();
     this.drawFadeRect();
@@ -424,6 +441,37 @@ export class SceneRenderer {
           console.warn(`[island-scene] avatar art failed to load: ${a.file}`, err);
         }
       }),
+    );
+  }
+
+  /** Preload the 9 landmark guide PNGs (Phase 2), one per zone. The art ships
+   *  with no alpha, so loadAvatarTexture knocks the baked-in background out to
+   *  transparency — the same pass the avatars use. A failed load just leaves
+   *  that zone without a texture; the overlay then shows a soft placeholder. */
+  private async loadGuides(): Promise<void> {
+    await Promise.all(
+      (Object.keys(GUIDES) as ZoneKey[]).map(async (zone) => {
+        const url = guideFileUrl(GUIDES[zone].file);
+        try {
+          const tex = await loadAvatarTexture(url);
+          if (!this.destroyed) this.guideTextures.set(zone, tex);
+        } catch (err) {
+          console.warn(`[island-scene] guide art failed to load: ${GUIDES[zone].file}`, err);
+        }
+      }),
+    );
+  }
+
+  /** Show the landmark guide for `zone`: the guide pops in over the world map
+   *  with its welcome speech bubble. This is the Phase 2 landmark experience —
+   *  it replaces the immediate Mode 2 entry that a zone tap used to trigger. */
+  private showGuide(zone: ZoneKey): void {
+    console.info(`[island-scene] landmark guide → ${guideForZone(zone).name} (${zone})`);
+    this.guideOverlay.show(
+      guideForZone(zone),
+      this.guideTextures.get(zone),
+      this.app.screen.width,
+      this.app.screen.height,
     );
   }
 
@@ -694,6 +742,7 @@ export class SceneRenderer {
       this.island.coverWater(o.cx, o.cy, o.waterW, o.waterH);
     }
     if (this.currentZone) this.zoneView.resize(this.app.screen.width, this.app.screen.height);
+    this.guideOverlay.resize(this.app.screen.width, this.app.screen.height);
     this.arrivalView?.resize(this.app.screen.width, this.app.screen.height);
     this.avatarSelect?.resize(this.app.screen.width, this.app.screen.height);
   }
@@ -1381,8 +1430,13 @@ export class SceneRenderer {
   }
 
   private requestZoneTap(zone: ZoneInstance): void {
+    // Phase 2: the child walks to the landmark, then its resident guide pops in
+    // with a welcome. The guide overlay REPLACES the old immediate Mode 2 zone
+    // entry, so onZoneTap is intentionally not fired here — closing the guide
+    // returns straight to the island map rather than dropping into a zone view.
+    const arrive = () => this.showGuide(zone.key);
     if (!this.localId) {
-      this.opts.onZoneTap?.(zone.key);
+      arrive();
       return;
     }
     const local = this.avatarViews.get(this.localId);
@@ -1397,9 +1451,9 @@ export class SceneRenderer {
       local ? { x: Math.round(local.pos.x), y: Math.round(local.pos.y) } : undefined,
     );
     if (local && entrance) {
-      this.walkView(local, entrance, () => this.opts.onZoneTap?.(zone.key));
+      this.walkView(local, entrance, arrive);
     } else {
-      this.opts.onZoneTap?.(zone.key);
+      arrive();
     }
   }
 
@@ -1528,19 +1582,34 @@ export class SceneRenderer {
 
   // ── Pointer: tap to act, drag to pan ────────────────────────────
 
-  /** Input is only live on the world map, once arrival + any transition end. */
+  /** Input is only live on the world map, once arrival + any transition end,
+   *  and while no landmark guide is up. */
   private inputLive(): boolean {
-    return this.currentZone === null && !this.trans && this.arrival === "done";
+    return (
+      this.currentZone === null &&
+      !this.trans &&
+      this.arrival === "done" &&
+      !this.guideOverlay.active
+    );
   }
 
   private onWheel = (e: WheelEvent): void => {
-    if (this.currentZone !== null || this.arrival !== "done") return;
+    if (this.currentZone !== null || this.arrival !== "done" || this.guideOverlay.active) return;
     e.preventDefault();
     const rect = this.app.canvas.getBoundingClientRect();
     this.zoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - rect.left, e.clientY - rect.top);
   };
 
   private onPointerDown = (e: FederatedPointerEvent): void => {
+    // Landmark guide (Phase 2): a plain tap dismisses it; distinguish tap from
+    // an accidental drag. Takes priority over all world-map / zone-view input.
+    if (this.guideOverlay.active) {
+      this.pointerDown = true;
+      this.pointerMoved = false;
+      this.downX = e.global.x;
+      this.downY = e.global.y;
+      return;
+    }
     // Mode 2 (zone view): a simple tap-to-walk; no pan/pinch/zoom. Accept taps
     // as soon as the zone view is on screen (don't wait for the fade-in to
     // finish — that just made early taps feel dead).
@@ -1567,6 +1636,13 @@ export class SceneRenderer {
   };
 
   private onPointerMove = (e: FederatedPointerEvent): void => {
+    // Guide overlay: only track whether the press has turned into a drag.
+    if (this.guideOverlay.active) {
+      if (this.pointerDown && Math.hypot(e.global.x - this.downX, e.global.y - this.downY) > DRAG_THRESHOLD) {
+        this.pointerMoved = true;
+      }
+      return;
+    }
     // In a zone, only distinguish tap from drag (so a scroll doesn't walk).
     if (this.currentZone !== null) {
       if (this.pointerDown && Math.hypot(e.global.x - this.downX, e.global.y - this.downY) > DRAG_THRESHOLD) {
@@ -1604,6 +1680,15 @@ export class SceneRenderer {
   };
 
   private onPointerUp = (e: FederatedPointerEvent): void => {
+    // Guide overlay: a clean tap (no drag) slides the guide back out.
+    if (this.guideOverlay.active) {
+      const wasTap = this.pointerDown && !this.pointerMoved;
+      this.pointerDown = false;
+      if (wasTap && this.guideOverlay.handleTap(e.global.x, e.global.y) === "close") {
+        this.guideOverlay.beginExit();
+      }
+      return;
+    }
     if (this.currentZone !== null) {
       const wasZoneTap = this.pointerDown && !this.pointerMoved && !this.trans;
       this.pointerDown = false;
@@ -1696,6 +1781,7 @@ export class SceneRenderer {
 
     this.tickZoneTransition(dt);
     this.tickArrival(dt);
+    if (this.guideOverlay.active) this.guideOverlay.update(dt);
 
     for (const view of this.avatarViews.values()) {
       this.advanceAvatar(view, dt);
