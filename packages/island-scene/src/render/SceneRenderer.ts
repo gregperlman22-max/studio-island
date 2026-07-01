@@ -394,12 +394,10 @@ export class SceneRenderer {
       this.app.stage.addChild(this.arrivalView.container);
       this.app.stage.setChildIndex(this.fade, this.app.stage.children.length - 1); // keep fade on top
       this.arrivalView.enter(
-        this.localCfg(),
         this.arrivalBgTex,
         this.boatTex,
         this.app.screen.width,
         this.app.screen.height,
-        this.localAvatarTexture(),
       );
     } else {
       // No cinematic: place the avatar straight onto the dock.
@@ -434,12 +432,6 @@ export class SceneRenderer {
   private localImageUrl(): string | null {
     const cfg = this.localCfg();
     return cfg?.imageUrl ?? this.selectedImageUrl;
-  }
-
-  /** Preloaded texture for the local avatar's chosen image, if any. */
-  private localAvatarTexture(): Texture | undefined {
-    const url = this.localImageUrl();
-    return url ? this.avatarTextures.get(url) : undefined;
   }
 
   /** Show the full-screen avatar selection overlay; hide the local avatar until

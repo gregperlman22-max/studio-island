@@ -72,14 +72,15 @@ export const LANDMARK_ART: Record<
 };
 
 /**
- * Arrival sailboat sprite (cleaned boat.png). Base-pinned at the hull waterline
- * so it berths against the dock.
+ * Arrival boat sprite (covered pelican boat — canopy hides the passenger, a
+ * pelican captain steers). Background cut to transparency + trimmed to content.
+ * Base-pinned at the hull waterline so it berths against the dock.
  */
 export const BOAT_ART = {
-  url: landmarkUrl("boat"),
+  url: landmarkUrl("boat-covered"),
   scale: 0.23,
-  anchorX: 0.4892,
-  anchorY: 0.9027,
+  anchorX: 0.5267,
+  anchorY: 0.9062,
 };
 
 /** Full-screen painted stage for the side-view arrival cinematic. */
