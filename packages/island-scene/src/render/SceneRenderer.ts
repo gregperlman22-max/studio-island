@@ -207,7 +207,10 @@ export class SceneRenderer {
   /** Static (rebuilt) entities — zones + decorations. Avatars persist. */
   private staticEntities: Container[] = [];
   private avatarViews = new Map<string, AvatarView>();
-  private zoneScenes = new Map<ZoneKey, { setHover: (h: boolean) => void }>();
+  private zoneScenes = new Map<
+    ZoneKey,
+    { setHover: (h: boolean) => void; container: Container }
+  >();
   private hoveredZone: ZoneKey | null = null;
   private localId: string | null = null;
   private grid: WalkGrid = { walkable: () => false };
@@ -816,9 +819,43 @@ export class SceneRenderer {
         }
       }
     }
-    this.grid = {
-      walkable: (x, y) => land.has(`${x},${y}`) && !blocked.has(`${x},${y}`),
-    };
+    const base = (x: number, y: number): boolean =>
+      land.has(`${x},${y}`) && !blocked.has(`${x},${y}`);
+
+    // The painted coastline is sampled per tile, which leaves a scatter of
+    // isolated single-cell "land" specks sitting out on the water's edge — cells
+    // the main island can't actually reach. They must never be walkable: the
+    // avatar could otherwise be routed onto a tile that reads as ocean, and a
+    // zone whose nearest-walkable entrance lands on such a speck would strand the
+    // approach (the guide/entry never fires). Flood the reachable region from the
+    // spawn using the SAME 8-dir + anti-corner-cut connectivity the pathfinder
+    // uses, then keep only those cells — so "walkable" means "the avatar can
+    // truly stand there", trimming the frayed water-edge tiles near the coast.
+    const spawn = this.layout.spawnPoint;
+    const seed = base(spawn.x, spawn.y)
+      ? spawn
+      : nearestWalkable({ walkable: base }, spawn) ?? spawn;
+    const reachable = new Set<string>();
+    if (base(seed.x, seed.y)) {
+      const stack: GridPosition[] = [seed];
+      reachable.add(`${seed.x},${seed.y}`);
+      while (stack.length) {
+        const c = stack.pop()!;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nx = c.x + dx, ny = c.y + dy, k = `${nx},${ny}`;
+          if (base(nx, ny) && !reachable.has(k)) { reachable.add(k); stack.push({ x: nx, y: ny }); }
+        }
+        for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
+          const nx = c.x + dx, ny = c.y + dy, k = `${nx},${ny}`;
+          // Diagonals need both shared orthogonal cells open, mirroring findPath's
+          // anti-corner-cut rule so reachability matches how walks actually route.
+          if (base(nx, ny) && base(c.x + dx, c.y) && base(c.x, c.y + dy) && !reachable.has(k)) {
+            reachable.add(k); stack.push({ x: nx, y: ny });
+          }
+        }
+      }
+    }
+    this.grid = { walkable: (x, y) => reachable.has(`${x},${y}`) };
   }
 
   private drawBackdrop(): void {
@@ -1148,7 +1185,7 @@ export class SceneRenderer {
       scene.container.zIndex = center.y + 0.05;
       this.entities.addChild(scene.container);
       this.staticEntities.push(scene.container);
-      this.zoneScenes.set(z.key, { setHover: scene.setHover });
+      this.zoneScenes.set(z.key, { setHover: scene.setHover, container: scene.container });
 
       // Parent-level ambient overlays. These live in `entities` — NOT inside the
       // zone container — so they y-sort independently and render ABOVE the
@@ -1398,7 +1435,10 @@ export class SceneRenderer {
     };
   }
 
-  private walkView(view: AvatarView, goal: GridPosition, onArrive?: () => void): void {
+  /** Start `view` walking to `goal`, firing `onArrive` on arrival. Returns false
+   *  when no route exists (nothing is started), so callers can react — e.g. a
+   *  zone tap still shows its guide even if the landmark can't be walked to. */
+  private walkView(view: AvatarView, goal: GridPosition, onArrive?: () => void): boolean {
     const start = { x: Math.round(view.pos.x), y: Math.round(view.pos.y) };
     let path = findPath(this.grid, start, goal);
     // If the avatar is standing on a non-walkable cell (e.g. just landed ON the
@@ -1407,11 +1447,12 @@ export class SceneRenderer {
       const off = nearestWalkable(this.grid, start, 6);
       if (off) path = findPath(this.grid, off, goal);
     }
-    if (!path || path.length === 0) return;
+    if (!path || path.length === 0) return false;
     view.path = path;
     view.pathIndex = 0;
     view.moving = true;
     view.onArrive = onArrive;
+    return true;
   }
 
   /** Position an avatar container at its current cell with a soft bob, plus an
@@ -1450,9 +1491,10 @@ export class SceneRenderer {
       12,
       local ? { x: Math.round(local.pos.x), y: Math.round(local.pos.y) } : undefined,
     );
-    if (local && entrance) {
-      this.walkView(local, entrance, arrive);
-    } else {
+    // Walk to the landmark, then greet. If the landmark can't be walked to
+    // (no entrance resolved, or no route to it), still greet immediately — a
+    // zone tap must always bring up its guide, never silently do nothing.
+    if (!local || !entrance || !this.walkView(local, entrance, arrive)) {
       arrive();
     }
   }
@@ -1469,6 +1511,29 @@ export class SceneRenderer {
       }
     }
     return null;
+  }
+
+  /**
+   * Frontmost landmark whose on-screen art contains the screen point (gx, gy),
+   * or null. A tall landmark's sprite rises far above its base footprint, so a
+   * tile hit-test alone only registers taps on the few cells under its base —
+   * a child tapping the visible tree/cabin would miss. This screen-space bounds
+   * test lets those taps land on the zone; ties resolve to the frontmost sprite
+   * (largest depth key) so the nearest landmark wins where art overlaps.
+   */
+  private landmarkAt(gx: number, gy: number): ZoneInstance | null {
+    let best: ZoneInstance | null = null;
+    let bestDepth = -Infinity;
+    for (const z of this.zones) {
+      const entry = this.zoneScenes.get(z.key);
+      if (!entry) continue;
+      const b = entry.container.getBounds();
+      if (gx >= b.minX && gx <= b.maxX && gy >= b.minY && gy <= b.maxY && entry.container.zIndex > bestDepth) {
+        bestDepth = entry.container.zIndex;
+        best = z;
+      }
+    }
+    return best;
   }
 
   // ── Camera ──────────────────────────────────────────────────────
@@ -1750,7 +1815,11 @@ export class SceneRenderer {
       return;
     }
 
-    const zone = this.zoneAt(tile.x, tile.y);
+    // Match the tapped tile to a zone footprint, or — for a landmark whose art
+    // towers above its base (the treehouse fills far more screen than its 5x5
+    // footprint) — the visible sprite the child actually aimed at, so tapping
+    // the tree/cabin enters the zone instead of quietly walking under it.
+    const zone = this.zoneAt(tile.x, tile.y) ?? this.landmarkAt(e.global.x, e.global.y);
     if (zone) {
       this.followEnabled = true;
       this.requestZoneTap(zone);
