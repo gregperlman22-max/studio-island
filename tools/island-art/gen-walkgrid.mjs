@@ -32,8 +32,12 @@ const { data } = await sharp('../../packages/island-scene/src/assets/sprites/san
 const alpha = (sx, sy) => { const x = Math.round(sx), y = Math.round(sy); if (x < 0 || y < 0 || x >= STW || y >= STH) return 0; return data[(y * STW + x) * 4 + 3]; };
 const cellAlpha = (gx, gy) => { const w = tc(gx, gy); return alpha((w.x - CX) / scale + STW / 2, (w.y - CY) / scale + STH / 2); };
 
-const AT = Number(process.env.AT ?? 150);     // sand alpha above this = solid land
-const ERODE = Number(process.env.ERODE ?? 1); // cells to pull the edge inland
+// Defaults reproduce the shipped grid: keep a cell when its CENTRE sits on
+// clearly-opaque sand (alpha > 200), with NO inland erosion — this keeps the
+// avatar's feet off the ocean/anti-aliased waterline while preserving the full
+// coastal perimeter (incl. the treehouse shore).
+const AT = Number(process.env.AT ?? 200);     // sand alpha above this = solid land
+const ERODE = Number(process.env.ERODE ?? 0); // cells to pull the edge inland
 
 // on-sand cells (center opaque), clamped to the layout grid
 let onSand = new Set();
