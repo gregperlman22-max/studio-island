@@ -1620,19 +1620,46 @@ export class SceneRenderer {
     return tileCenter(pos.x, pos.y);
   }
 
+  /**
+   * Northern limit for camera panning, in world Y. worldBounds.minY is derived
+   * from the LAND extent (+40px), which stops the up-pan well before a tall
+   * landmark SPRITE — e.g. the treehouse towers ~631px over its footprint, so
+   * its top (and floating label) sit far above the land bound and get clipped.
+   * This extends the pan ceiling to the highest rendered landmark top so any
+   * tall sprite is fully revealable. It is consumed ONLY here — worldBounds
+   * itself is untouched, so sand-sprite centering (islandLayout cy), initial
+   * framing and hit-testing keep their exact land-based values (no visual move).
+   */
+  private panNorthBound(): number {
+    const LABEL_HEADROOM = 40; // breathing room above the sprite top + its label
+    let top = this.worldBounds.minY;
+    for (const z of this.zones) {
+      const cfg = LANDMARK_ART[z.key];
+      if (!cfg) continue;
+      const center = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
+      // Sprite painted top (mirrors the zone-label placement) minus headroom.
+      const spriteTop = center.y - cfg.contentH * cfg.scale - LABEL_HEADROOM;
+      if (spriteTop < top) top = spriteTop;
+    }
+    return top;
+  }
+
   private clampCamera(): void {
     const sw = this.app.screen.width;
     const sh = this.app.screen.height;
     const s = this.camScale;
     const M = 90; // sea border allowed around the island
-    const { minX, maxX, minY, maxY } = this.worldBounds;
+    // worldBounds.minY is intentionally NOT used for the north pan ceiling — it
+    // drives sand centering / framing / hit-testing and must stay land-based.
+    const { minX, maxX, maxY } = this.worldBounds;
+    const panMinY = this.panNorthBound(); // uses the tallest landmark sprite top
 
     const loX = sw - M - maxX * s;
     const hiX = M - minX * s;
     this.camX = loX > hiX ? (loX + hiX) / 2 : Math.min(hiX, Math.max(loX, this.camX));
 
     const loY = sh - M - maxY * s;
-    const hiY = M - minY * s;
+    const hiY = M - panMinY * s;
     this.camY = loY > hiY ? (loY + hiY) / 2 : Math.min(hiY, Math.max(loY, this.camY));
   }
 
