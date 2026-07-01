@@ -185,6 +185,9 @@ export class SceneRenderer {
   // that cinematic up into the world map; "done" = normal.
   private arrival: "select" | "cinematic" | "fade" | "done" = "cinematic";
   private arrivalView?: ArrivalView;
+  /** One-shot guard: Captain Pete's welcome auto-opens exactly once, the first
+   *  time the scene is on the island map and fully ready (see maybeAutoGreet). */
+  private greeted = false;
   /** Avatar selection overlay (Phase 1) — shown before the arrival cinematic. */
   private avatarSelect?: AvatarSelect;
   /** Preloaded avatar PNGs, keyed by their served URL. */
@@ -1886,6 +1889,7 @@ export class SceneRenderer {
 
     this.tickZoneTransition(dt);
     this.tickArrival(dt);
+    this.maybeAutoGreet();
     if (this.guideOverlay.active) this.guideOverlay.update(dt);
 
     for (const view of this.avatarViews.values()) {
@@ -1952,6 +1956,23 @@ export class SceneRenderer {
         this.arrival = "done";
       }
     }
+  }
+
+  /**
+   * Auto-open Captain Pete's welcome the first time the scene is fully ready on
+   * the island map — the SAME guide card a manual Welcome Dock tap shows. One
+   * call site covers EVERY entry uniformly and can't double-fire:
+   *   • boat cinematic → fires the moment tickArrival reaches "done";
+   *   • reduced motion (avatar dropped on the dock) → fires on the first tick;
+   *   • start-in-a-zone → fires when the child first reaches the island map
+   *     (on leaving the zone), so the dock welcome never pops over a zone view.
+   * `arrival === "done"` guarantees the avatar is placed and controls are live;
+   * the child dismisses via the overlay's own X / Back-to-Island (no timer).
+   */
+  private maybeAutoGreet(): void {
+    if (this.greeted || this.arrival !== "done" || this.currentZone !== null) return;
+    this.greeted = true;
+    this.showGuide("welcome_dock");
   }
 
   private advanceAvatar(view: AvatarView, dt: number): void {
