@@ -801,14 +801,23 @@ export class SceneRenderer {
     }
   }
 
-  /** Walkable = land, minus decoration cells and zone footprints (obstacles). */
+  /** Walkable = the sand the art actually renders, minus decoration cells and
+   *  zone footprints. */
   private buildGrid(): void {
-    const land = new Set(this.layout.landCells.map((c) => `${c.x},${c.y}`));
+    // Walk base is `walkableCells` — the eroded silhouette of the rendered sand
+    // (sand-base-v2), NOT `landCells` (sampled from the legacy, unrendered
+    // home-island.png). That mismatch is what let the avatar stand on ocean, so
+    // walkability must track the visible sand. Fall back to landCells only if a
+    // layout omits the walkable set.
+    const land = new Set(
+      (this.layout.walkableCells ?? this.layout.landCells).map((c) => `${c.x},${c.y}`),
+    );
     const blocked = new Set<string>();
-    // Painted tree/rock masses: impassable, so the avatar walks around them.
-    for (const o of this.layout.obstacleCells ?? []) {
-      blocked.add(`${o.x},${o.y}`);
-    }
+    // NOTE: obstacleCells (legacy home-island tree/rock masses) are deliberately
+    // NOT blocked here. Overlaid on the sand silhouette they wall the spawn off
+    // from the northern zones, and the only way the old grid routed around them
+    // was across ocean cells — the very walk-on-water bug. The visible trees are
+    // LayeredIsland scatter props, unrelated to these cells.
     for (const d of this.layout.decorations ?? []) {
       blocked.add(`${d.position.x},${d.position.y}`);
     }

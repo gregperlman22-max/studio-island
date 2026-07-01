@@ -114,8 +114,18 @@ export interface ZoneInstance {
 export interface LayoutConfig {
   /** Coarse grid size of the entire walkable island. */
   grid: { w: number; h: number };
-  /** Island silhouette as a list of grid cells that are land (vs water). */
+  /** Island silhouette as a list of grid cells that are land (vs water). Drives
+   *  world-bounds / ground registration and the coast shimmer. */
   landCells: GridPosition[];
+  /**
+   * Cells the avatar may actually stand on. Derived from the alpha silhouette of
+   * the ground art that ACTUALLY renders (sand-base-v2), eroded a cell inland so
+   * no walkable tile sits at the waterline. When present this — not `landCells` —
+   * is the walk base, so walkability tracks the visible sand rather than the
+   * (legacy, unrendered) painted island `landCells` was sampled from. Pathfinding
+   * still flood-fills reachability from spawn over this set.
+   */
+  walkableCells?: GridPosition[];
   /**
    * Land cells the avatar cannot stand on or walk through — e.g. tree masses
    * and boulders painted into the terrain illustration. Treated like water by

@@ -21,8 +21,10 @@ const expandRows = (body) => {
   for (const [y, ranges] of arr) for (const [x0, x1] of ranges) for (let x = x0; x <= x1; x++) cells.push({ x, y });
   return cells;
 };
-const landCells = expandRows(grab('LAND_ROWS'));
-const obstacleCells = expandRows(grab('OBSTACLE_ROWS'));
+// Walk base mirrors buildGrid: WALK_ROWS (rendered-sand silhouette) when present,
+// else the legacy LAND_ROWS. Obstacle blocking is dropped in buildGrid, so none here.
+const landCells = expandRows(/WALK_ROWS/.test(src) ? grab('WALK_ROWS') : grab('LAND_ROWS'));
+const obstacleCells = [];
 const spawn = (() => { const m = src.match(/spawnPoint: GridPosition = \{ x: (\d+), y: (\d+) \}/); return { x: +m[1], y: +m[2] }; })();
 
 // zones
@@ -62,9 +64,11 @@ if (base(seed.x, seed.y)) {
 }
 const walkCells = [...reachable].map(k => { const [x, y] = k.split(',').map(Number); return { x, y }; });
 
-// ── worldBounds (mirror computeWorldBounds) ──
+// ── worldBounds (mirror computeWorldBounds) — runtime uses layout.landCells
+//    (the original LAND_ROWS), NOT the walk set, so read it directly. ──
+const boundsCells = expandRows(grab('LAND_ROWS'));
 let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-for (const c of landCells) {
+for (const c of boundsCells) {
   const { x, y } = tileToScreen(c.x, c.y);
   minX = Math.min(minX, x - TILE_W / 2); maxX = Math.max(maxX, x + TILE_W / 2);
   minY = Math.min(minY, y - 40);        maxY = Math.max(maxY, y + TILE_H + CLIFF);
