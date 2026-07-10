@@ -411,8 +411,13 @@ export class GuideOverlay {
     this.closeHit = { x: cx - 26, y: cyy - 26, w: 52, h: 52 };
 
     // Bottom pills: "← Back to Island" and — the Mode-2 practice-space door —
-    // "Go Inside →", side by side.
-    const pillAt = (text: string, bx: number): { x: number; y: number; w: number; h: number } => {
+    // "Go Inside →". Side by side on roomy screens; on narrow phones (< 400px)
+    // they'd crowd/overlap, so stack them (Go Inside on top) centred instead.
+    const pillAt = (
+      text: string,
+      bx: number,
+      by: number,
+    ): { x: number; y: number; w: number; h: number } => {
       const label = new Text({
         text,
         style: {
@@ -425,7 +430,6 @@ export class GuideOverlay {
       label.anchor.set(0.5);
       const pw = label.width + 40;
       const ph = 44;
-      const by = this.h - 34;
       const pill = new Graphics();
       pill
         .roundRect(bx - pw / 2, by - ph / 2, pw, ph, 999)
@@ -435,8 +439,14 @@ export class GuideOverlay {
       this.ui.addChild(pill, label);
       return { x: bx - pw / 2, y: by - ph / 2, w: pw, h: ph };
     };
-    this.backHit = pillAt("← Back to Island", this.w * 0.5 - 105);
-    this.enterHit = pillAt("Go Inside →", this.w * 0.5 + 105);
+    if (this.w < 400) {
+      const cx = this.w * 0.5;
+      this.enterHit = pillAt("Go Inside →", cx, this.h - 84);
+      this.backHit = pillAt("← Back to Island", cx, this.h - 32);
+    } else {
+      this.backHit = pillAt("← Back to Island", this.w * 0.5 - 105, this.h - 34);
+      this.enterHit = pillAt("Go Inside →", this.w * 0.5 + 105, this.h - 34);
+    }
   }
 
   // ── Per-frame ─────────────────────────────────────────────────────
