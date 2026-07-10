@@ -41,7 +41,9 @@ import { buildCampfireFx, buildArtHutFx, buildFishFx } from "./landmarkFx";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
 import { GuideOverlay } from "./GuideOverlay";
-import { getDialogueLine, getGreeting } from "../content/loader";
+import { getDialogueLine, getGreeting, getPractices } from "../content/loader";
+import type { MiniPractice } from "../content/types";
+import { PracticePlayer } from "./PracticePlayer";
 import { GUIDES, guideFileUrl, guideForZone } from "./guideCatalog";
 import { ArrivalView } from "./ArrivalView";
 import { LayeredIsland, type IslandLayoutOpts, type LandmarkMark } from "./LayeredIsland";
@@ -154,6 +156,10 @@ export class SceneRenderer {
   private zoneView!: ZoneView;
   /** Phase 2 — landmark guide overlay (screen space, top layer). */
   private guideOverlay!: GuideOverlay;
+  /** Mode-2 practice experience (screen space, above the zone view). */
+  private practicePlayer!: PracticePlayer;
+  /** The active zone's mini-practice + resolved intro text (null if none). */
+  private currentPractice: { practice: MiniPractice; introText: string } | null = null;
   /** Preloaded, background-knocked-out guide art, keyed by zone. */
   private guideTextures = new Map<ZoneKey, Texture>();
   /** Lazy guide-art preload (kicked off in init, never awaited there). */
@@ -291,6 +297,7 @@ export class SceneRenderer {
 
     this.zoneView = new ZoneView({ reducedMotion: this.opts.reducedMotion });
     this.guideOverlay = new GuideOverlay({ reducedMotion: this.opts.reducedMotion });
+    this.practicePlayer = new PracticePlayer({ reducedMotion: this.opts.reducedMotion });
 
     this.app.canvas.style.display = "block";
     // Mount invisible: Pixi's auto-started ticker can paint a frame at the
@@ -305,9 +312,12 @@ export class SceneRenderer {
     // The guide overlay is a NEW top layer over the world map + labels; it sits
     // just under `fade` so the existing island containers keep their relative
     // order and `fade` stays topmost (arrival/select re-assert that below).
+    // The practice player sits just above the zone view (its Mode-2 backdrop)
+    // and below the guide overlay + fade, so a guide card / arrival fade always
+    // wins if both somehow coexist.
     this.app.stage.addChild(
-      this.backdrop, this.zoneView.container, this.world, this.zoneLabels,
-      this.guideOverlay.container, this.fade,
+      this.backdrop, this.zoneView.container, this.practicePlayer.container,
+      this.world, this.zoneLabels, this.guideOverlay.container, this.fade,
     );
     // Sliding the guide back out returns to the world map (already behind it);
     // re-enable follow so the camera settles gently on the avatar.
@@ -671,9 +681,12 @@ export class SceneRenderer {
         zone, this.theme.palette, this.localCfg(),
         this.app.screen.width, this.app.screen.height,
       );
+      this.prepareZonePractice(zone);
     } else {
       // The world map reappears on top and fades in over the zone view as it
       // un-tilts; re-enable follow so it settles on the avatar by the zone.
+      this.practicePlayer.hide();
+      this.currentPractice = null;
       this.followEnabled = true;
     }
     this.world.visible = true;
@@ -713,9 +726,15 @@ export class SceneRenderer {
       );
       this.world.visible = false;
       this.backdrop.visible = false;
+      // Reduced-motion / start-in-zone path (no tilt transition): resolve the
+      // practice and open it immediately as the interior experience.
+      this.prepareZonePractice(zone);
+      this.startPractice();
       debugLog(`[island-scene] applyMode → Mode 2 (zone view: ${zone})`);
     } else {
       this.zoneView.hide();
+      this.practicePlayer.hide();
+      this.currentPractice = null;
       this.world.visible = true;
       this.backdrop.visible = true;
       debugLog("[island-scene] applyMode → Mode 1 (world map)");
@@ -728,6 +747,37 @@ export class SceneRenderer {
       ? this.avatars.find((x) => x.id === this.localId)
       : this.avatars[0];
     return a?.config ?? null;
+  }
+
+  /**
+   * Resolve the entered zone's mini-practice (if any) from the content
+   * pipeline and tell the zone view whether one exists. A zone WITH a practice
+   * launches the PracticePlayer as its interior experience (see startPractice);
+   * a zone WITHOUT one keeps the existing explore-to-beacon "You found it!".
+   */
+  private prepareZonePractice(zone: ZoneKey): void {
+    const practice = getPractices(zone)[0] ?? null;
+    if (practice) {
+      const intro = getDialogueLine(practice.introLine);
+      this.currentPractice = { practice, introText: intro?.text ?? "" };
+    } else {
+      this.currentPractice = null;
+    }
+    this.zoneView.setHasPractice(!!practice);
+  }
+
+  /** Open the current zone's practice (idempotent — ignored if already up or
+   *  no practice for this zone). Auto-called on entry and re-triggerable by
+   *  reaching the zone's activity beacon. */
+  private startPractice(): void {
+    if (!this.currentPractice || this.practicePlayer.active) return;
+    this.practicePlayer.start(
+      this.currentPractice.practice,
+      this.currentPractice.introText,
+      this.app.screen.width,
+      this.app.screen.height,
+    );
+    debugLog(`[island-scene] practice → ${this.currentPractice.practice.id}`);
   }
 
   /** Advance the camera-tilt transition + cross-fade (M3 / M5). */
@@ -766,10 +816,15 @@ export class SceneRenderer {
       this.currentZone = tr.zone;
       this.world.visible = false;
       this.backdrop.visible = false;
+      // Tilt is done — open the zone's practice (prepared in beginTransition)
+      // as its interior experience. No-op for zones without a practice.
+      this.startPractice();
       debugLog(`[island-scene] transition done → Mode 2 (${tr.zone})`);
     } else {
       this.currentZone = null;
       this.zoneView.hide();
+      this.practicePlayer.hide();
+      this.currentPractice = null;
       this.world.visible = true;
       this.backdrop.visible = true;
       this.followEnabled = true;
@@ -799,6 +854,7 @@ export class SceneRenderer {
     }
     if (this.currentZone) this.zoneView.resize(this.app.screen.width, this.app.screen.height);
     this.guideOverlay.resize(this.app.screen.width, this.app.screen.height);
+    this.practicePlayer.resize(this.app.screen.width, this.app.screen.height);
     this.arrivalView?.resize(this.app.screen.width, this.app.screen.height);
     this.avatarSelect?.resize(this.app.screen.width, this.app.screen.height);
   }
@@ -1686,6 +1742,15 @@ export class SceneRenderer {
       this.arrivalView?.skip();
       return;
     }
+    // Practice player (Mode 2): a plain tap advances a step / closes it. Takes
+    // priority over the zone view's tap-to-walk beneath it.
+    if (this.practicePlayer.active) {
+      this.pointerDown = true;
+      this.pointerMoved = false;
+      this.downX = e.global.x;
+      this.downY = e.global.y;
+      return;
+    }
     // Landmark guide (Phase 2): a plain tap dismisses it; distinguish tap from
     // an accidental drag. Takes priority over all world-map / zone-view input.
     if (this.guideOverlay.active) {
@@ -1721,8 +1786,9 @@ export class SceneRenderer {
   };
 
   private onPointerMove = (e: FederatedPointerEvent): void => {
-    // Guide overlay: only track whether the press has turned into a drag.
-    if (this.guideOverlay.active) {
+    // Practice player / guide overlay: only track whether the press turned into
+    // a drag, so a stray scroll doesn't count as an advance/close tap.
+    if (this.practicePlayer.active || this.guideOverlay.active) {
       if (this.pointerDown && Math.hypot(e.global.x - this.downX, e.global.y - this.downY) > DRAG_THRESHOLD) {
         this.pointerMoved = true;
       }
@@ -1771,6 +1837,17 @@ export class SceneRenderer {
     // drag would read as a two-pointer pinch.
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinchDist = 0;
+    // Practice player: a clean tap advances a step or (on the ✕ / after the
+    // completion card) closes back to the zone interior. Takes priority over
+    // the zone view's tap-to-walk beneath it.
+    if (this.practicePlayer.active) {
+      const wasTap = this.pointerDown && !this.pointerMoved;
+      this.pointerDown = false;
+      if (wasTap && this.practicePlayer.handleTap(e.global.x, e.global.y) === "close") {
+        this.practicePlayer.hide();
+      }
+      return;
+    }
     // Guide overlay: a clean tap either advances the dialogue (handled inside
     // the overlay), slides the guide back out, or — via the "Go Inside" pill —
     // enters the zone's Mode-2 practice space through the host (onZoneTap →
@@ -1802,6 +1879,9 @@ export class SceneRenderer {
         } else if (kind === "activity" && this.currentZone) {
           debugLog(`[island-scene] onActivityEnter(${this.currentZone})`);
           this.opts.onActivityEnter?.(this.currentZone);
+          // Practice zones: reaching the beacon replays the practice (the
+          // "You found it!" flourish is suppressed for them in ZoneView).
+          this.startPractice();
         }
       }
       return;
@@ -1887,6 +1967,7 @@ export class SceneRenderer {
     this.tickArrival(dt);
     this.maybeAutoGreet();
     if (this.guideOverlay.active) this.guideOverlay.update(dt);
+    if (this.practicePlayer.active) this.practicePlayer.update(dt);
 
     for (const view of this.avatarViews.values()) {
       this.advanceAvatar(view, dt);

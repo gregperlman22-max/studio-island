@@ -10,6 +10,7 @@ export {
   type AvatarOption,
 } from "./render/avatarCatalog";
 export * from "./content/types";
+export { practiceCards, type PracticeCard } from "./content/practice";
 export {
   contentReport,
   contentVersion,

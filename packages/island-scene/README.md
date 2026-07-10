@@ -62,7 +62,13 @@ Zone keys, landmark coordinates (`defaultLayout.ts`) and the guide roster are
    parallax view per zone (`ZoneView`/`zoneEnv`). The guide card's
    **"Go Inside →"** pill fires `onZoneTap`; the host responds by setting
    `currentZone`, which plays the tilt transition into the interior
-   (Q1=A decision, July 2026). Mini-practices launch here in a later session.
+   (Q1=A decision, July 2026).
+6. **Mini-practice** — a zone that has a practice
+   (`content/zones/<zone>/practices.json`) opens it automatically on entry:
+   the `PracticePlayer` shows the guide's intro line, then each step one at a
+   time (tap to advance), then a gentle "All done!" moment. No Stars are
+   awarded yet (economy wiring is a later session). Zones without a practice
+   keep the explore-to-beacon "You found it!" discovery.
 
 ## Content pipeline
 

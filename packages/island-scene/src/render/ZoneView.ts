@@ -53,6 +53,10 @@ export class ZoneView {
   private palette!: ThemePalette;
   private cfg: AvatarConfig | null = null;
   private avatar: AvatarSprite | null = null;
+  /** When the zone has a mini-practice, the renderer's PracticePlayer is the
+   *  activity — so reaching the beacon skips the "You found it!" flourish and
+   *  the renderer launches the practice instead. */
+  private hasPractice = false;
 
   private w = 0;
   private h = 0;
@@ -99,6 +103,12 @@ export class ZoneView {
 
   get active(): boolean {
     return this.container.visible;
+  }
+
+  /** Tell the view whether this zone's beacon launches a practice (renderer
+   *  owns the PracticePlayer) vs. the built-in "You found it!" discovery. */
+  setHasPractice(has: boolean): void {
+    this.hasPractice = has;
   }
 
   /** Rebuild layers for the current zone at a new size (resize / re-enter). */
@@ -201,7 +211,9 @@ export class ZoneView {
     const tappedBeacon = Math.hypot(sx - beaconScreenX, sy - this.env.beacon.y) < 100;
     if (tappedBeacon) {
       if (this.inBeaconReach()) {
-        this.showFound();
+        // A practice zone launches its PracticePlayer (renderer-owned) instead
+        // of the placeholder "You found it!" discovery flourish.
+        if (!this.hasPractice) this.showFound();
         return "activity";
       }
       this.walkTo(this.env.beacon.x); // not there yet — walk over to it
