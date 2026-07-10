@@ -44,6 +44,7 @@ import { GuideOverlay } from "./GuideOverlay";
 import { GUIDES, guideFileUrl, guideForZone } from "./guideCatalog";
 import { ArrivalView } from "./ArrivalView";
 import { LayeredIsland, type IslandLayoutOpts, type LandmarkMark } from "./LayeredIsland";
+import { debugLog } from "./debug";
 
 // Individual illustrated world-map sprites (transparent cutouts; water solid).
 const spriteUrl = (name: string): string =>
@@ -515,7 +516,7 @@ export class SceneRenderer {
     this.pointers.clear();
     this.pinchDist = 0;
     this.pointerDown = false;
-    console.info(`[island-scene] landmark guide → ${guideForZone(zone).name} (${zone})`);
+    debugLog(`[island-scene] landmark guide → ${guideForZone(zone).name} (${zone})`);
     this.guideOverlay.show(
       guideForZone(zone),
       this.guideTextures.get(zone),
@@ -689,7 +690,7 @@ export class SceneRenderer {
       anchor1X: sw / 2, anchor1Y: sh * 0.52,
       scale0: this.camScale, scale1: this.camScale * 2.2,
     };
-    console.info(`[island-scene] beginTransition ${dir} → ${zone}`);
+    debugLog(`[island-scene] beginTransition ${dir} → ${zone}`);
   }
 
   private applyMode(zone: ZoneKey | null): void {
@@ -706,12 +707,12 @@ export class SceneRenderer {
       );
       this.world.visible = false;
       this.backdrop.visible = false;
-      console.info(`[island-scene] applyMode → Mode 2 (zone view: ${zone})`);
+      debugLog(`[island-scene] applyMode → Mode 2 (zone view: ${zone})`);
     } else {
       this.zoneView.hide();
       this.world.visible = true;
       this.backdrop.visible = true;
-      console.info("[island-scene] applyMode → Mode 1 (world map)");
+      debugLog("[island-scene] applyMode → Mode 1 (world map)");
     }
   }
 
@@ -759,7 +760,7 @@ export class SceneRenderer {
       this.currentZone = tr.zone;
       this.world.visible = false;
       this.backdrop.visible = false;
-      console.info(`[island-scene] transition done → Mode 2 (${tr.zone})`);
+      debugLog(`[island-scene] transition done → Mode 2 (${tr.zone})`);
     } else {
       this.currentZone = null;
       this.zoneView.hide();
@@ -767,7 +768,7 @@ export class SceneRenderer {
       this.backdrop.visible = true;
       this.followEnabled = true;
       this.applyCamera();
-      console.info("[island-scene] transition done → Mode 1 (world map)");
+      debugLog("[island-scene] transition done → Mode 1 (world map)");
     }
     this.trans = null;
   }
@@ -1839,10 +1840,10 @@ export class SceneRenderer {
       if (wasZoneTap) {
         const kind = this.zoneView.handleTap(e.global.x, e.global.y);
         if (kind === "exit") {
-          console.info("[island-scene] in-scene exit tapped → onZoneExit");
+          debugLog("[island-scene] in-scene exit tapped → onZoneExit");
           this.opts.onZoneExit?.();
         } else if (kind === "activity" && this.currentZone) {
-          console.info(`[island-scene] onActivityEnter(${this.currentZone})`);
+          debugLog(`[island-scene] onActivityEnter(${this.currentZone})`);
           this.opts.onActivityEnter?.(this.currentZone);
         }
       }
@@ -1920,7 +1921,7 @@ export class SceneRenderer {
       this.loggedIdle = true;
       // One-time diagnostic so the idle-animation wiring is verifiable in the
       // console (ticker is running if you see this; counts should be > 0).
-      console.info(
+      debugLog(
         `[island-scene] idle anim ready — trees: ${this.swayers.length}, zone animators: ${this.zoneAnimators.length}, reducedMotion: ${this.opts.reducedMotion}`,
       );
     }

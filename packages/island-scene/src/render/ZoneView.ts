@@ -2,6 +2,7 @@ import { Container, Graphics, Text } from "pixi.js";
 import type { AvatarConfig, ZoneKey, ThemePalette } from "../types";
 import { buildAvatarSprite, type AvatarSprite } from "./avatar";
 import { buildZoneEnv, PARALLAX, type EnvLayers, type ZoneEnv } from "./zoneEnv";
+import { debugLog } from "./debug";
 
 /**
  * Mode 2 — third-person zone view. A ground-level, behind-the-character take on
@@ -131,7 +132,7 @@ export class ZoneView {
     // Diagnostic: confirm the layers were actually populated. If any child
     // count is 0 (other than sky, which is a single Graphics), the env builder
     // didn't draw — surface that loudly rather than failing silently.
-    console.info(
+    debugLog(
       `[island-scene] ZoneView.build zone=${this.zone} size=${w}x${h} ` +
         `worldWidth=${this.env.worldWidth.toFixed(0)} spawnX=${this.env.spawnX.toFixed(0)} ` +
         `beaconX=${this.env.beacon.x.toFixed(0)} | layer children → ` +
@@ -271,7 +272,7 @@ export class ZoneView {
     this.overlayUI.visible = true;
     this.overlayAge = 0;
     this.overlayActive = true;
-    console.info(`[island-scene] discovery → "You found it!" (${this.zone})`);
+    debugLog(`[island-scene] discovery → "You found it!" (${this.zone})`);
   }
 
   /** A quick expanding ring at the tap point so taps are visibly registering. */
