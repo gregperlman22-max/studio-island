@@ -52,6 +52,9 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Test (locked layout, registry, walkability, smoke)
+        run: bun run test
+
       - name: Build demo
         run: bun run build:demo
 

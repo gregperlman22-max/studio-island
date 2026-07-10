@@ -44,6 +44,7 @@ import { GuideOverlay } from "./GuideOverlay";
 import { GUIDES, guideFileUrl, guideForZone } from "./guideCatalog";
 import { ArrivalView } from "./ArrivalView";
 import { LayeredIsland, type IslandLayoutOpts, type LandmarkMark } from "./LayeredIsland";
+import { buildWalkGrid } from "./walkgrid";
 import { debugLog } from "./debug";
 
 // Individual illustrated world-map sprites (transparent cutouts; water solid).
@@ -849,69 +850,9 @@ export class SceneRenderer {
   }
 
   /** Walkable = the sand the art actually renders, minus decoration cells and
-   *  zone footprints. */
+   *  zone footprints. Pure logic lives in walkgrid.ts (unit-tested). */
   private buildGrid(): void {
-    // Walk base is `walkableCells` — the eroded silhouette of the rendered sand
-    // (sand-base-v2), NOT `landCells` (sampled from the legacy, unrendered
-    // home-island.png). That mismatch is what let the avatar stand on ocean, so
-    // walkability must track the visible sand. Fall back to landCells only if a
-    // layout omits the walkable set.
-    const land = new Set(
-      (this.layout.walkableCells ?? this.layout.landCells).map((c) => `${c.x},${c.y}`),
-    );
-    const blocked = new Set<string>();
-    // NOTE: obstacleCells (legacy home-island tree/rock masses) are deliberately
-    // NOT blocked here. Overlaid on the sand silhouette they wall the spawn off
-    // from the northern zones, and the only way the old grid routed around them
-    // was across ocean cells — the very walk-on-water bug. The visible trees are
-    // LayeredIsland scatter props, unrelated to these cells.
-    for (const d of this.layout.decorations ?? []) {
-      blocked.add(`${d.position.x},${d.position.y}`);
-    }
-    for (const z of this.zones) {
-      for (let dx = 0; dx < z.footprint.w; dx++) {
-        for (let dy = 0; dy < z.footprint.h; dy++) {
-          blocked.add(`${z.gridPosition.x + dx},${z.gridPosition.y + dy}`);
-        }
-      }
-    }
-    const base = (x: number, y: number): boolean =>
-      land.has(`${x},${y}`) && !blocked.has(`${x},${y}`);
-
-    // The painted coastline is sampled per tile, which leaves a scatter of
-    // isolated single-cell "land" specks sitting out on the water's edge — cells
-    // the main island can't actually reach. They must never be walkable: the
-    // avatar could otherwise be routed onto a tile that reads as ocean, and a
-    // zone whose nearest-walkable entrance lands on such a speck would strand the
-    // approach (the guide/entry never fires). Flood the reachable region from the
-    // spawn using the SAME 8-dir + anti-corner-cut connectivity the pathfinder
-    // uses, then keep only those cells — so "walkable" means "the avatar can
-    // truly stand there", trimming the frayed water-edge tiles near the coast.
-    const spawn = this.layout.spawnPoint;
-    const seed = base(spawn.x, spawn.y)
-      ? spawn
-      : nearestWalkable({ walkable: base }, spawn) ?? spawn;
-    const reachable = new Set<string>();
-    if (base(seed.x, seed.y)) {
-      const stack: GridPosition[] = [seed];
-      reachable.add(`${seed.x},${seed.y}`);
-      while (stack.length) {
-        const c = stack.pop()!;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-          const nx = c.x + dx, ny = c.y + dy, k = `${nx},${ny}`;
-          if (base(nx, ny) && !reachable.has(k)) { reachable.add(k); stack.push({ x: nx, y: ny }); }
-        }
-        for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
-          const nx = c.x + dx, ny = c.y + dy, k = `${nx},${ny}`;
-          // Diagonals need both shared orthogonal cells open, mirroring findPath's
-          // anti-corner-cut rule so reachability matches how walks actually route.
-          if (base(nx, ny) && base(c.x + dx, c.y) && base(c.x, c.y + dy) && !reachable.has(k)) {
-            reachable.add(k); stack.push({ x: nx, y: ny });
-          }
-        }
-      }
-    }
-    this.grid = { walkable: (x, y) => reachable.has(`${x},${y}`) };
+    this.grid = buildWalkGrid(this.layout, this.zones);
   }
 
   private drawBackdrop(): void {
