@@ -503,6 +503,12 @@ export class SceneRenderer {
   }
 
   private presentGuide(zone: ZoneKey): void {
+    // A press can still be in flight when a walk-arrival greet fires; drop all
+    // pointer state so it can't turn into a phantom close-tap or a stale
+    // pinch entry once the overlay takes over input.
+    this.pointers.clear();
+    this.pinchDist = 0;
+    this.pointerDown = false;
     console.info(`[island-scene] landmark guide → ${guideForZone(zone).name} (${zone})`);
     this.guideOverlay.show(
       guideForZone(zone),
@@ -1529,22 +1535,35 @@ export class SceneRenderer {
   }
 
   /**
-   * Frontmost landmark whose on-screen art contains the screen point (gx, gy),
-   * or null. A tall landmark's sprite rises far above its base footprint, so a
+   * Frontmost landmark whose OPAQUE art contains the world point (wx, wy), or
+   * null. A tall landmark's sprite rises far above its base footprint, so a
    * tile hit-test alone only registers taps on the few cells under its base —
-   * a child tapping the visible tree/cabin would miss. This screen-space bounds
-   * test lets those taps land on the zone; ties resolve to the frontmost sprite
-   * (largest depth key) so the nearest landmark wins where art overlaps.
+   * a child tapping the visible tree/cabin would miss. The test uses each
+   * texture's measured opaque contentBox (LANDMARK_ART) rather than its full
+   * bounds, so the transparent padding around a sprite can never swallow a
+   * walk tap on open ground beside it. Ties resolve to the frontmost sprite
+   * (largest base world-Y) so the nearest landmark wins where art overlaps.
+   * Zones whose illustrated texture failed to load fall back to the tile
+   * footprint test in zoneAt (their code-drawn stand-ins are footprint-sized).
    */
-  private landmarkAt(gx: number, gy: number): ZoneInstance | null {
+  private landmarkAt(wx: number, wy: number): ZoneInstance | null {
     let best: ZoneInstance | null = null;
     let bestDepth = -Infinity;
     for (const z of this.zones) {
-      const entry = this.zoneScenes.get(z.key);
-      if (!entry) continue;
-      const b = entry.container.getBounds();
-      if (gx >= b.minX && gx <= b.maxX && gy >= b.minY && gy <= b.maxY && entry.container.zIndex > bestDepth) {
-        bestDepth = entry.container.zIndex;
+      const cfg = LANDMARK_ART[z.key];
+      const tex = this.landmarkTextures.get(z.key);
+      if (!cfg || !tex) continue;
+      const c = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
+      // Anchor point in art px; the opaque box is placed relative to it.
+      const ax = cfg.anchorX * tex.width;
+      const ay = cfg.anchorY * tex.height;
+      const [x0, y0, x1, y1] = cfg.contentBox;
+      const minX = c.x + (x0 - ax) * cfg.scale;
+      const maxX = c.x + (x1 - ax) * cfg.scale;
+      const minY = c.y + (y0 - ay) * cfg.scale;
+      const maxY = c.y + (y1 - ay) * cfg.scale;
+      if (wx >= minX && wx <= maxX && wy >= minY && wy <= maxY && c.y > bestDepth) {
+        bestDepth = c.y;
         best = z;
       }
     }
@@ -1787,6 +1806,12 @@ export class SceneRenderer {
   };
 
   private onPointerUp = (e: FederatedPointerEvent): void => {
+    // Always retire the pointer, whichever branch handles the tap. A press
+    // that starts on the world map but ends while an overlay is up would
+    // otherwise leave a stale entry in `pointers`, and the next single-finger
+    // drag would read as a two-pointer pinch.
+    this.pointers.delete(e.pointerId);
+    if (this.pointers.size < 2) this.pinchDist = 0;
     // Guide overlay: a clean tap (no drag) slides the guide back out.
     if (this.guideOverlay.active) {
       const wasTap = this.pointerDown && !this.pointerMoved;
@@ -1811,8 +1836,6 @@ export class SceneRenderer {
       }
       return;
     }
-    this.pointers.delete(e.pointerId);
-    if (this.pointers.size < 2) this.pinchDist = 0;
     const wasTap = this.pointerDown && !this.pointerMoved && this.pointers.size === 0;
     this.pointerDown = false;
     if (wasTap) this.tapAt(e);
@@ -1861,7 +1884,7 @@ export class SceneRenderer {
     // towers above its base (the treehouse fills far more screen than its 5x5
     // footprint) — the visible sprite the child actually aimed at, so tapping
     // the tree/cabin enters the zone instead of quietly walking under it.
-    const zone = this.zoneAt(tile.x, tile.y) ?? this.landmarkAt(e.global.x, e.global.y);
+    const zone = this.zoneAt(tile.x, tile.y) ?? this.landmarkAt(p.x, p.y);
     if (zone) {
       this.followEnabled = true;
       this.requestZoneTap(zone);

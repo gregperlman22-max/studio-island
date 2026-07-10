@@ -36,6 +36,9 @@ const landmarkUrl = (name: string): string =>
  *   anchorY  — vertical pin: the opaque body's BASE / ground contact (0..1 of height)
  *   contentH — opaque body height in art px; the floating label is placed this
  *              far (× scale) above the base, so it tracks any scale change
+ *   contentBox — opaque-pixel bounding box [x0, y0, x1, y1] in art px
+ *              (alpha ≥ 16). Tap hit-testing uses THIS, not the texture
+ *              bounds, so transparent padding never swallows a walk tap.
  * Anchors/contentH were derived from each cleaned PNG's opaque bounding box
  * (tools/island-art/landmarks-anchors.mjs) so every sprite sits BY ITS BASE on
  * the clearing — tall objects rise upward, low objects sit flat. Relative
@@ -44,31 +47,39 @@ const landmarkUrl = (name: string): string =>
  */
 export const LANDMARK_ART: Record<
   ZoneKey,
-  { url: string; scale: number; anchorX: number; anchorY: number; contentH: number }
+  {
+    url: string;
+    scale: number;
+    anchorX: number;
+    anchorY: number;
+    contentH: number;
+    /** Opaque-pixel bbox [x0, y0, x1, y1] in art px (tools/island-art bbox pass). */
+    contentBox: [number, number, number, number];
+  }
 > = {
   // Scales normalized by door/entrance size so every structure reads at the
   // same child-scale door (~42 world px). Towers are taller; the treehouse is
   // capped (its door is a tiny fraction of the all-tree image).
-  lighthouse_point: { url: landmarkUrl("lighthouse"), scale: 0.37, anchorX: 0.5464, anchorY: 0.8789, contentH: 839 },
+  lighthouse_point: { url: landmarkUrl("lighthouse"), scale: 0.37, anchorX: 0.5464, anchorY: 0.8789, contentH: 839, contentBox: [345, 60, 836, 905] },
   // Treehouse — the island's "epic destination": deliberately the largest
   // landmark so it towers over everything (deep in its own forest cluster).
   // Hero landmark: scaled up large and (in defaultLayout) nudged SOUTH so it
   // sits clearly IN FRONT of its forest cluster — the trees frame it from
   // behind instead of burying the cabin.
-  treehouse_hideaway: { url: landmarkUrl("treehouse"), scale: 0.74, anchorX: 0.501, anchorY: 0.9, contentH: 853 },
-  art_hut: { url: landmarkUrl("art-hut"), scale: 0.29, anchorX: 0.5181, anchorY: 0.7236, contentH: 638 },
-  arcade_cove: { url: landmarkUrl("arcade"), scale: 0.21, anchorX: 0.5103, anchorY: 0.8457, contentH: 734 },
-  campfire_circle: { url: landmarkUrl("campfire"), scale: 0.31, anchorX: 0.499, anchorY: 0.75, contentH: 641 },
-  calm_beach: { url: landmarkUrl("calm-beach"), scale: 0.25, anchorX: 0.4385, anchorY: 0.7598, contentH: 657 },
-  welcome_dock: { url: landmarkUrl("welcome-dock"), scale: 0.25, anchorX: 0.5205, anchorY: 0.7676, contentH: 484 },
+  treehouse_hideaway: { url: landmarkUrl("treehouse"), scale: 0.74, anchorX: 0.501, anchorY: 0.9, contentH: 853, contentBox: [108, 51, 918, 910] },
+  art_hut: { url: landmarkUrl("art-hut"), scale: 0.29, anchorX: 0.5181, anchorY: 0.7236, contentH: 638, contentBox: [175, 102, 886, 742] },
+  arcade_cove: { url: landmarkUrl("arcade"), scale: 0.21, anchorX: 0.5103, anchorY: 0.8457, contentH: 734, contentBox: [131, 132, 914, 868] },
+  campfire_circle: { url: landmarkUrl("campfire"), scale: 0.31, anchorX: 0.499, anchorY: 0.75, contentH: 641, contentBox: [161, 124, 864, 779] },
+  calm_beach: { url: landmarkUrl("calm-beach"), scale: 0.25, anchorX: 0.4385, anchorY: 0.7598, contentH: 657, contentBox: [70, 120, 828, 780] },
+  welcome_dock: { url: landmarkUrl("welcome-dock"), scale: 0.25, anchorX: 0.5205, anchorY: 0.7676, contentH: 484, contentBox: [127, 301, 940, 787] },
   // New zones. store-01 is a tall stall (base-pinned); lagoon-01 is a flat
   // top-down pond, so it is centre-pinned (anchorY 0.5) and uses a reduced
   // contentH just for the floating label height.
-  star_market: { url: landmarkUrl("store-01"), scale: 0.19, anchorX: 0.4995, anchorY: 0.9941, contentH: 1167 },
-  lazy_lagoon: { url: landmarkUrl("lagoon-01"), scale: 0.25, anchorX: 0.4996, anchorY: 0.5, contentH: 440 },
-  // TODO: fishing-dock-01.png placeholder — asset is coming; wire a new zone
-  // once it is finalized (it is already uploaded to the repo root but skipped
-  // for this pass per the layout brief).
+  star_market: { url: landmarkUrl("store-01"), scale: 0.19, anchorX: 0.4995, anchorY: 0.9941, contentH: 1167, contentBox: [7, 7, 1017, 1173] },
+  lazy_lagoon: { url: landmarkUrl("lagoon-01"), scale: 0.25, anchorX: 0.4996, anchorY: 0.5, contentH: 440, contentBox: [7, 7, 1204, 871] },
+  // NOTE: a fishing-dock landmark was once floated as a 10th zone; the raw
+  // asset drop was removed in the Session 2 cleanup. The zone set is locked
+  // at these nine — do not wire new zones without a roadmap decision.
 };
 
 /**
