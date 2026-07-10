@@ -23,9 +23,9 @@ export interface ZoneScene {
 /** Bold cel outline color used across all art. */
 const INK = 0x23201c;
 
-/** Resolve a bundled landmark PNG URL (Vite rewrites these at build time). */
+/** Resolve a bundled landmark image URL (Vite rewrites these at build time). */
 const landmarkUrl = (name: string): string =>
-  new URL(`../assets/landmarks/${name}.png`, import.meta.url).href;
+  new URL(`../assets/landmarks/${name}.webp`, import.meta.url).href;
 
 /**
  * Placement for each zone's illustrated landmark sprite.

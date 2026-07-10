@@ -47,7 +47,7 @@ import { LayeredIsland, type IslandLayoutOpts, type LandmarkMark } from "./Layer
 
 // Individual illustrated world-map sprites (transparent cutouts; water solid).
 const spriteUrl = (name: string): string =>
-  new URL(`../assets/sprites/${name}.png`, import.meta.url).href;
+  new URL(`../assets/sprites/${name}.webp`, import.meta.url).href;
 
 /** Walk speed in grid tiles per second. */
 const WALK_SPEED = 4.5;
@@ -151,8 +151,13 @@ export class SceneRenderer {
   private zoneView!: ZoneView;
   /** Phase 2 — landmark guide overlay (screen space, top layer). */
   private guideOverlay!: GuideOverlay;
-  /** Preloaded, background-knocked-out guide PNGs, keyed by zone. */
+  /** Preloaded, background-knocked-out guide art, keyed by zone. */
   private guideTextures = new Map<ZoneKey, Texture>();
+  /** Lazy guide-art preload (kicked off in init, never awaited there). */
+  private guidesReady: Promise<void> = Promise.resolve();
+  /** First-paint asset progress (see bumpProgress). */
+  private assetsTotal = 0;
+  private assetsLoaded = 0;
   /** Zone name labels — SCREEN space, clamped into the viewport so a tall
    *  landmark can never push its label off-screen or sit in front of it. */
   private zoneLabels = new Container();
@@ -335,15 +340,18 @@ export class SceneRenderer {
     // Scroll wheel zoom (centered on the cursor).
     this.app.canvas.addEventListener("wheel", this.onWheel, { passive: false });
 
-    this.opts.onLoadProgress?.(0.2);
+    this.opts.onLoadProgress?.(0.05);
     this.textures = new ProgrammaticTextureProvider(this.app.renderer);
     this.textures.refresh(theme.palette);
-    this.opts.onLoadProgress?.(0.6);
 
-    await this.loadIsland();
-    await this.loadLandmarks();
-    await this.loadAvatars();
-    await this.loadGuides();
+    // First-paint assets load in parallel with per-item progress (see
+    // bumpProgress): 10 island sprites + 9 landmarks + boat + arrival bg +
+    // 16 avatar-select images. Guide art is NOT awaited — it lazy-loads in
+    // the background and showGuide waits for it only if a guide is requested
+    // before it lands.
+    this.assetsTotal = 10 + 11 + AVATARS.length;
+    this.guidesReady = this.loadGuides();
+    await Promise.all([this.loadIsland(), this.loadLandmarks(), this.loadAvatars()]);
 
     this.rebuild();
     this.drawFadeRect();
@@ -428,7 +436,15 @@ export class SceneRenderer {
 
   // ── Avatar selection (Phase 1) ──────────────────────────────────
 
-  /** Preload the 16 illustrated animal PNGs (selection grid + island sprite).
+  /** One awaited first-paint asset finished (loaded OR failed) — report the
+   *  fraction to the host, mapped into (0.05 .. 0.99] so the bar always moves. */
+  private bumpProgress(): void {
+    this.assetsLoaded++;
+    const frac = this.assetsTotal > 0 ? this.assetsLoaded / this.assetsTotal : 1;
+    this.opts.onLoadProgress?.(Math.min(0.99, 0.05 + frac * 0.94));
+  }
+
+  /** Preload the 16 illustrated animal images (selection grid + island sprite).
    *  A failed load just leaves that entry without a texture — the card shows
    *  its name and the island avatar falls back to the programmatic compositor. */
   private async loadAvatars(): Promise<void> {
@@ -436,21 +452,25 @@ export class SceneRenderer {
       AVATARS.map(async (a) => {
         const url = avatarFileUrl(a.file);
         try {
-          // The PNGs have no alpha; loadAvatarTexture knocks the baked-in
+          // The images have no alpha; loadAvatarTexture knocks the baked-in
           // background out to transparency before handing Pixi a texture.
           const tex = await loadAvatarTexture(url);
           if (!this.destroyed) this.avatarTextures.set(url, tex);
         } catch (err) {
           console.warn(`[island-scene] avatar art failed to load: ${a.file}`, err);
+        } finally {
+          this.bumpProgress();
         }
       }),
     );
   }
 
-  /** Preload the 9 landmark guide PNGs (Phase 2), one per zone. The art ships
+  /** Preload the 9 landmark guide images (Phase 2), one per zone. The art ships
    *  with no alpha, so loadAvatarTexture knocks the baked-in background out to
    *  transparency — the same pass the avatars use. A failed load just leaves
-   *  that zone without a texture; the overlay then shows a soft placeholder. */
+   *  that zone without a texture; the overlay then shows a soft placeholder.
+   *  NOT awaited by init (guides aren't needed for first paint) — showGuide
+   *  waits on the returned promise if a guide is requested early. */
   private async loadGuides(): Promise<void> {
     await Promise.all(
       (Object.keys(GUIDES) as ZoneKey[]).map(async (zone) => {
@@ -467,8 +487,22 @@ export class SceneRenderer {
 
   /** Show the landmark guide for `zone`: the guide pops in over the world map
    *  with its welcome speech bubble. This is the Phase 2 landmark experience —
-   *  it replaces the immediate Mode 2 entry that a zone tap used to trigger. */
+   *  it replaces the immediate Mode 2 entry that a zone tap used to trigger.
+   *  If the lazily-loaded guide art hasn't landed yet, wait for it rather than
+   *  popping a placeholder; the moment stays intact, just a beat later. */
   private showGuide(zone: ZoneKey): void {
+    if (this.guideTextures.has(zone)) {
+      this.presentGuide(zone);
+      return;
+    }
+    void this.guidesReady.then(() => {
+      // Only show if the moment is still valid: same mode, nothing else up.
+      if (this.destroyed || this.currentZone !== null || this.guideOverlay.active) return;
+      this.presentGuide(zone);
+    });
+  }
+
+  private presentGuide(zone: ZoneKey): void {
     console.info(`[island-scene] landmark guide → ${guideForZone(zone).name} (${zone})`);
     this.guideOverlay.show(
       guideForZone(zone),
@@ -970,19 +1004,16 @@ export class SceneRenderer {
    */
   private async loadIsland(): Promise<void> {
     try {
+      const names = [
+        "water-base", "sand-base-v2", "grass-01", "rock-01", "tree-01",
+        "tree-02", "bush-01", "bush-02", "flower-01", "flower-bush-01",
+      ];
       const [water, sand, grass, rock, tree01, tree02, bush01, bush02, flower01, flowerBush01] =
-        (await Promise.all([
-          Assets.load(spriteUrl("water-base")),
-          Assets.load(spriteUrl("sand-base-v2")),
-          Assets.load(spriteUrl("grass-01")),
-          Assets.load(spriteUrl("rock-01")),
-          Assets.load(spriteUrl("tree-01")),
-          Assets.load(spriteUrl("tree-02")),
-          Assets.load(spriteUrl("bush-01")),
-          Assets.load(spriteUrl("bush-02")),
-          Assets.load(spriteUrl("flower-01")),
-          Assets.load(spriteUrl("flower-bush-01")),
-        ])) as Texture[];
+        (await Promise.all(
+          names.map((n) =>
+            Assets.load(spriteUrl(n)).finally(() => this.bumpProgress()),
+          ),
+        )) as Texture[];
       if (this.destroyed) return;
       const island = new LayeredIsland({
         water, sand, grass, rock, tree01, tree02, bush01, bush02, flower01, flowerBush01,
@@ -1006,6 +1037,8 @@ export class SceneRenderer {
           if (!this.destroyed) this.landmarkTextures.set(key, tex);
         } catch (err) {
           console.warn(`[island-scene] landmark art failed to load: ${key}`, err);
+        } finally {
+          this.bumpProgress();
         }
       }),
       (async () => {
@@ -1014,6 +1047,8 @@ export class SceneRenderer {
           if (!this.destroyed) this.boatTex = tex;
         } catch (err) {
           console.warn("[island-scene] boat art failed to load", err);
+        } finally {
+          this.bumpProgress();
         }
       })(),
       (async () => {
@@ -1022,6 +1057,8 @@ export class SceneRenderer {
           if (!this.destroyed) this.arrivalBgTex = tex;
         } catch (err) {
           console.warn("[island-scene] arrival background failed to load", err);
+        } finally {
+          this.bumpProgress();
         }
       })(),
     ]);

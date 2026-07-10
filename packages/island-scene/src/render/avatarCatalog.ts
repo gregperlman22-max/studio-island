@@ -3,8 +3,8 @@
  * on the avatar selection screen (Phase 1: Avatar Creator).
  *
  * The PNGs live in `public/avatars/` and are served as static assets. Filenames
- * keep their capitalised, space-containing names verbatim (e.g. "Polar Bear.png",
- * "Red Panda.png") — `avatarImageUrl` URL-encodes them so the spaces survive the
+ * keep their capitalised, space-containing names verbatim (e.g. "Polar Bear.webp",
+ * "Red Panda.webp") — `avatarImageUrl` URL-encodes them so the spaces survive the
  * round-trip to `Assets.load`.
  *
  * Order below is the on-screen grid order (4 columns × 4 rows).
@@ -20,22 +20,22 @@ export interface AvatarOption {
 }
 
 export const AVATARS: readonly AvatarOption[] = [
-  { key: "bunny", name: "Bunny", file: "Bunny.png" },
-  { key: "cat", name: "Cat", file: "Cat.png" },
-  { key: "dog", name: "Dog", file: "Dog.png" },
-  { key: "deer", name: "Deer", file: "Deer.png" },
-  { key: "hedgehog", name: "Hedgehog", file: "Hedgehog.png" },
-  { key: "otter", name: "Otter", file: "Otter.png" },
-  { key: "squirrel", name: "Squirrel", file: "Squirrel.png" },
-  { key: "panda", name: "Panda", file: "Panda.png" },
-  { key: "koala", name: "Koala", file: "Koala.png" },
-  { key: "penguin", name: "Penguin", file: "Penguin.png" },
-  { key: "red_panda", name: "Red Panda", file: "Red Panda.png" },
-  { key: "duck", name: "Duck", file: "Duck.png" },
-  { key: "elephant", name: "Elephant", file: "Elephant.png" },
-  { key: "flamingo", name: "Flamingo", file: "Flamingo.png" },
-  { key: "polar_bear", name: "Polar Bear", file: "Polar Bear.png" },
-  { key: "chameleon", name: "Chameleon", file: "Chameleon.png" },
+  { key: "bunny", name: "Bunny", file: "Bunny.webp" },
+  { key: "cat", name: "Cat", file: "Cat.webp" },
+  { key: "dog", name: "Dog", file: "Dog.webp" },
+  { key: "deer", name: "Deer", file: "Deer.webp" },
+  { key: "hedgehog", name: "Hedgehog", file: "Hedgehog.webp" },
+  { key: "otter", name: "Otter", file: "Otter.webp" },
+  { key: "squirrel", name: "Squirrel", file: "Squirrel.webp" },
+  { key: "panda", name: "Panda", file: "Panda.webp" },
+  { key: "koala", name: "Koala", file: "Koala.webp" },
+  { key: "penguin", name: "Penguin", file: "Penguin.webp" },
+  { key: "red_panda", name: "Red Panda", file: "Red Panda.webp" },
+  { key: "duck", name: "Duck", file: "Duck.webp" },
+  { key: "elephant", name: "Elephant", file: "Elephant.webp" },
+  { key: "flamingo", name: "Flamingo", file: "Flamingo.webp" },
+  { key: "polar_bear", name: "Polar Bear", file: "Polar Bear.webp" },
+  { key: "chameleon", name: "Chameleon", file: "Chameleon.webp" },
 ] as const;
 
 /** Resolve the served URL for an avatar PNG (honours the Vite base path). */

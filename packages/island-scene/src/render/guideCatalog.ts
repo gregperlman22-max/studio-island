@@ -4,7 +4,7 @@
  * Each landmark zone has a resident guide: a friendly animal character who pops
  * in with a warm, in-character welcome the first time a child taps into that
  * zone. The illustrated guide PNGs live in `public/guides/` with capitalised
- * filenames (Bear.png, Owl.png, …) and, like the avatar art, ship as RGB with a
+ * filenames (Bear.webp, Owl.webp, …) and, like the avatar art, ship as RGB with a
  * baked-in light background — `loadAvatarTexture` knocks that out to transparency.
  *
  * This file is pure data + URL helpers; the on-screen presentation lives in
@@ -35,7 +35,7 @@ export const GUIDES: Record<ZoneKey, GuideEntry> = {
     zone: "campfire_circle",
     animal: "Bear",
     name: "Bruno",
-    file: "Bear.png",
+    file: "Bear.webp",
     message:
       "Hey there, friend! Welcome to Campfire Circle — pull up a log and get cozy!",
   },
@@ -43,7 +43,7 @@ export const GUIDES: Record<ZoneKey, GuideEntry> = {
     zone: "treehouse_hideaway",
     animal: "Owl",
     name: "Olive",
-    file: "Owl.png",
+    file: "Owl.webp",
     message:
       "Whooo's there? Welcome to the Treehouse! Let your imagination soar up here!",
   },
@@ -51,7 +51,7 @@ export const GUIDES: Record<ZoneKey, GuideEntry> = {
     zone: "art_hut",
     animal: "Fox",
     name: "Fern",
-    file: "Fox.png",
+    file: "Fox.webp",
     message:
       "Oh, hello! Welcome to the Art Hut — let's make something amazing together!",
   },
@@ -59,7 +59,7 @@ export const GUIDES: Record<ZoneKey, GuideEntry> = {
     zone: "lighthouse_point",
     animal: "Whale",
     name: "Wally",
-    file: "Whale.png",
+    file: "Whale.webp",
     message:
       "Hey, take a deep breath... Welcome to Lighthouse Point. It's nice to just think here.",
   },
@@ -67,14 +67,14 @@ export const GUIDES: Record<ZoneKey, GuideEntry> = {
     zone: "arcade_cove",
     animal: "Monkey",
     name: "Mango",
-    file: "Monkey.png",
+    file: "Monkey.webp",
     message: "Woohoo! Welcome to Arcade Cove! Ready to play some games?!",
   },
   star_market: {
     zone: "star_market",
     animal: "Raccoon",
     name: "Rascal",
-    file: "Raccoon.png",
+    file: "Raccoon.webp",
     message:
       "Ooh, a visitor! Welcome to Star Market — check out all the shiny stuff!",
   },
@@ -82,21 +82,21 @@ export const GUIDES: Record<ZoneKey, GuideEntry> = {
     zone: "calm_beach",
     animal: "Turtle",
     name: "Shelly",
-    file: "Turtle.png",
+    file: "Turtle.webp",
     message: "Heyyy... welcome to Calm Beach. No rush here... just relax.",
   },
   lazy_lagoon: {
     zone: "lazy_lagoon",
     animal: "Frog",
     name: "Finn",
-    file: "Frog.png",
+    file: "Frog.webp",
     message: "Ribbit! Welcome to Lazy Lagoon! Kick back and chill with me!",
   },
   welcome_dock: {
     zone: "welcome_dock",
     animal: "Pelican",
     name: "Captain Pete",
-    file: "Pelican.png",
+    file: "Pelican.webp",
     message:
       "Ahoy! Welcome to the dock! This is where every adventure begins!",
   },
