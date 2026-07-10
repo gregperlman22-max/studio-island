@@ -284,7 +284,7 @@ Fixes:
 - [x] **X3** Pointers retired on every pointerup + cleared when a guide opens. (F4)
 - [x] **X4** Boat cinematic: tap-to-skip + missing-texture skip guard. (F5)
 - [x] **X5** Diagnostics behind `debugLog` (dev builds only). (F11)
-- [ ] **X6** Avatar/zone diffing instead of full `rebuild()`. (F6) — **moved by Greg to Session 5 prerequisite** (must land before the build engine's state flow / Session 6 sync).
+- [x] **X6** Avatar/zone diffing instead of full `rebuild()`. (F6) — **executed July 10, 2026 as the Session 5 prerequisite.** setZones/setAvatars/setTheme now perform targeted updates via per-zone display bundles + a pure `planZoneUpdate` diff (`sceneDiff.ts`); only `setLayout` (a genuinely new world) full-rebuilds. Proven by `sceneDiff.test.ts` + `renderer-diff.test.ts` (mocked-Pixi renderer, `stats` counters: same-content prop change = zero display work).
 
 Test harness:
 
