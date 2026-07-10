@@ -264,11 +264,4 @@ export const sampleLayout: LayoutConfig = {
   pictureFrameAnchor: { x: 27, y: 23 },
   // The illustration is the scenery — no procedural decoration scatter.
   decorations: [],
-  // Illustrated ground sprite, pinned to the grid via the registration math.
-  terrainImage: {
-    url: new URL("./assets/home-island.png", import.meta.url).href,
-    originX: -1056,
-    originY: 112,
-    scale: 1.5,
-  },
 };

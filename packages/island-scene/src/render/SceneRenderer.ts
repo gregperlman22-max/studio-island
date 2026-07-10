@@ -130,9 +130,6 @@ export class SceneRenderer {
   private shimmer = new Graphics();
   /** Camera-panned world (Mode 1 — world map). */
   private world = new Container();
-  /** Finished illustrated ground sprite (replaces the procedural terrain when
-   *  layout.terrainImage is set); pinned into world space via the registration. */
-  private ground?: Sprite;
   /** Layered sprite world map (water/sand/grass/rocks/trees), drawn at the
    *  very bottom of the world beneath landmarks + avatars. */
   private island?: LayeredIsland;
@@ -998,28 +995,6 @@ export class SceneRenderer {
     }
   }
 
-  /** Load the finished terrain illustration and pin it into the world. */
-  private async loadGround(): Promise<void> {
-    const img = this.layout.terrainImage;
-    if (!img) return;
-    let tex: Texture;
-    try {
-      tex = (await Assets.load(img.url)) as Texture;
-    } catch (err) {
-      // Fall back to the procedural terrain if the art fails to load.
-      console.warn("[island-scene] terrainImage failed to load; using code terrain", err);
-      return;
-    }
-    if (this.destroyed) return;
-    const spr = new Sprite(tex);
-    spr.anchor.set(0, 0);
-    spr.eventMode = "none";
-    this.ground = spr;
-    // Sits at the very bottom of the world so props/avatars draw on top.
-    this.world.addChildAt(spr, 0);
-    this.positionGround();
-  }
-
   /** Preload the finished illustrated landmark sprites (one per zone). A
    *  failed load just leaves that zone without a texture, so buildZoneScene
    *  falls back to the code-drawn structure rather than going blank. */
@@ -1052,29 +1027,20 @@ export class SceneRenderer {
     ]);
   }
 
-  /** Pin the ground sprite so art-pixel (0,0) → world (originX, originY). */
-  private positionGround(): void {
-    const img = this.layout.terrainImage;
-    if (!this.ground || !img) return;
-    this.ground.position.set(img.originX, img.originY);
-    this.ground.scale.set(img.scale);
-  }
-
   private drawTerrain(): void {
     const { palette } = this.theme;
     const grid = this.layout.grid;
 
-    // Finished illustration in use: it IS the ground. Skip the procedural
+    // Layered sprite island in use: it IS the ground. Skip the procedural
     // terrain/biome layers entirely — the engine still renders its animated
     // sky/sea backdrop. We DO keep a coast loop (derived from the same grid the
     // art was registered to) purely so drawWaves can lap a soft water shimmer
     // just off the painted shore.
-    if (this.layout.terrainImage && (this.ground || this.island)) {
+    if (this.island) {
       this.terrain.clear();
       this.biomeLayer.clear();
       this.landMask.clear();
       this.coastLoop = islandOutline(this.layout.landCells);
-      this.positionGround();
       return;
     }
 
@@ -1168,7 +1134,7 @@ export class SceneRenderer {
     // Painted island: a single, very soft shimmer just OUTSIDE the painted
     // shore (in the water), gently breathing. Subtle so it never competes with
     // the illustration's own warm foam ring.
-    if (this.layout.terrainImage) {
+    if (this.island) {
       const off = insetLoop(loop, -0.03); // ~3% outward, into the sea
       const a = 0.08 + 0.05 * (0.5 + 0.5 * Math.sin(this.elapsed / 1300));
       this.waves.poly(flatten(off)).stroke({ width: 3, color: hexNum(palette.waterShimmer), alpha: a });
