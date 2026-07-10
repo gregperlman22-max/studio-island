@@ -75,6 +75,26 @@ Zone keys, landmark coordinates (`defaultLayout.ts`) and the guide roster are
    replay, a persisted global 🔊 mute toggle, and a **silent** text-only
    fallback when a file is missing. Audio is never synthesized at runtime.
 
+## Free-build island (Session 5)
+
+A second, smaller island — open buildable meadow + beach, fixed arrival dock
+— reached from the dinghy beside Welcome Dock (sail cinematic there and
+back). `FreeBuildScene` hosts it: a bottom palette drawer with the four
+sandtray categories (`content/build-items.json`, 31 items), drag a chip onto
+the island to place, tap a placed item to rotate (↻) or remove (✕),
+item-on-surface stacking only (lantern on table — no towers), and three
+named save slots in local storage. Fully offline; One Law in full.
+
+**The architecture rule that makes Session 6 cheap:** the engine
+(`src/build-engine/`) is STATE-IN/EVENTS-OUT. The Pixi view consumes a
+`BuildState` and diffs it (`planPlacementUpdate`, the sceneDiff pattern)
+into per-placement display bundles — placing one item never rebuilds the
+scene (test-enforced via `stats`). Taps emit `BuildEvent`s; the host applies
+them with the pure reducer (`applyBuildEvent`) and passes the state back.
+The view never knows whether a state change came from a local tap or a
+remote channel. Items render as placeholder colored blocks until the
+illustrated sprites in [`ASSET-SPEC.md`](./ASSET-SPEC.md) are produced.
+
 ## Content pipeline
 
 All dialogue, mini-practices and star values live in
