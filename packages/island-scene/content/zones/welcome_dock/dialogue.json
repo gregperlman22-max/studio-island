@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "lines": [
+    {
+      "id": "welcome_dock.captain_pete.greet.001",
+      "speaker": "captain_pete",
+      "text": "Ahoy! Welcome to the dock! This is where every adventure begins!",
+      "next": null,
+      "choices": null,
+      "audio": null
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "practices": [
+    {
+      "id": "calm_beach.practice.wave-breathing",
+      "title": "Wave Breathing",
+      "guide": "shelly",
+      "steps": [
+        "PLACEHOLDER: Watch the waves roll in and out.",
+        "PLACEHOLDER: Breathe in slowly as a wave comes in.",
+        "PLACEHOLDER: Breathe out gently as the wave slides back."
+      ],
+      "stars": 0,
+      "introLine": "calm_beach.shelly.practice-intro.001"
+    }
+  ]
+}

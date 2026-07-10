@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "lines": [
+    {
+      "id": "campfire_circle.bruno.greet.001",
+      "speaker": "bruno",
+      "text": "Hey there, friend! Welcome to Campfire Circle — pull up a log and get cozy!",
+      "next": null,
+      "choices": null,
+      "audio": null
+    }
+  ]
+}

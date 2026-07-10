@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "lines": [
+    {
+      "id": "lighthouse_point.wally.greet.001",
+      "speaker": "wally",
+      "text": "Hey, take a deep breath... Welcome to Lighthouse Point. It's nice to just think here.",
+      "next": null,
+      "choices": null,
+      "audio": null
+    }
+  ]
+}

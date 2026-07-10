@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "lines": [
+    {
+      "id": "arcade_cove.mango.greet.001",
+      "speaker": "mango",
+      "text": "Woohoo! Welcome to Arcade Cove! Ready to play some games?!",
+      "next": null,
+      "choices": null,
+      "audio": null
+    }
+  ]
+}

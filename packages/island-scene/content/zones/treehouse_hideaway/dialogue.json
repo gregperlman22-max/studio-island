@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "lines": [
+    {
+      "id": "treehouse_hideaway.olive.greet.001",
+      "speaker": "olive",
+      "text": "Whooo's there? Welcome to the Treehouse! Let your imagination soar up here!",
+      "next": null,
+      "choices": null,
+      "audio": null
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "lines": [
+    {
+      "id": "star_market.rascal.greet.001",
+      "speaker": "rascal",
+      "text": "Ooh, a visitor! Welcome to Star Market — check out all the shiny stuff!",
+      "next": null,
+      "choices": null,
+      "audio": null
+    }
+  ]
+}

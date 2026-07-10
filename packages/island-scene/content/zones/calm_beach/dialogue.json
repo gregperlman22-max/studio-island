@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "lines": [
+    {
+      "id": "calm_beach.shelly.greet.001",
+      "speaker": "shelly",
+      "text": "Heyyy... welcome to Calm Beach. No rush here... just relax.",
+      "next": null,
+      "choices": null,
+      "audio": null
+    },
+    {
+      "id": "calm_beach.shelly.practice-intro.001",
+      "speaker": "shelly",
+      "text": "PLACEHOLDER: Shelly invites the child to try Wave Breathing together.",
+      "next": null,
+      "choices": null,
+      "audio": null
+    }
+  ]
+}

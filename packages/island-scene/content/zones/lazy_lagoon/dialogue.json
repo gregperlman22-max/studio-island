@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "lines": [
+    {
+      "id": "lazy_lagoon.finn.greet.001",
+      "speaker": "finn",
+      "text": "Ribbit! Welcome to Lazy Lagoon! Kick back and chill with me!",
+      "next": null,
+      "choices": null,
+      "audio": null
+    }
+  ]
+}

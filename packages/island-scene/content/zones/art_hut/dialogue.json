@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "lines": [
+    {
+      "id": "art_hut.fern.greet.001",
+      "speaker": "fern",
+      "text": "Oh, hello! Welcome to the Art Hut — let's make something amazing together!",
+      "next": null,
+      "choices": null,
+      "audio": null
+    }
+  ]
+}

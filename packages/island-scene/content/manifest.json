@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "files": [
+    "economy/stars.json",
+    "zones/arcade_cove/dialogue.json",
+    "zones/art_hut/dialogue.json",
+    "zones/calm_beach/dialogue.json",
+    "zones/calm_beach/practices.json",
+    "zones/campfire_circle/dialogue.json",
+    "zones/lazy_lagoon/dialogue.json",
+    "zones/lighthouse_point/dialogue.json",
+    "zones/star_market/dialogue.json",
+    "zones/treehouse_hideaway/dialogue.json",
+    "zones/welcome_dock/dialogue.json"
+  ]
+}
