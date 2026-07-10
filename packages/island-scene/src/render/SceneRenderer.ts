@@ -39,6 +39,7 @@ import { islandOutline, flatten, insetLoop, clusterOutline, type Pt } from "./co
 import { buildZoneScene, LANDMARK_ART, BOAT_ART, ARRIVAL_BG_URL } from "./zones";
 import { buildCampfireFx, buildArtHutFx, buildFishFx } from "./landmarkFx";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
+import { planZoneUpdate } from "./sceneDiff";
 import { ZoneView } from "./ZoneView";
 import { GuideOverlay } from "./GuideOverlay";
 import { getDialogueLine, getGreeting, getPractices } from "../content/loader";
@@ -224,20 +225,40 @@ export class SceneRenderer {
   private zones: ZoneInstance[] = [];
   private avatars: AvatarInstance[] = [];
 
-  /** Static (rebuilt) entities — zones + decorations. Avatars persist. */
-  private staticEntities: Container[] = [];
-  private avatarViews = new Map<string, AvatarView>();
-  private zoneScenes = new Map<
+  /**
+   * Per-zone display bundle: the landmark scene container, its parent-level
+   * ambient fx containers, and their idle animators — everything that must be
+   * torn down together when THAT zone (and only that zone) changes. This is
+   * what makes prop diffing (X6/F6) possible: setZones rebuilds individual
+   * bundles instead of the whole static scene. Avatars persist separately.
+   */
+  private zoneBundles = new Map<
     ZoneKey,
-    { setHover: (h: boolean) => void; container: Container }
+    {
+      containers: Container[];
+      animators: ((t: number) => void)[];
+      setHover: (h: boolean) => void;
+    }
   >();
+  /** Decoration sprites + shadows (layout-owned; rebuilt with the layout). */
+  private decorationEntities: Container[] = [];
+  private avatarViews = new Map<string, AvatarView>();
   private hoveredZone: ZoneKey | null = null;
   private localId: string | null = null;
   private grid: WalkGrid = { walkable: () => false };
   /** Trees that gently sway. */
   private swayers: { sprite: Sprite; phase: number }[] = [];
-  /** Per-zone idle animators (lighthouse beam, lantern flicker, etc.). */
-  private zoneAnimators: ((t: number) => void)[] = [];
+  /**
+   * Display-work counters (test/diagnostic instrumentation for X6/F6). The
+   * no-full-rebuild contract is asserted against these: a same-content prop
+   * change must leave every counter untouched.
+   */
+  readonly stats = {
+    fullRebuilds: 0,
+    zoneBundlesBuilt: 0,
+    gridBuilds: 0,
+    scatterLayouts: 0,
+  };
   /** Finished illustrated landmark sprites, preloaded by zone key. */
   private landmarkTextures = new Map<ZoneKey, Texture>();
 
@@ -617,33 +638,62 @@ export class SceneRenderer {
 
   // ── Prop updates ────────────────────────────────────────────────
 
+  /** Theme change: repaint what the palette actually touches — backdrop,
+   *  procedural terrain, generated textures, zone scenes (fallback painters),
+   *  decorations — WITHOUT re-deriving the grid, re-scattering the island, or
+   *  touching the camera. (X6/F6 targeted path.) */
   setTheme(theme: ThemePackConfig): void {
     if (!this.inited || this.destroyed) return;
     this.theme = theme;
     this.app.renderer.background.color = hexNum(theme.palette.water);
     this.textures.refresh(theme.palette);
-    this.rebuild();
+    this.drawBackdrop();
+    this.drawTerrain();
+    this.destroyAllZoneBundles();
+    this.buildZones();
+    this.buildDecorations();
     if (this.currentZone && this.zoneView.active) {
       this.zoneView.restyle(theme.palette, this.localCfg());
     }
   }
 
+  /** Zones change: diff by value and do only the work the change requires —
+   *  a same-content array (memo bust) is a strict no-op; a cosmetic change
+   *  rebuilds one zone's bundle; a geometry change additionally re-derives
+   *  the grid / scatter / fireflies. (X6/F6 targeted path.) */
   setZones(zones: ZoneInstance[]): void {
     if (!this.inited || this.destroyed) return;
+    const plan = planZoneUpdate(this.zones, zones);
     this.zones = zones;
-    this.rebuild();
+    if (plan.isNoop) return;
+    for (const key of plan.removeScenes) this.destroyZoneBundle(key);
+    for (const key of plan.rebuildScenes) {
+      this.destroyZoneBundle(key);
+      const z = zones.find((zz) => zz.key === key);
+      if (z) this.buildZoneBundle(z);
+    }
+    if (plan.rebuildLabels) this.buildZoneLabels();
+    if (plan.updateGrid) this.buildGrid();
+    if (plan.updateScatter) this.layoutIsland();
+    if (plan.updateFireflies) this.buildFireflies();
   }
 
+  /** Layout is the world itself (terrain, grid, bounds, decorations) — a new
+   *  layout is a genuine full rebuild. Same-reference calls are a no-op. */
   setLayout(layout: LayoutConfig): void {
     if (!this.inited || this.destroyed) return;
+    if (layout === this.layout) return;
     this.layout = layout;
     this.rebuild();
   }
 
+  /** Avatars change: reconcileAvatars already diffs per-avatar (art rebuilds
+   *  only on a config-hash change; a position change walks the existing view)
+   *  — no static display object is touched. (X6/F6 targeted path.) */
   setAvatars(avatars: AvatarInstance[]): void {
     if (!this.inited || this.destroyed) return;
     this.avatars = avatars;
-    this.rebuild();
+    this.reconcileAvatars();
     if (this.currentZone && this.zoneView.active) {
       this.zoneView.restyle(this.theme.palette, this.localCfg());
     }
@@ -895,19 +945,20 @@ export class SceneRenderer {
 
   // ── Build ───────────────────────────────────────────────────────
 
+  /** Full scene (re)build — init and layout changes only. Prop changes go
+   *  through the targeted setters above (X6/F6). */
   private rebuild(): void {
+    this.stats.fullRebuilds++;
     this.drawBackdrop();
     this.drawTerrain();
     this.buildGrid();
     this.computeWorldBounds();
     // Pin the layered sprite island to the painted-ground registration so the
     // (unchanged) landmarks sit on the sand.
-    this.island?.layout(this.islandLayout());
+    this.layoutIsland();
     // Tear down only the static props; avatar views persist across theme/zone
     // changes so in-progress walks aren't interrupted.
-    for (const e of this.staticEntities) e.destroy({ children: true });
-    this.staticEntities = [];
-    this.zoneScenes.clear();
+    this.destroyAllZoneBundles();
     this.buildZones();
     this.buildDecorations();
     // layout.pictureFrameAnchor is an invisible reserved coordinate only —
@@ -917,6 +968,14 @@ export class SceneRenderer {
     // The campfire's animated light is now a warm ambient glow built into its
     // landmark fx layer (landmarkFx.ts) — no separate code-drawn flame icon.
     this.setupCamera();
+  }
+
+  /** Re-pin the layered island + re-stamp its prop scatter (heavy — ~150
+   *  sprites); called only when geometry that feeds the scatter changed. */
+  private layoutIsland(): void {
+    if (!this.island) return;
+    this.stats.scatterLayouts++;
+    this.island.layout(this.islandLayout());
   }
 
   /** Soft fireflies drifting by the forest treehouse — calm, magical. */
@@ -947,6 +1006,7 @@ export class SceneRenderer {
   /** Walkable = the sand the art actually renders, minus decoration cells and
    *  zone footprints. Pure logic lives in walkgrid.ts (unit-tested). */
   private buildGrid(): void {
+    this.stats.gridBuilds++;
     this.grid = buildWalkGrid(this.layout, this.zones);
   }
 
@@ -1236,56 +1296,77 @@ export class SceneRenderer {
   }
 
   private buildZones(): void {
-    this.zoneAnimators = [];
-    for (const z of this.zones) {
-      const scene = buildZoneScene(z, this.theme, this.landmarkTextures.get(z.key));
-      if (scene.animate) this.zoneAnimators.push(scene.animate);
-      const center = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
-      scene.container.position.set(center.x, center.y);
-      // Y-SORT: landmarks share one depth key (their base world-Y) with all the
-      // nature props, so a tree in front (lower on screen) occludes the building
-      // and a tree behind does not. The +0.05 keeps a landmark just ahead of a
-      // prop on the exact same row.
-      scene.container.zIndex = center.y + 0.05;
-      this.entities.addChild(scene.container);
-      this.staticEntities.push(scene.container);
-      this.zoneScenes.set(z.key, { setHover: scene.setHover, container: scene.container });
-
-      // Parent-level ambient overlays. These live in `entities` — NOT inside the
-      // zone container — so they y-sort independently and render ABOVE the
-      // landmark sprite (which sorts at center.y + 0.05) instead of behind it.
-
-      // Campfire warm glow: just above the sprite so it sits ON the stone ring.
-      if (z.key === "campfire_circle") {
-        const fire = buildCampfireFx(center.x, center.y);
-        fire.container.zIndex = center.y + 1.5;
-        this.entities.addChild(fire.container);
-        this.staticEntities.push(fire.container);
-        this.zoneAnimators.push(fire.animate);
-      }
-
-      // Art Hut chimney smoke: in front of the building, not behind it.
-      if (z.key === "art_hut") {
-        const smoke = buildArtHutFx(center.x, center.y);
-        smoke.container.zIndex = center.y + 1.5;
-        this.entities.addChild(smoke.container);
-        this.staticEntities.push(smoke.container);
-        this.zoneAnimators.push(smoke.animate);
-      }
-
-      // Lazy Lagoon fish jump: pinned to a hardcoded very-high zIndex so the arc
-      // (with its splash and entry ripple) always renders in front of everything
-      // on the island — flowers, grass, and the lagoon sprite — never clipped or
-      // occluded by a same-row prop.
-      if (z.key === "lazy_lagoon") {
-        const fish = buildFishFx(center.x, center.y);
-        fish.container.zIndex = 99999;
-        this.entities.addChild(fish.container);
-        this.staticEntities.push(fish.container);
-        this.zoneAnimators.push(fish.animate);
-      }
-    }
+    for (const z of this.zones) this.buildZoneBundle(z);
     this.buildZoneLabels();
+  }
+
+  /** Build ONE zone's display bundle: the landmark scene plus its parent-level
+   *  ambient fx, tracked together so a change to that zone tears down exactly
+   *  these objects and nothing else (X6/F6). */
+  private buildZoneBundle(z: ZoneInstance): void {
+    this.stats.zoneBundlesBuilt++;
+    const containers: Container[] = [];
+    const animators: ((t: number) => void)[] = [];
+
+    const scene = buildZoneScene(z, this.theme, this.landmarkTextures.get(z.key));
+    if (scene.animate) animators.push(scene.animate);
+    const center = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
+    scene.container.position.set(center.x, center.y);
+    // Y-SORT: landmarks share one depth key (their base world-Y) with all the
+    // nature props, so a tree in front (lower on screen) occludes the building
+    // and a tree behind does not. The +0.05 keeps a landmark just ahead of a
+    // prop on the exact same row.
+    scene.container.zIndex = center.y + 0.05;
+    this.entities.addChild(scene.container);
+    containers.push(scene.container);
+
+    // Parent-level ambient overlays. These live in `entities` — NOT inside the
+    // zone container — so they y-sort independently and render ABOVE the
+    // landmark sprite (which sorts at center.y + 0.05) instead of behind it.
+
+    // Campfire warm glow: just above the sprite so it sits ON the stone ring.
+    if (z.key === "campfire_circle") {
+      const fire = buildCampfireFx(center.x, center.y);
+      fire.container.zIndex = center.y + 1.5;
+      this.entities.addChild(fire.container);
+      containers.push(fire.container);
+      animators.push(fire.animate);
+    }
+
+    // Art Hut chimney smoke: in front of the building, not behind it.
+    if (z.key === "art_hut") {
+      const smoke = buildArtHutFx(center.x, center.y);
+      smoke.container.zIndex = center.y + 1.5;
+      this.entities.addChild(smoke.container);
+      containers.push(smoke.container);
+      animators.push(smoke.animate);
+    }
+
+    // Lazy Lagoon fish jump: pinned to a hardcoded very-high zIndex so the arc
+    // (with its splash and entry ripple) always renders in front of everything
+    // on the island — flowers, grass, and the lagoon sprite — never clipped or
+    // occluded by a same-row prop.
+    if (z.key === "lazy_lagoon") {
+      const fish = buildFishFx(center.x, center.y);
+      fish.container.zIndex = 99999;
+      this.entities.addChild(fish.container);
+      containers.push(fish.container);
+      animators.push(fish.animate);
+    }
+
+    this.zoneBundles.set(z.key, { containers, animators, setHover: scene.setHover });
+  }
+
+  private destroyZoneBundle(key: ZoneKey): void {
+    const bundle = this.zoneBundles.get(key);
+    if (!bundle) return;
+    for (const c of bundle.containers) c.destroy({ children: true });
+    this.zoneBundles.delete(key);
+    if (this.hoveredZone === key) this.hoveredZone = null;
+  }
+
+  private destroyAllZoneBundles(): void {
+    for (const key of [...this.zoneBundles.keys()]) this.destroyZoneBundle(key);
   }
 
   /** (Re)create the screen-space zone name labels. Positioned every frame by
@@ -1347,7 +1428,11 @@ export class SceneRenderer {
     }
   }
 
+  /** (Re)create decoration sprites. Self-clearing so both the full rebuild and
+   *  the targeted theme path (fresh generated textures) can call it directly. */
   private buildDecorations(): void {
+    for (const e of this.decorationEntities) e.destroy({ children: true });
+    this.decorationEntities = [];
     this.swayers = [];
     const decos = this.layout.decorations ?? [];
     for (const d of decos) {
@@ -1371,7 +1456,7 @@ export class SceneRenderer {
       }
 
       this.entities.addChild(shadow, sprite);
-      this.staticEntities.push(shadow, sprite);
+      this.decorationEntities.push(shadow, sprite);
     }
   }
 
@@ -1947,9 +2032,9 @@ export class SceneRenderer {
     const zone = this.zoneAt(tile.x, tile.y);
     const key = zone?.key ?? null;
     if (key === this.hoveredZone) return;
-    if (this.hoveredZone) this.zoneScenes.get(this.hoveredZone)?.setHover(false);
+    if (this.hoveredZone) this.zoneBundles.get(this.hoveredZone)?.setHover(false);
     this.hoveredZone = key;
-    if (key) this.zoneScenes.get(key)?.setHover(true);
+    if (key) this.zoneBundles.get(key)?.setHover(true);
   }
 
   private tapAt(e: FederatedPointerEvent): void {
@@ -1997,7 +2082,7 @@ export class SceneRenderer {
       // One-time diagnostic so the idle-animation wiring is verifiable in the
       // console (ticker is running if you see this; counts should be > 0).
       debugLog(
-        `[island-scene] idle anim ready — trees: ${this.swayers.length}, zone animators: ${this.zoneAnimators.length}, reducedMotion: ${this.opts.reducedMotion}`,
+        `[island-scene] idle anim ready — trees: ${this.swayers.length}, zone bundles: ${this.zoneBundles.size}, reducedMotion: ${this.opts.reducedMotion}`,
       );
     }
 
@@ -2031,7 +2116,7 @@ export class SceneRenderer {
         this.drawWaves();
         // Trees sway their canopy; zone landmarks have idle details.
         for (const s of this.swayers) s.sprite.rotation = Math.sin(t * 1.0 + s.phase) * 0.088;
-        for (const anim of this.zoneAnimators) anim(t);
+        for (const b of this.zoneBundles.values()) for (const anim of b.animators) anim(t);
       }
       const t = this.elapsed / 1000;
       for (const f of this.fireflyDots) {
