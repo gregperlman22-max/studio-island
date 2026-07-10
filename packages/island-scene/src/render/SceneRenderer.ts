@@ -41,6 +41,7 @@ import { buildCampfireFx, buildArtHutFx, buildFishFx } from "./landmarkFx";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
 import { GuideOverlay } from "./GuideOverlay";
+import { getDialogueLine, getGreeting } from "../content/loader";
 import { GUIDES, guideFileUrl, guideForZone } from "./guideCatalog";
 import { ArrivalView } from "./ArrivalView";
 import { LayeredIsland, type IslandLayoutOpts, type LandmarkMark } from "./LayeredIsland";
@@ -518,11 +519,15 @@ export class SceneRenderer {
     this.pinchDist = 0;
     this.pointerDown = false;
     debugLog(`[island-scene] landmark guide → ${guideForZone(zone).name} (${zone})`);
+    // Dialogue comes from the content pipeline: open on the zone's greeting
+    // line and let the overlay follow next/goto references via the loader.
     this.guideOverlay.show(
       guideForZone(zone),
       this.guideTextures.get(zone),
       this.app.screen.width,
       this.app.screen.height,
+      getGreeting(zone),
+      getDialogueLine,
     );
   }
 
@@ -1440,10 +1445,10 @@ export class SceneRenderer {
   }
 
   private requestZoneTap(zone: ZoneInstance): void {
-    // Phase 2: the child walks to the landmark, then its resident guide pops in
-    // with a welcome. The guide overlay REPLACES the old immediate Mode 2 zone
-    // entry, so onZoneTap is intentionally not fired here — closing the guide
-    // returns straight to the island map rather than dropping into a zone view.
+    // The child walks to the landmark, then its resident guide pops in with
+    // its greeting dialogue. onZoneTap is NOT fired by the tap itself — it
+    // fires from the guide card's "Go Inside" pill (Q1=A: Mode 2 is the
+    // practice space, entered through the guide, never around them).
     const arrive = () => this.showGuide(zone.key);
     if (!this.localId) {
       arrive();
@@ -1766,12 +1771,23 @@ export class SceneRenderer {
     // drag would read as a two-pointer pinch.
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinchDist = 0;
-    // Guide overlay: a clean tap (no drag) slides the guide back out.
+    // Guide overlay: a clean tap either advances the dialogue (handled inside
+    // the overlay), slides the guide back out, or — via the "Go Inside" pill —
+    // enters the zone's Mode-2 practice space through the host (onZoneTap →
+    // host sets currentZone → tilt transition).
     if (this.guideOverlay.active) {
       const wasTap = this.pointerDown && !this.pointerMoved;
       this.pointerDown = false;
-      if (wasTap && this.guideOverlay.handleTap(e.global.x, e.global.y) === "close") {
+      if (!wasTap) return;
+      const zone = this.guideOverlay.activeZone;
+      const result = this.guideOverlay.handleTap(e.global.x, e.global.y);
+      if (result === "close") {
         this.guideOverlay.beginExit();
+      } else if (result === "enter" && zone) {
+        debugLog(`[island-scene] Go Inside → onZoneTap(${zone})`);
+        this.guideOverlay.hide();
+        this.followEnabled = true;
+        this.opts.onZoneTap?.(zone);
       }
       return;
     }

@@ -53,13 +53,24 @@ Zone keys, landmark coordinates (`defaultLayout.ts`) and the guide roster are
    drag to pan, pinch/wheel to zoom. Captain Pete's welcome auto-opens once
    per mount.
 4. **Guides** — tapping a landmark walks the avatar over, then the zone's
-   guide pops in with a speech bubble; any tap dismisses it. Landmark tap
-   targets use each sprite's measured opaque pixels, not its texture bounds.
-5. **Zone interiors (Mode 2)** — a side-scrolling parallax view per zone
-   (`ZoneView`/`zoneEnv`), entered when the host sets `currentZone`. The
-   product flow does not currently drive this; it is slated to return as the
-   practice space in the content-pipeline phase (`onZoneTap`/`onActivityEnter`
-   remain in the contract for it).
+   guide pops in and plays its dialogue from the content pipeline
+   (`content/zones/<zone>/dialogue.json`): tap to advance `next` lines, tap a
+   pill to take a `choices` branch. "Back to Island" (or a tap after the last
+   line) dismisses; landmark tap targets use each sprite's measured opaque
+   pixels, not its texture bounds.
+5. **Zone interiors (Mode 2, the practice space)** — a side-scrolling
+   parallax view per zone (`ZoneView`/`zoneEnv`). The guide card's
+   **"Go Inside →"** pill fires `onZoneTap`; the host responds by setting
+   `currentZone`, which plays the tilt transition into the interior
+   (Q1=A decision, July 2026). Mini-practices launch here in a later session.
+
+## Content pipeline
+
+All dialogue, mini-practices and star values live in
+[`content/`](./content/README.md) as JSON with stable dot-separated IDs
+(`calm_beach.shelly.greet.001`), imported at build time and validated by the
+loader (`src/content/loader.ts`) — dev builds hard-fail on malformed content,
+production skips-and-warns. Content edits need no code changes.
 
 ## Architecture
 

@@ -1,4 +1,5 @@
 import { Container, Graphics, Sprite, Text, type Texture } from "pixi.js";
+import type { DialogueLine, DialogueLineId } from "../content/types";
 import type { GuideEntry } from "./guideCatalog";
 
 /**
@@ -51,6 +52,17 @@ export class GuideOverlay {
   private entry: GuideEntry | null = null;
   private tex: Texture | undefined;
 
+  // ── Dialogue player state (Session 3 content pipeline) ──
+  /** Line currently in the bubble; null = name-only card (no authored content). */
+  private line: DialogueLine | null = null;
+  /** Resolves a line id to the next line (the content loader's lookup). */
+  private resolveLine: (id: DialogueLineId) => DialogueLine | null = () => null;
+  /** Screen-space hit rects, rebuilt with the bubble/UI. */
+  private choiceHits: { x: number; y: number; w: number; h: number; goto: DialogueLineId }[] = [];
+  private enterHit: { x: number; y: number; w: number; h: number } | null = null;
+  private backHit: { x: number; y: number; w: number; h: number } | null = null;
+  private closeHit: { x: number; y: number; w: number; h: number } | null = null;
+
   private w = 0;
   private h = 0;
   private baseScale = 1;
@@ -85,15 +97,34 @@ export class GuideOverlay {
     return this.phase !== "hidden";
   }
 
+  /** Zone of the guide currently on screen (null when hidden). */
+  get activeZone(): GuideEntry["zone"] | null {
+    return this.phase !== "hidden" ? this.entry?.zone ?? null : null;
+  }
+
   /** True once the guide has finished entering (accepts a close tap). */
   private get dismissable(): boolean {
     return this.phase === "idle" || (this.phase === "entering" && this.ageIn > 0.18);
   }
 
-  /** Show `entry`'s guide (with its preloaded, knocked-out texture) at size w×h. */
-  show(entry: GuideEntry, tex: Texture | undefined, w: number, h: number): void {
+  /**
+   * Show `entry`'s guide (with its preloaded, knocked-out texture) at size w×h.
+   * `start` is the dialogue line to open on (usually the zone greeting) and
+   * `resolveLine` the loader lookup used to follow next/goto references; a
+   * null start shows a name-only card.
+   */
+  show(
+    entry: GuideEntry,
+    tex: Texture | undefined,
+    w: number,
+    h: number,
+    start: DialogueLine | null = null,
+    resolveLine: (id: DialogueLineId) => DialogueLine | null = () => null,
+  ): void {
     this.entry = entry;
     this.tex = tex;
+    this.line = start;
+    this.resolveLine = resolveLine;
     this.phase = "entering";
     this.ageIn = 0;
     this.ageOut = 0;
@@ -132,12 +163,47 @@ export class GuideOverlay {
   }
 
   /**
-   * Resolve a tap while the overlay is up. Any tap once the guide has settled
-   * dismisses it (kid-friendly), with an explicit ✕ + "Back to Island" pill for
-   * discoverability. Returns "close" if the tap should trigger the exit.
+   * Resolve a tap while the overlay is up.
+   *  - "Go Inside" pill → "enter" (the renderer fires onZoneTap → Mode 2)
+   *  - ✕ / "Back to Island" → "close"
+   *  - a choice pill → follow its goto, stay open
+   *  - anywhere else (kid-friendly): advance to the line's `next`, or close
+   *    when the dialogue is done; while choices are up, a stray tap does
+   *    nothing so the child actually picks.
    */
-  handleTap(_sx: number, _sy: number): "close" | "none" {
-    return this.dismissable ? "close" : "none";
+  handleTap(sx: number, sy: number): "close" | "enter" | "none" {
+    if (!this.dismissable) return "none";
+    const inRect = (r: { x: number; y: number; w: number; h: number } | null): boolean =>
+      !!r && sx >= r.x && sx <= r.x + r.w && sy >= r.y && sy <= r.y + r.h;
+
+    if (inRect(this.enterHit)) return "enter";
+    if (inRect(this.closeHit) || inRect(this.backHit)) return "close";
+    for (const c of this.choiceHits) {
+      if (inRect(c)) {
+        this.advanceTo(c.goto);
+        return "none";
+      }
+    }
+    if (this.line?.choices?.length) return "none"; // must pick (or hit ✕/back)
+    const next = this.line?.next?.[0];
+    if (next) {
+      this.advanceTo(next);
+      return "none";
+    }
+    return "close";
+  }
+
+  /** Follow a dialogue reference; an unresolvable id ends the dialogue
+   *  gracefully (the loader already warned about it in dev). */
+  private advanceTo(id: DialogueLineId): void {
+    const line = this.resolveLine(id);
+    if (!line) {
+      this.beginExit();
+      return;
+    }
+    this.line = line;
+    this.buildBubble();
+    this.frame();
   }
 
   // ── Build ─────────────────────────────────────────────────────────
@@ -187,6 +253,7 @@ export class GuideOverlay {
 
   private buildBubble(): void {
     this.bubble.removeChildren().forEach((c) => c.destroy());
+    this.choiceHits = [];
     const entry = this.entry;
     if (!entry) return;
 
@@ -208,7 +275,9 @@ export class GuideOverlay {
     name.anchor.set(0.5, 0);
 
     const msg = new Text({
-      text: entry.message,
+      // Dialogue comes from the content pipeline; a zone with no authored
+      // line still shows a warm name-only card rather than an empty box.
+      text: this.line?.text ?? "",
       style: {
         fontFamily: '"Trebuchet MS", "Segoe UI", system-ui, sans-serif',
         fontSize: 20,
@@ -222,10 +291,34 @@ export class GuideOverlay {
     });
     msg.anchor.set(0.5, 0);
 
+    // Choice pills (dialogue branches) stack under the message.
+    const choices = this.line?.choices ?? [];
+    const choiceTexts = choices.map(
+      (c) =>
+        new Text({
+          text: c.label,
+          style: {
+            fontFamily: '"Trebuchet MS", "Segoe UI", system-ui, sans-serif',
+            fontSize: 18,
+            fontWeight: "800",
+            fill: INK,
+          },
+        }),
+    );
+    const choiceH = 44;
+    const choiceGap = 10;
+    const choicesBlockH = choices.length
+      ? choices.length * choiceH + (choices.length - 1) * choiceGap + 14
+      : 0;
+
     const gap = 10;
-    const contentW = Math.max(name.width, msg.width);
+    const contentW = Math.max(
+      name.width,
+      msg.width,
+      ...choiceTexts.map((t) => t.width + 44),
+    );
     const panelW = Math.min(maxPanelW, contentW + padX * 2);
-    const panelH = padY * 2 + name.height + gap + msg.height;
+    const panelH = padY * 2 + name.height + gap + msg.height + choicesBlockH;
 
     const panel = new Graphics();
     // Rounded, warm, storybook panel with a bold ink outline + a soft inner
@@ -256,12 +349,56 @@ export class GuideOverlay {
     // guide. Clamped so the panel top never leaves the screen.
     const cy = Math.max(panelH / 2 + 18, this.h * 0.24);
     this.bubble.position.set(this.w * 0.5, cy);
+
+    // Choice pills — drawn inside the panel, hit rects recorded in SCREEN
+    // coordinates (bubble position + local offset; rects are only consulted
+    // once the pop-in has settled at scale 1).
+    if (choices.length) {
+      const bx = this.w * 0.5;
+      let y = -panelH / 2 + padY + name.height + gap + msg.height + 14;
+      choices.forEach((choice, i) => {
+        const t = choiceTexts[i];
+        t.anchor.set(0.5);
+        const pw = Math.min(panelW - padX, t.width + 44);
+        const pill = new Graphics();
+        pill
+          .roundRect(-pw / 2, y, pw, choiceH, 999)
+          .fill({ color: 0xffffff, alpha: 0.95 })
+          .stroke({ width: 3, color: INK });
+        t.position.set(0, y + choiceH / 2);
+        this.bubble.addChild(pill, t);
+        this.choiceHits.push({
+          x: bx - pw / 2,
+          y: cy + y,
+          w: pw,
+          h: choiceH,
+          goto: choice.goto,
+        });
+        y += choiceH + choiceGap;
+      });
+    } else {
+      // No branches: a soft "tap to continue" cue when more lines follow.
+      if (this.line?.next?.length) {
+        const cue = new Text({
+          text: "tap to continue…",
+          style: {
+            fontFamily: '"Trebuchet MS", "Segoe UI", system-ui, sans-serif',
+            fontSize: 13,
+            fontWeight: "700",
+            fill: 0xb5651d,
+          },
+        });
+        cue.anchor.set(1, 1);
+        cue.position.set(panelW / 2 - 14, panelH / 2 - 8);
+        this.bubble.addChild(cue);
+      }
+    }
   }
 
   private buildUI(): void {
     this.ui.removeChildren().forEach((c) => c.destroy());
 
-    // ✕ close button, top-right.
+    // ✕ close button, top-right (live hit target).
     const close = new Graphics();
     const cx = this.w - 38;
     const cyy = 38;
@@ -271,29 +408,35 @@ export class GuideOverlay {
       .moveTo(cx + 8, cyy - 8).lineTo(cx - 8, cyy + 8)
       .stroke({ width: 4, color: INK });
     this.ui.addChild(close);
+    this.closeHit = { x: cx - 26, y: cyy - 26, w: 52, h: 52 };
 
-    // "Back to Island" pill, bottom-center.
-    const label = new Text({
-      text: "← Back to Island",
-      style: {
-        fontFamily: '"Trebuchet MS", "Segoe UI", system-ui, sans-serif',
-        fontSize: 16,
-        fontWeight: "800",
-        fill: INK,
-      },
-    });
-    label.anchor.set(0.5);
-    const pw = label.width + 40;
-    const ph = 44;
-    const bx = this.w * 0.5;
-    const by = this.h - 34;
-    const pill = new Graphics();
-    pill
-      .roundRect(bx - pw / 2, by - ph / 2, pw, ph, 999)
-      .fill({ color: 0xffffff, alpha: 0.95 })
-      .stroke({ width: 3, color: INK });
-    label.position.set(bx, by);
-    this.ui.addChild(pill, label);
+    // Bottom pills: "← Back to Island" and — the Mode-2 practice-space door —
+    // "Go Inside →", side by side.
+    const pillAt = (text: string, bx: number): { x: number; y: number; w: number; h: number } => {
+      const label = new Text({
+        text,
+        style: {
+          fontFamily: '"Trebuchet MS", "Segoe UI", system-ui, sans-serif',
+          fontSize: 16,
+          fontWeight: "800",
+          fill: INK,
+        },
+      });
+      label.anchor.set(0.5);
+      const pw = label.width + 40;
+      const ph = 44;
+      const by = this.h - 34;
+      const pill = new Graphics();
+      pill
+        .roundRect(bx - pw / 2, by - ph / 2, pw, ph, 999)
+        .fill({ color: 0xffffff, alpha: 0.95 })
+        .stroke({ width: 3, color: INK });
+      label.position.set(bx, by);
+      this.ui.addChild(pill, label);
+      return { x: bx - pw / 2, y: by - ph / 2, w: pw, h: ph };
+    };
+    this.backHit = pillAt("← Back to Island", this.w * 0.5 - 105);
+    this.enterHit = pillAt("Go Inside →", this.w * 0.5 + 105);
   }
 
   // ── Per-frame ─────────────────────────────────────────────────────

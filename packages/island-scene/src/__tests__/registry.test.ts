@@ -43,7 +43,8 @@ describe("zone/guide registry", () => {
       expect(g.name, zone).toBe(name);
       expect(g.animal, zone).toBe(animal);
       expect(g.zone, zone).toBe(zone);
-      expect(g.message.length, zone).toBeGreaterThan(0);
+      // Greeting text lives in the content pipeline now — content.test.ts
+      // pins the exact strings.
     }
   });
 

@@ -20,10 +20,8 @@ export interface GuideEntry {
   animal: string;
   /** The guide's kid-facing name shown in bold above the message. */
   name: string;
-  /** Exact PNG filename in public/guides (capitalised first letter). */
+  /** Exact image filename in public/guides (capitalised first letter). */
   file: string;
-  /** In-character welcome message shown in the speech bubble. */
-  message: string;
 }
 
 /**
@@ -36,69 +34,54 @@ export const GUIDES: Record<ZoneKey, GuideEntry> = {
     animal: "Bear",
     name: "Bruno",
     file: "Bear.webp",
-    message:
-      "Hey there, friend! Welcome to Campfire Circle — pull up a log and get cozy!",
   },
   treehouse_hideaway: {
     zone: "treehouse_hideaway",
     animal: "Owl",
     name: "Olive",
     file: "Owl.webp",
-    message:
-      "Whooo's there? Welcome to the Treehouse! Let your imagination soar up here!",
   },
   art_hut: {
     zone: "art_hut",
     animal: "Fox",
     name: "Fern",
     file: "Fox.webp",
-    message:
-      "Oh, hello! Welcome to the Art Hut — let's make something amazing together!",
   },
   lighthouse_point: {
     zone: "lighthouse_point",
     animal: "Whale",
     name: "Wally",
     file: "Whale.webp",
-    message:
-      "Hey, take a deep breath... Welcome to Lighthouse Point. It's nice to just think here.",
   },
   arcade_cove: {
     zone: "arcade_cove",
     animal: "Monkey",
     name: "Mango",
     file: "Monkey.webp",
-    message: "Woohoo! Welcome to Arcade Cove! Ready to play some games?!",
   },
   star_market: {
     zone: "star_market",
     animal: "Raccoon",
     name: "Rascal",
     file: "Raccoon.webp",
-    message:
-      "Ooh, a visitor! Welcome to Star Market — check out all the shiny stuff!",
   },
   calm_beach: {
     zone: "calm_beach",
     animal: "Turtle",
     name: "Shelly",
     file: "Turtle.webp",
-    message: "Heyyy... welcome to Calm Beach. No rush here... just relax.",
   },
   lazy_lagoon: {
     zone: "lazy_lagoon",
     animal: "Frog",
     name: "Finn",
     file: "Frog.webp",
-    message: "Ribbit! Welcome to Lazy Lagoon! Kick back and chill with me!",
   },
   welcome_dock: {
     zone: "welcome_dock",
     animal: "Pelican",
     name: "Captain Pete",
     file: "Pelican.webp",
-    message:
-      "Ahoy! Welcome to the dock! This is where every adventure begins!",
   },
 };
 
