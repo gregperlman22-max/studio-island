@@ -1,6 +1,7 @@
 import { Container, Graphics, Text } from "pixi.js";
 import type { MiniPractice } from "../content/types";
 import { practiceCards, type PracticeCard } from "../content/practice";
+import { practiceStepAudioId } from "../content/audio";
 
 /**
  * PracticePlayer — the Mode-2 practice experience (Session 3b).
@@ -38,6 +39,9 @@ export class PracticePlayer {
 
   private cards: PracticeCard[] = [];
   private idx = 0;
+  private practice: MiniPractice | null = null;
+  /** Called whenever a card becomes current, so the host can play its voice. */
+  private speak: (audioId: string) => void = () => {};
 
   private w = 0;
   private h = 0;
@@ -56,13 +60,33 @@ export class PracticePlayer {
     return this.container.visible;
   }
 
-  /** Begin `practice`, opening on its intro line (resolved by the caller). */
-  start(practice: MiniPractice, introText: string, w: number, h: number): void {
+  /** Begin `practice`, opening on its intro line (resolved by the caller).
+   *  `speak` voices each card's line as it's shown (silent if no audio). */
+  start(
+    practice: MiniPractice,
+    introText: string,
+    w: number,
+    h: number,
+    speak: (audioId: string) => void = () => {},
+  ): void {
     this.cards = practiceCards(practice, introText);
+    this.practice = practice;
+    this.speak = speak;
     this.idx = 0;
     this.elapsed = 0;
     this.container.visible = true;
     this.build(w, h);
+    this.speakCurrent();
+  }
+
+  /** The audio-line ID for the current card: the practice intro line, or a
+   *  derived step ID; completion has no voice. */
+  private currentAudioId(): string | null {
+    const cur = this.cards[this.idx];
+    if (!cur || !this.practice) return null;
+    if (cur.kind === "intro") return this.practice.introLine;
+    if (cur.kind === "step") return practiceStepAudioId(this.practice, cur.index - 1);
+    return null;
   }
 
   hide(): void {
@@ -91,7 +115,15 @@ export class PracticePlayer {
     if (!cur || cur.kind === "complete") return "close";
     this.idx++;
     this.render();
+    this.speakCurrent();
     return "none";
+  }
+
+  /** Voice the current card's line (silent if it has no audio). Called on card
+   *  CHANGE only — not on resize/rebuild — so a resize never replays audio. */
+  private speakCurrent(): void {
+    const id = this.currentAudioId();
+    if (id) this.speak(id);
   }
 
   // ── Build / render ──────────────────────────────────────────────────

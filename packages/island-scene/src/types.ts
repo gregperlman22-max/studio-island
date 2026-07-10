@@ -267,6 +267,10 @@ export interface IslandSceneHandle {
   setVolume: (volume: number) => void;
   /** Smoothly duck (true) or restore (false) the ambient bed. */
   duck: (ducked: boolean) => void;
+  /** Read the global mute state (persisted in local storage). */
+  isMuted: () => boolean;
+  /** Set the global mute state (persisted); the in-scene 🔊 button uses this too. */
+  setMuted: (muted: boolean) => void;
   /** Force the local avatar to walk to a grid cell programmatically. */
   walkLocalAvatarTo: (position: GridPosition) => void;
   /** Resize hint for the host when the container size changes outside React's notice. */

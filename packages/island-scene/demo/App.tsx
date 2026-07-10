@@ -26,7 +26,9 @@ export function DemoApp() {
   const [open, setOpen] = useState(false);
   const [themeKey, setThemeKey] = useState<ThemePackKey>("sprout");
   const [mode, setMode] = useState<SceneMode>("studio");
-  const [audioEnabled, setAudioEnabled] = useState(false);
+  // Default ON so the scratch voice files are exercised on review (the in-scene
+  // 🔊 button toggles the persisted child mute on top of this host enable).
+  const [audioEnabled, setAudioEnabled] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [hideTextLabels, setHideTextLabels] = useState(false);
   const [lockLighthouse, setLockLighthouse] = useState(false);

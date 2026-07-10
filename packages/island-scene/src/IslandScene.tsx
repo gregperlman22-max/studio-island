@@ -1,6 +1,7 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { IslandSceneHandle, IslandSceneProps } from "./types";
 import { SceneRenderer } from "./render/SceneRenderer";
+import { readMutePreference } from "./render/AudioService";
 
 /**
  * IslandScene — PixiJS renderer wrapper (two-mode: world map + zone interior).
@@ -40,6 +41,9 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
 
     const containerRef = useRef<HTMLDivElement | null>(null);
     const rendererRef = useRef<SceneRenderer | null>(null);
+    // The child's global mute toggle, seeded from the persisted preference so
+    // the icon is right before the renderer has even mounted.
+    const [muted, setMuted] = useState<boolean>(() => readMutePreference());
 
     const cbRef = useRef({ onReady, onError, onLoadProgress, onZoneTap, onActivityEnter, onZoneExit, onObjectInteract, onAvatarMove, onAvatarSelect });
     cbRef.current = { onReady, onError, onLoadProgress, onZoneTap, onActivityEnter, onZoneExit, onObjectInteract, onAvatarMove, onAvatarSelect };
@@ -58,6 +62,7 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
         container: el,
         reducedMotion: prefersReduced,
         hideTextLabels: !!hideTextLabels,
+        audioEnabled,
         onReady: () => cbRef.current.onReady?.(),
         onError: (e) => cbRef.current.onError?.(e),
         onLoadProgress: (p) => cbRef.current.onLoadProgress?.(p),
@@ -101,19 +106,34 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
     useEffect(() => {
       rendererRef.current?.setCurrentZone(effectiveZone);
     }, [effectiveZone]);
+    useEffect(() => {
+      rendererRef.current?.setAudioEnabled(audioEnabled);
+    }, [audioEnabled]);
 
     useImperativeHandle(
       ref,
       (): IslandSceneHandle => ({
-        // Audio lands in a later milestone; these stay no-ops until then.
+        // Volume ducking is a later refinement; mute is the live control.
         setVolume: () => {},
         duck: () => {},
+        isMuted: () => rendererRef.current?.isMuted() ?? muted,
+        setMuted: (m: boolean) => {
+          if (rendererRef.current && rendererRef.current.isMuted() !== m) {
+            rendererRef.current.toggleMute();
+          }
+          setMuted(m);
+        },
         walkLocalAvatarTo: (position) =>
           rendererRef.current?.walkLocalAvatarTo(position),
         resize: () => rendererRef.current?.resize(),
       }),
-      [],
+      [muted],
     );
+
+    const toggleMute = () => {
+      const next = rendererRef.current ? rendererRef.current.toggleMute() : !muted;
+      setMuted(next);
+    };
 
     const inZone = !!effectiveZone;
 
@@ -132,21 +152,34 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
         data-audio={audioEnabled ? "on" : "off"}
         data-theme={themePack.key}
       >
-        {!inZone && (
-          <div
-            style={{
-              position: "absolute",
-              right: 16,
-              bottom: 16,
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-            }}
+        {/* Bottom-right controls: zoom (world map only) above an always-on
+            mute toggle. Kept clear of the top-right Exit + the in-scene exit. */}
+        <div
+          style={{
+            position: "absolute",
+            right: 16,
+            bottom: 16,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          {!inZone && (
+            <>
+              <button type="button" aria-label="Zoom in" style={zoomBtn} onClick={() => rendererRef.current?.zoomBy(1.25)}>+</button>
+              <button type="button" aria-label="Zoom out" style={zoomBtn} onClick={() => rendererRef.current?.zoomBy(0.8)}>−</button>
+            </>
+          )}
+          <button
+            type="button"
+            aria-label={muted ? "Unmute" : "Mute"}
+            aria-pressed={muted}
+            style={zoomBtn}
+            onClick={toggleMute}
           >
-            <button type="button" aria-label="Zoom in" style={zoomBtn} onClick={() => rendererRef.current?.zoomBy(1.25)}>+</button>
-            <button type="button" aria-label="Zoom out" style={zoomBtn} onClick={() => rendererRef.current?.zoomBy(0.8)}>−</button>
-          </div>
-        )}
+            {muted ? "🔇" : "🔊"}
+          </button>
+        </div>
 
         {inZone && (
           <button

@@ -57,6 +57,8 @@ export class GuideOverlay {
   private line: DialogueLine | null = null;
   /** Resolves a line id to the next line (the content loader's lookup). */
   private resolveLine: (id: DialogueLineId) => DialogueLine | null = () => null;
+  /** Called whenever a line becomes current, so the host can play its voice. */
+  private speak: (lineId: DialogueLineId) => void = () => {};
   /** Screen-space hit rects, rebuilt with the bubble/UI. */
   private choiceHits: { x: number; y: number; w: number; h: number; goto: DialogueLineId }[] = [];
   private enterHit: { x: number; y: number; w: number; h: number } | null = null;
@@ -102,6 +104,11 @@ export class GuideOverlay {
     return this.phase !== "hidden" ? this.entry?.zone ?? null : null;
   }
 
+  /** ID of the line currently displayed (for tap-to-replay). */
+  get currentLineId(): DialogueLineId | null {
+    return this.line?.id ?? null;
+  }
+
   /** True once the guide has finished entering (accepts a close tap). */
   private get dismissable(): boolean {
     return this.phase === "idle" || (this.phase === "entering" && this.ageIn > 0.18);
@@ -120,11 +127,13 @@ export class GuideOverlay {
     h: number,
     start: DialogueLine | null = null,
     resolveLine: (id: DialogueLineId) => DialogueLine | null = () => null,
+    speak: (lineId: DialogueLineId) => void = () => {},
   ): void {
     this.entry = entry;
     this.tex = tex;
     this.line = start;
     this.resolveLine = resolveLine;
+    this.speak = speak;
     this.phase = "entering";
     this.ageIn = 0;
     this.ageOut = 0;
@@ -139,6 +148,8 @@ export class GuideOverlay {
       this.phase = "idle";
     }
     this.frame();
+    // Voice the opening line (silent if it has no audio).
+    if (this.line) this.speak(this.line.id);
   }
 
   /** Begin the slide-out; fires onExitDone when it completes. No-op if already
@@ -171,7 +182,7 @@ export class GuideOverlay {
    *    when the dialogue is done; while choices are up, a stray tap does
    *    nothing so the child actually picks.
    */
-  handleTap(sx: number, sy: number): "close" | "enter" | "none" {
+  handleTap(sx: number, sy: number): "close" | "enter" | "replay" | "none" {
     if (!this.dismissable) return "none";
     const inRect = (r: { x: number; y: number; w: number; h: number } | null): boolean =>
       !!r && sx >= r.x && sx <= r.x + r.w && sy >= r.y && sy <= r.y + r.h;
@@ -185,12 +196,21 @@ export class GuideOverlay {
       }
     }
     if (this.line?.choices?.length) return "none"; // must pick (or hit ✕/back)
+    // Tapping the guide itself replays the current voice line rather than
+    // advancing — the "poke the character to hear it again" gesture.
+    if (this.line && this.inGuideRegion(sx, sy)) return "replay";
     const next = this.line?.next?.[0];
     if (next) {
       this.advanceTo(next);
       return "none";
     }
     return "close";
+  }
+
+  /** The lower-centre band the guide sprite occupies (feet at the bottom,
+   *  ~half the screen tall). Used to route a tap to replay vs. advance. */
+  private inGuideRegion(sx: number, sy: number): boolean {
+    return sx > this.w * 0.28 && sx < this.w * 0.72 && sy > this.h * 0.46;
   }
 
   /** Follow a dialogue reference; an unresolvable id ends the dialogue
@@ -204,6 +224,7 @@ export class GuideOverlay {
     this.line = line;
     this.buildBubble();
     this.frame();
+    this.speak(line.id);
   }
 
   // ── Build ─────────────────────────────────────────────────────────

@@ -21,3 +21,13 @@ export {
   getStarValue,
   getZoneDialogue,
 } from "./content/loader";
+export {
+  audioManifestVersion,
+  audioCoverageReport,
+  audioEntry,
+  hasAudio,
+  practiceStepAudioId,
+  zoneAudioIds,
+  type AudioCoverage,
+  type ZoneAudioCoverage,
+} from "./content/audio";

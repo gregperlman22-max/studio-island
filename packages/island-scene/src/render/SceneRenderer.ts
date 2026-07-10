@@ -42,8 +42,10 @@ import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { ZoneView } from "./ZoneView";
 import { GuideOverlay } from "./GuideOverlay";
 import { getDialogueLine, getGreeting, getPractices } from "../content/loader";
+import { logMissingAudioReport } from "../content/audio";
 import type { MiniPractice } from "../content/types";
 import { PracticePlayer } from "./PracticePlayer";
+import { AudioService } from "./AudioService";
 import { GUIDES, guideFileUrl, guideForZone } from "./guideCatalog";
 import { ArrivalView } from "./ArrivalView";
 import { LayeredIsland, type IslandLayoutOpts, type LandmarkMark } from "./LayeredIsland";
@@ -116,6 +118,8 @@ export interface RendererOptions extends RendererCallbacks {
   container: HTMLElement;
   reducedMotion: boolean;
   hideTextLabels: boolean;
+  /** Host-level audio enable (the `audioEnabled` prop). */
+  audioEnabled: boolean;
 }
 
 /**
@@ -160,6 +164,8 @@ export class SceneRenderer {
   private practicePlayer!: PracticePlayer;
   /** The active zone's mini-practice + resolved intro text (null if none). */
   private currentPractice: { practice: MiniPractice; introText: string } | null = null;
+  /** Pre-generated voice playback (dialogue + practice lines). */
+  private audio!: AudioService;
   /** Preloaded, background-knocked-out guide art, keyed by zone. */
   private guideTextures = new Map<ZoneKey, Texture>();
   /** Lazy guide-art preload (kicked off in init, never awaited there). */
@@ -298,6 +304,12 @@ export class SceneRenderer {
     this.zoneView = new ZoneView({ reducedMotion: this.opts.reducedMotion });
     this.guideOverlay = new GuideOverlay({ reducedMotion: this.opts.reducedMotion });
     this.practicePlayer = new PracticePlayer({ reducedMotion: this.opts.reducedMotion });
+    this.audio = new AudioService({ enabled: this.opts.audioEnabled });
+    // Dev-only: per-zone checklist of lines still needing a voice file.
+    logMissingAudioReport();
+    // Captain Pete's welcome auto-plays on the world map (not inside a zone),
+    // so prime the dock's voice files up front.
+    this.audio.preloadZone("welcome_dock");
 
     this.app.canvas.style.display = "block";
     // Mount invisible: Pixi's auto-started ticker can paint a frame at the
@@ -529,8 +541,10 @@ export class SceneRenderer {
     this.pinchDist = 0;
     this.pointerDown = false;
     debugLog(`[island-scene] landmark guide → ${guideForZone(zone).name} (${zone})`);
-    // Dialogue comes from the content pipeline: open on the zone's greeting
-    // line and let the overlay follow next/goto references via the loader.
+    // Prime this zone's voice files, then open on the zone's greeting line and
+    // let the overlay follow next/goto references via the loader. `speak` plays
+    // each displayed line's audio (silent when there's no file for it).
+    this.audio.preloadZone(zone);
     this.guideOverlay.show(
       guideForZone(zone),
       this.guideTextures.get(zone),
@@ -538,6 +552,7 @@ export class SceneRenderer {
       this.app.screen.height,
       getGreeting(zone),
       getDialogueLine,
+      (id) => this.audio.play(id),
     );
   }
 
@@ -634,6 +649,22 @@ export class SceneRenderer {
     }
   }
 
+  /** Host-level audio enable (mirrors the `audioEnabled` prop). */
+  setAudioEnabled(enabled: boolean): void {
+    if (!this.inited || this.destroyed) return;
+    this.audio.setEnabled(enabled);
+  }
+
+  /** Global mute toggle (child control; persisted in local storage). */
+  toggleMute(): boolean {
+    if (!this.inited || this.destroyed) return false;
+    return this.audio.toggleMute();
+  }
+
+  isMuted(): boolean {
+    return this.inited && !this.destroyed ? this.audio.isMuted() : false;
+  }
+
   /** Host imperative: walk the local avatar to a grid cell (pathfinds there). */
   walkLocalAvatarTo(position: GridPosition): void {
     if (!this.inited || this.destroyed || !this.localId) return;
@@ -682,6 +713,7 @@ export class SceneRenderer {
         this.app.screen.width, this.app.screen.height,
       );
       this.prepareZonePractice(zone);
+      this.audio.preloadZone(zone); // per-zone voice preload on entry
     } else {
       // The world map reappears on top and fades in over the zone view as it
       // un-tilts; re-enable follow so it settles on the avatar by the zone.
@@ -729,6 +761,7 @@ export class SceneRenderer {
       // Reduced-motion / start-in-zone path (no tilt transition): resolve the
       // practice and open it immediately as the interior experience.
       this.prepareZonePractice(zone);
+      this.audio.preloadZone(zone); // per-zone voice preload on entry
       this.startPractice();
       debugLog(`[island-scene] applyMode → Mode 2 (zone view: ${zone})`);
     } else {
@@ -776,6 +809,7 @@ export class SceneRenderer {
       this.currentPractice.introText,
       this.app.screen.width,
       this.app.screen.height,
+      (id) => this.audio.play(id),
     );
     debugLog(`[island-scene] practice → ${this.currentPractice.practice.id}`);
   }
@@ -1860,6 +1894,10 @@ export class SceneRenderer {
       const result = this.guideOverlay.handleTap(e.global.x, e.global.y);
       if (result === "close") {
         this.guideOverlay.beginExit();
+      } else if (result === "replay") {
+        // Tap-to-replay on the speaking guide.
+        const id = this.guideOverlay.currentLineId;
+        if (id) this.audio.replay(id);
       } else if (result === "enter" && zone) {
         debugLog(`[island-scene] Go Inside → onZoneTap(${zone})`);
         this.guideOverlay.hide();
@@ -2139,6 +2177,7 @@ export class SceneRenderer {
     this.textures?.destroy();
     this.arrivalView?.destroy();
     this.avatarSelect?.destroy();
+    this.audio?.destroy();
     try {
       this.app.destroy({ removeView: true }, { children: true });
     } catch {
