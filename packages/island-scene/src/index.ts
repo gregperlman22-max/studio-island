@@ -31,3 +31,24 @@ export {
   type AudioCoverage,
   type ZoneAudioCoverage,
 } from "./content/audio";
+// ── Free-build island + engine (Session 5) ──
+export { FreeBuildScene, type FreeBuildSceneProps } from "./build-island/FreeBuildScene";
+export * from "./build-engine/types";
+export {
+  applyBuildEvent,
+  canPlace,
+  deserializeBuildState,
+  nextRotation,
+  placementCells,
+  planPlacementUpdate,
+  serializeBuildState,
+} from "./build-engine/engine";
+export { clearSlot, listSaveSlots, loadFromSlot, SAVE_SLOTS, saveToSlot, type SaveSlot, type SaveSlotInfo } from "./build-engine/saves";
+export {
+  BUILD_CATEGORIES,
+  getBuildItem,
+  getBuildItems,
+  getBuildItemsByCategory,
+  type BuildCategory,
+  type BuildItemDef,
+} from "./content/buildItems";

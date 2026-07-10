@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import {
+  FreeBuildScene,
   IslandScene,
   themePacks,
   sampleLayout,
@@ -18,6 +19,21 @@ import {
 } from "../src";
 
 /**
+ * Free-build island ferry stop: a dinghy decoration beside Welcome Dock,
+ * added HOST-side (spread onto the locked layout — defaultLayout.ts itself
+ * is untouched) using the existing decorations + onObjectInteract pattern.
+ * Cell (38, 41) is walkable beach just west of the dock.
+ */
+const DINGHY_ID = "dinghy-to-build-island";
+const layoutWithDinghy = {
+  ...sampleLayout,
+  decorations: [
+    ...(sampleLayout.decorations ?? []),
+    { id: DINGHY_ID, kind: "dinghy boat", position: { x: 38, y: 41 }, scale: 1.4 },
+  ],
+};
+
+/**
  * Demo harness. The island is full-screen (the child-facing product view).
  * All developer controls live behind a single floating button so they never
  * intrude on the scene — open it to drive theme / avatar / toggles for review.
@@ -33,6 +49,8 @@ export function DemoApp() {
   const [hideTextLabels, setHideTextLabels] = useState(false);
   const [lockLighthouse, setLockLighthouse] = useState(false);
   const [currentZone, setCurrentZone] = useState<ZoneKey | null>(null);
+  /** "main" = the guided island; "build" = the free-build island. */
+  const [scene, setScene] = useState<"main" | "build">("main");
 
   // The avatar choice is intentionally NOT persisted: the picker shows on every
   // fresh page load so the child picks their island friend each visit. `imageUrl`
@@ -81,12 +99,23 @@ export function DemoApp() {
 
   return (
     <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
+      {scene === "build" ? (
+        <FreeBuildScene
+          reducedMotion={reducedMotion}
+          onExit={() => {
+            append("sail home → main island");
+            // Remounting IslandScene replays the boat arrival — that IS the
+            // sail-back; the avatar pick is preserved via avatarCfg.imageUrl.
+            setScene("main");
+          }}
+        />
+      ) : (
       <IslandScene
         key={reducedMotion ? "rm" : "full"}
         ref={sceneRef}
         themePack={themePack}
         zones={zones}
-        layout={sampleLayout}
+        layout={layoutWithDinghy}
         avatars={avatars}
         mode={mode}
         currentZone={currentZone}
@@ -104,10 +133,15 @@ export function DemoApp() {
           setAvatarCfg((c) => ({ ...c, imageUrl: avatarImageUrl(key) ?? undefined }));
         }}
         onActivityEnter={(z: ZoneKey) => append(`onActivityEnter(${z})`)}
-        onObjectInteract={(id) => append(`onObjectInteract(${id})`)}
+        onObjectInteract={(id) => {
+          append(`onObjectInteract(${id})`);
+          // The dinghy beside Welcome Dock ferries to the free-build island.
+          if (id === DINGHY_ID) setScene("build");
+        }}
         onAvatarMove={(id, p) => append(`onAvatarMove(${id}, ${p.x},${p.y})`)}
         onError={(e) => append(`onError: ${e.message}`)}
       />
+      )}
 
       {/* Floating dev-tools toggle — the only chrome over the scene. */}
       <button

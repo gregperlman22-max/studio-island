@@ -85,6 +85,18 @@ export class ProgrammaticTextureProvider implements TextureProvider {
         g.poly([0, 3, -7, -7, -2.5, -8, 0, -3, 2.5, -8, 7, -7]).fill(sh).stroke({ width: 2.5, color: INK });
         break;
       }
+      case "boat": {
+        // Little beached dinghy (the free-build island's ferry stop): hull,
+        // interior, bench seat, and a leaning oar. Bold-outlined like all art.
+        const hull = 0x9a6b40;
+        g.ellipse(0, 2, 20, 6).fill({ color: 0x000000, alpha: 0.18 }); // contact shadow
+        g.poly([-19, -4, 19, -4, 13, 5, -13, 5]).fill(hull).stroke({ width: 3, color: INK });
+        g.poly([-14, -4, 14, -4, 10, 1, -10, 1]).fill(shade(hull, 0.25));
+        g.roundRect(-8, -4, 16, 3, 1).fill(shade(hull, -0.2)); // bench
+        g.moveTo(10, -4).lineTo(20, -18).stroke({ width: 2.5, color: shade(hull, -0.35) }); // oar
+        g.ellipse(21, -19, 3, 5).fill(shade(hull, -0.1)).stroke({ width: 2, color: INK });
+        break;
+      }
       default: {
         // Generic shrub fallback for unknown decoration kinds.
         const leaf = hexNum(p?.foliage ?? "#5fb35a");
@@ -104,6 +116,7 @@ export class ProgrammaticTextureProvider implements TextureProvider {
     if (k.includes("rock") || k.includes("stone") || k.includes("cairn") || k.includes("driftwood")) return "rock";
     if (k.includes("mushroom") || k.includes("toadstool")) return "mushroom";
     if (k.includes("shell") || k.includes("starfish")) return "shell";
+    if (k.includes("boat") || k.includes("dinghy")) return "boat";
     return "shrub";
   }
 

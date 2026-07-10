@@ -36,6 +36,9 @@ export class ArrivalView {
   private h = 0;
   private t = 0;
   private _done = false;
+  /** "arrive" sails off-left → berth; "depart" sails berth → off-left (the
+   *  free-build island's sail-home). Same easing, mirrored endpoints. */
+  private mode: "arrive" | "depart" = "arrive";
 
   constructor(private reducedMotion: boolean) {
     this.container.addChild(this.bg, this.boatLayer);
@@ -49,9 +52,11 @@ export class ArrivalView {
     boatTex: Texture | undefined,
     w: number,
     h: number,
+    mode: "arrive" | "depart" = "arrive",
   ): void {
     this.bgTex = bgTex;
     this.boatTex = boatTex;
+    this.mode = mode;
     if (bgTex) this.bg.texture = bgTex;
     if (boatTex) this.boat.texture = boatTex;
     this.t = 0;
@@ -63,13 +68,12 @@ export class ArrivalView {
 
   get done(): boolean { return this._done; }
 
-  /** Jump straight to the berthed end state (tap-to-skip): the boat lands at
-   *  its berth and the renderer's next tick starts the cross-fade up into the
-   *  world map — same exit path as letting it play out. */
+  /** Jump straight to the end state (tap-to-skip): the boat lands at its
+   *  destination and the caller's next tick runs its normal exit path. */
   skip(): void {
     if (this._done || !this.container.visible) return;
     this.t = SAIL + SETTLE;
-    this.boatLayer.position.set(this.boatBerthX(), this.waterY());
+    this.boatLayer.position.set(this.sailTo(), this.waterY());
     this.boat.rotation = 0;
     this._done = true;
   }
@@ -85,6 +89,8 @@ export class ArrivalView {
   private waterY(): number { return this.h * 0.66; }      // where the hull rides
   private boatStartX(): number { return -this.w * 0.18; } // off the left edge
   private boatBerthX(): number { return this.w * 0.66; }  // near the shore on the right
+  private sailFrom(): number { return this.mode === "arrive" ? this.boatStartX() : this.boatBerthX(); }
+  private sailTo(): number { return this.mode === "arrive" ? this.boatBerthX() : this.boatStartX(); }
   // Match the old boat's on-screen height: it filled ~0.29h of the screen once
   // its transparent margins are accounted for.
   private boatScale(): number { return (this.h * 0.29) / (this.boatTex?.height ?? 906); }
@@ -110,7 +116,7 @@ export class ArrivalView {
     } else {
       this.boat.visible = false;
     }
-    this.boatLayer.position.set(this.boatStartX(), this.waterY());
+    this.boatLayer.position.set(this.sailFrom(), this.waterY());
   }
 
   update(dt: number): void {
@@ -119,10 +125,10 @@ export class ArrivalView {
     const t = this.t;
     const bob = this.reducedMotion ? 0 : Math.sin(t * 1.2) * (this.h * 0.008);
 
-    // Sail: ease the boat from off-left to the berth over SAIL seconds.
+    // Sail: ease the boat between its endpoints over SAIL seconds.
     const ap = Math.min(1, t / SAIL);
     const e = ap * ap * (3 - 2 * ap); // smoothstep
-    const bx = this.boatStartX() + (this.boatBerthX() - this.boatStartX()) * e;
+    const bx = this.sailFrom() + (this.sailTo() - this.sailFrom()) * e;
     this.boatLayer.position.set(bx, this.waterY() + bob);
     if (!this.reducedMotion) this.boat.rotation = Math.sin(t * 1.2 + 0.5) * 0.025;
 
