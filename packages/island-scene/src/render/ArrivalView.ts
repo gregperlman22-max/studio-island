@@ -63,6 +63,17 @@ export class ArrivalView {
 
   get done(): boolean { return this._done; }
 
+  /** Jump straight to the berthed end state (tap-to-skip): the boat lands at
+   *  its berth and the renderer's next tick starts the cross-fade up into the
+   *  world map — same exit path as letting it play out. */
+  skip(): void {
+    if (this._done || !this.container.visible) return;
+    this.t = SAIL + SETTLE;
+    this.boatLayer.position.set(this.boatBerthX(), this.waterY());
+    this.boat.rotation = 0;
+    this._done = true;
+  }
+
   hide(): void { this.container.visible = false; }
 
   resize(w: number, h: number): void {

@@ -414,6 +414,12 @@ export class SceneRenderer {
    *  drop the avatar straight onto the dock. The boat lives only in the cinematic
    *  now — there is no moored boat on the world map. */
   private setupArrival(): void {
+    // Missing-asset guard: without both the stage and the boat, the cinematic
+    // is seconds of blank screen — land the avatar on the dock instead.
+    if (this.arrival === "cinematic" && (!this.arrivalBgTex || !this.boatTex)) {
+      console.warn("[island-scene] arrival art missing — skipping the boat cinematic");
+      this.arrival = "done";
+    }
     if (this.arrival === "cinematic") {
       // Hide the world avatar until it disembarks; play the cinematic overlay.
       const local = this.localId ? this.avatarViews.get(this.localId) : null;
@@ -1727,6 +1733,12 @@ export class SceneRenderer {
   };
 
   private onPointerDown = (e: FederatedPointerEvent): void => {
+    // Boat cinematic: any tap skips straight to the berth — a child (or a
+    // returning visitor) never has to sit through the full sail.
+    if (this.arrival === "cinematic") {
+      this.arrivalView?.skip();
+      return;
+    }
     // Landmark guide (Phase 2): a plain tap dismisses it; distinguish tap from
     // an accidental drag. Takes priority over all world-map / zone-view input.
     if (this.guideOverlay.active) {
