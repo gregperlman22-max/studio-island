@@ -1,257 +1,148 @@
 # @gregperlman/island-scene
 
-A 2.5D tap-to-move island world renderer for **Engage Island**. Pure
-presentational React + PixiJS component. The host app owns all data.
+The Engage Island world: a 2.5D tap-to-move island renderer for children,
+built as a **pure presentational React + PixiJS component**. The host app owns
+all data; this package owns all rendering.
 
-> **Status:** Wind Waker creative pass — bold cel outlines + flat vivid
-> fills everywhere, a two-mode scene system (world map ↔ zone interior with
-> a cross-fade transition), an arrival boat that pulls up to the dock on
-> first load, seven landmark zones (Lighthouse Point, Treehouse Hideaway,
-> Campfire Circle, Art Hut, Arcade Cove, Welcome Dock, Calm Beach), epic
-> trees, landmark-scale structures, and animated shoreline waves. Animal
-> characters (bunny / fox / bear / frog / cat / deer) at Wind Waker scale.
->
-> **Contract notes:** `ZoneKey` is now the seven landmark keys above;
-> added `currentZone?: ZoneKey | null` prop (world vs. interior) and
-> `onZoneExit?: () => void`. `AvatarConfig` is the animal shape
-> `{ species, bodyColor, accessoryKey, displayColor }`. All deliberate
-> creative-direction changes.
+> **Status (July 2026):** nine landmark zones with resident guide animals,
+> illustrated terrain (layered sprite island), avatar selection screen, boat
+> arrival cinematic (tap-to-skip), guide speech-bubble overlays, A\*
+> tap-to-move with a verified walk grid, camera pan/pinch/zoom, reduced-motion
+> compliance. All art ships as WebP (~2.8 MB total first-paint payload).
 
 ---
 
-## The one architectural law
+## The One Law
 
 `IslandScene` is purely presentational. It contains **no** Supabase client,
-**no** network calls, **no** persistence, **no** auth. All world data
-arrives via props; all user actions exit via callbacks. **Never** violate
-this — if you find yourself wanting to read from a database inside this
-package, the host app needs to do it and pass the result in.
+**no** network calls beyond its own same-origin static assets, **no**
+persistence, **no** auth, **no** AI. All world data arrives via props; all
+user actions exit via callbacks. **Never violate this** — if you want to read
+a database inside this package, the host app must do it and pass the result
+in. (The single approved future exception is the Shared Session Island's
+isolated sync module, which lives *outside* this package.)
 
 ---
 
-## Install (once published)
+## The nine zones & their guides
 
-```bash
-npm install @gregperlman/island-scene pixi.js
-# peer deps: react >=18, react-dom >=18
+Zone keys, landmark coordinates (`defaultLayout.ts`) and the guide roster are
+**locked** — do not rename, renumber, or add zones without a roadmap decision.
+
+| Zone key | Display name | Guide |
+|---|---|---|
+| `welcome_dock` | Welcome Dock | Captain Pete (Pelican) |
+| `calm_beach` | Calm Beach | Shelly (Turtle) |
+| `treehouse_hideaway` | Treehouse Hideaway | Olive (Owl) |
+| `lighthouse_point` | Lighthouse Point | Wally (Whale) |
+| `star_market` | Star Market | Rascal (Raccoon) |
+| `arcade_cove` | Arcade Cove | Mango (Monkey) |
+| `art_hut` | Art Hut | Fern (Fox) |
+| `campfire_circle` | Campfire Circle | Bruno (Bear) |
+| `lazy_lagoon` | Lazy Lagoon | Finn (Frog) |
+
+## The child's flow
+
+1. **Avatar selection** — 16 illustrated animals in a scrolling grid; the
+   chosen friend is confirmed via `onAvatarSelect` (host persists it; pass it
+   back as `config.imageUrl` to skip the picker on return visits).
+2. **Boat arrival** — a covered pelican boat sails to shore (side-view
+   cinematic; any tap skips; reduced motion skips automatically), then
+   cross-fades up into the world map with the avatar on Welcome Dock.
+3. **World map (Mode 1)** — tap to walk (A\* over the sand-derived walk grid),
+   drag to pan, pinch/wheel to zoom. Captain Pete's welcome auto-opens once
+   per mount.
+4. **Guides** — tapping a landmark walks the avatar over, then the zone's
+   guide pops in with a speech bubble; any tap dismisses it. Landmark tap
+   targets use each sprite's measured opaque pixels, not its texture bounds.
+5. **Zone interiors (Mode 2)** — a side-scrolling parallax view per zone
+   (`ZoneView`/`zoneEnv`), entered when the host sets `currentZone`. The
+   product flow does not currently drive this; it is slated to return as the
+   practice space in the content-pipeline phase (`onZoneTap`/`onActivityEnter`
+   remain in the contract for it).
+
+## Architecture
+
+```
+IslandScene.tsx        React wrapper: lifecycle, props in / callbacks out
+└─ SceneRenderer.ts    plain-TS owner of the Pixi scene graph
+   ├─ LayeredIsland    water/sand sprites + deterministic prop scatter
+   ├─ zones.ts         LANDMARK_ART registry (anchors, scales, opaque boxes)
+   ├─ landmarkFx.ts    ambient per-landmark effects
+   ├─ pathfind.ts      A*, 8-dir, anti-corner-cut, string-pulled paths
+   ├─ GuideOverlay.ts  guide card (screen space)
+   ├─ AvatarSelect.ts  avatar picker (screen space, self-contained input)
+   ├─ ArrivalView.ts   boat cinematic (screen space, tap-to-skip)
+   └─ ZoneView.ts + zoneEnv.ts   Mode 2 parallax interiors
 ```
 
-For local development inside the Engage Island monorepo, link the
-workspace folder or import directly from `packages/island-scene/src`.
+- **Assets**: WebP only. Guide/avatar art is background-knocked-out at load
+  (`avatarTexture.ts`) and capped at 320 px; guide art lazy-loads after first
+  paint. `onLoadProgress` reports real per-asset fractions.
+- **Diagnostics**: `debugLog` (dev builds only); `console.warn` for real
+  failures.
+- **Walk grid**: `walkableCells` in `defaultLayout.ts` is generated from the
+  rendered sand silhouette (`tools/island-art/gen-walkgrid.mjs`) — do not
+  hand-edit; reachability from spawn to every zone is test-protected.
 
----
-
-## Integration (Lovable host app)
+## Integration
 
 ```tsx
-import {
-  IslandScene,
-  themePacks,
-  type AvatarInstance,
-  type LayoutConfig,
-  type ZoneInstance,
-  type IslandSceneHandle,
-} from "@gregperlman/island-scene";
-import { useRef } from "react";
+import { IslandScene, themePacks, sampleLayout, sampleZones } from "@gregperlman/island-scene";
 
-export function StudioIslandView({ island, zones, activitiesByZone }) {
-  const sceneRef = useRef<IslandSceneHandle>(null);
-
-  // The host maps its DB rows -> the component contract. Theme pack key
-  // and layout_config come straight from the islands row.
-  const themePack = themePacks[island.theme_pack_key];
-  const layout: LayoutConfig = island.layout_config;
-  const zoneInstances: ZoneInstance[] = zones.map((z) => ({
-    key: z.key,
-    displayName: z.display_name,
-    skinName: themePack.zoneSkins[z.key]?.skinName ?? z.display_name,
-    gridPosition: z.grid_position,
-    footprint: z.footprint,
-    unlocked: activitiesByZone[z.key]?.length > 0,
-  }));
-
-  const avatars: AvatarInstance[] = [
-    {
-      id: "therapist",
-      isLocal: true,
-      position: layout.spawnPoint,
-      config: island.avatar_config,
-      label: island.name,
-    },
-  ];
-
-  return (
-    <IslandScene
-      ref={sceneRef}
-      themePack={themePack}
-      zones={zoneInstances}
-      layout={layout}
-      avatars={avatars}
-      mode="studio"
-      audioEnabled={false}
-      onZoneTap={(key) => navigate(`/studio/zones/${key}`)}
-      onAvatarMove={(id, pos) => /* persist or broadcast later */ undefined}
-      onReady={() => analytics.track("island_ready")}
-    />
-  );
-}
-```
-
-### What the host owns (and the renderer never touches)
-
-- All persistence (`islands`, `zones`, `assignments`, `event_log`, …).
-- All auth and RLS-bound queries.
-- Telemetry — log `onZoneTap`, `onAvatarMove`, etc. into `event_log`
-  yourself; the package does not import a Supabase client.
-- Navigation — `onZoneTap` is a hint; route changes are the host's job.
-- Audio ducking policy — call `ref.current?.duck(true)` when a
-  telehealth session starts; the package only obeys the call.
-
-### What the renderer owns
-
-- Pathfinding, walk animation, camera, y-sorted rendering.
-- Theme pack swapping (palette + per-zone skins + ambient feel).
-- Reduced-motion compliance and keyboard reachability of zones.
-- Imperative `setVolume` / `duck` / `walkLocalAvatarTo` / `resize`.
-
----
-
-## Component contract
-
-See [`src/types.ts`](./src/types.ts) for the full, authoritative types.
-Highlights:
-
-```ts
 <IslandScene
-  themePack={ThemePackConfig}     // palette, tilesetKey, audioKey, register, zoneSkins
-  zones={ZoneInstance[]}          // 6 zones: key, displayName, skinName, gridPosition, footprint, unlocked
-  layout={LayoutConfig}           // mirrors islands.layout_config (jsonb)
-  avatars={AvatarInstance[]}      // ARRAY from day one; Phase 1 sends one
-  mode={'studio' | 'play' | 'session'}
-  audioEnabled={boolean}
-  reducedMotion={boolean}         // optional; defaults to prefers-reduced-motion
-  hideTextLabels={boolean}        // optional; non-reader mode
-  flags={{ fireflyOverlay?: boolean }}
-  onZoneTap={(zoneKey) => void}
-  onObjectInteract={(objectId, zoneKey) => void}
-  onAvatarMove={(avatarId, position) => void}
-  onReady={() => void}
-  onLoadProgress={(progress) => void}
-  onError={(err) => void}
+  themePack={themePacks.sprout}
+  zones={sampleZones}
+  layout={sampleLayout}
+  avatars={[{ id: "local", isLocal: true, position: sampleLayout.spawnPoint, config }]}
+  mode="play"
+  audioEnabled={false}
+  currentZone={null}            // set a ZoneKey to show that zone's interior
+  onZoneTap={(key) => …}        // reserved for the Mode-2 revival
+  onZoneExit={() => …}
+  onAvatarSelect={(key) => …}   // persist; feed back via config.imageUrl
+  onAvatarMove={(id, pos) => …}
+  onReady={() => …}
+  onLoadProgress={(p) => …}     // 0..1, per-asset granularity
+  onError={(e) => …}
 />
 ```
 
-Imperative handle (via `ref`):
+See [`src/types.ts`](./src/types.ts) for the authoritative contract — every
+field there is public API. `reducedMotion` and `hideTextLabels` are read at
+mount; remount to change them.
 
-```ts
-interface IslandSceneHandle {
-  setVolume(volume: number): void;          // 0..1
-  duck(ducked: boolean): void;              // smooth ambient duck
-  walkLocalAvatarTo(position: GridPosition): void;
-  resize(): void;
-}
-```
+Imperative handle: `walkLocalAvatarTo(pos)`, `resize()`; `setVolume`/`duck`
+are reserved no-ops until the audio phase.
 
 ### Theme packs
 
-Pure data; swappable at runtime with **zero code changes**. Three packs:
+Pure data, swappable at runtime: `sprout`, `explorer`, `drift` (palette stub).
+Each defines a palette plus per-zone skin names for the nine `ZoneKey`s.
 
-- `sprout` — candy-bright, curvy, bouncy (full pack in M1).
-- `explorer` — richer adventure-cozy (full pack in M1).
-- `drift` — palette stub only (art in a later phase).
-
-Each pack defines a palette, tileset key, audio key, register, and a
-per-zone `ZoneSkin` (skin name + optional palette overrides + decoration
-hints). The six canonical `ZoneKey`s exist in every pack:
-
-```
-calm_cove · build_beach · campfire · worry_hollow · garden · field_guide_meadow
-```
-
-### Avatars
-
-Layered 2D sprite system. The compositor stacks
-`body → outfit → hair → accessory → displayColor tint`. The starter sets
-are intentionally tiny so the host's avatar editor can drive the same
-shape end-to-end:
-
-- 3 `hairStyle` · 4 `outfitKey` · 3 `accessoryKey` (+ `none`)
-- 6 `bodyTone`s, free-form `hairColor` and `displayColor`
-
-`avatars` is an array from day one; Milestone 5 wires smooth
-prop-driven interpolation for the second avatar.
-
-### Layout (`LayoutConfig`)
-
-Mirrors the host's `islands.layout_config` jsonb. Includes the reserved
-`pictureFrameAnchor` — the renderer marks the spot now so a future phase
-can visually dock a floating telehealth video window without re-laying
-out the island.
-
----
-
-## Art strategy
-
-**Milestone 1 uses programmatic art** — Pixi `Graphics` shapes,
-gradients, simple procedural trees/rocks/water, circle-and-rectangle
-avatars with the layer system applied as colored shapes. All visuals
-route through a `TextureProvider` abstraction so hand-made or generated
-sprite atlases can be dropped in later without touching scene logic.
-
-Charm comes from motion: gentle idle bobbing, water shimmer, walk
-bounce, soft shadows, occasional ambient particles. Reduced-motion mode
-short-circuits all of it.
-
----
-
-## Demo harness
+## Development
 
 ```bash
 cd packages/island-scene
-npm install
-npm run dev
+bun install
+bun run dev        # demo harness (the only mount point in this repo)
+bun run test       # vitest: layout lock, registry, walkability, smoke
+bun run typecheck
+bun run build      # library -> dist/
+bun run build:demo # static demo -> dist-demo/ (GitHub Pages deploy)
 ```
 
-Opens a controls panel + live scene preview with theme/mode/audio
-toggles and an event log. The harness mounts the same component the
-host app does — keep it green at every milestone.
+The demo harness (`demo/App.tsx`) is the child-facing product view plus a
+floating dev panel; `.github/workflows/pages.yml` publishes it to GitHub
+Pages on every push to `main` touching this package.
 
-### Static preview (GitHub Pages)
-
-Each milestone is reviewable as a browsable URL. The harness builds as a
-static site and deploys via `.github/workflows/pages.yml` on every push
-that touches this package:
-
-```bash
-DEMO_BASE=/studio-island/ npm run build:demo   # -> dist-demo/ (served under /studio-island/)
-npm run build:demo                             # -> dist-demo/ at root base for local preview
-```
-
----
-
-## Build & publish
-
-```bash
-npm run build      # vite lib build + d.ts emit -> dist/
-npm publish        # when ready
-```
-
-Outputs: ESM (`dist/island-scene.js`), CJS (`dist/island-scene.cjs`),
-types (`dist/index.d.ts`). React and ReactDOM are peer deps.
-
----
-
-## Roadmap
-
-1. ✅ Scaffold + contract + demo harness.
-2. ✅ Terrain + zones rendered from `layout`, theme-pack palette swap live.
-3. ✅ Avatar compositor, tap-to-move with A*, walk/idle animation, y-sort.
-4. Zone interaction + polish (hover, idle, ambient audio, reduced-motion, preloader).
-5. Multi-avatar interpolation + firefly overlay primitive (flag-gated).
-6. Clean npm build, this README finalized, `v0.1.0`.
+The tests under `src/__tests__/` protect the locked layout coordinates, the
+zone/guide registry, and spawn-to-every-zone reachability. **Run them before
+and after any change near `defaultLayout.ts`, `zones.ts`, `guideCatalog.ts`,
+or `pathfind.ts`.**
 
 ## Non-goals
 
-Networking/realtime, Supabase anything, activity gameplay logic, AI/companion,
-voice input, the picture-frame video docking (anchor reserved only),
-Drift art.
+Networking/realtime, Supabase, activity gameplay logic, AI, voice, runtime
+speech synthesis (future audio is pre-generated files only), the
+picture-frame video docking (anchor reserved only).
