@@ -265,41 +265,41 @@ What the minimal harness must protect, in order of value:
 
 ---
 
-## 8. Proposed Session 2 fix list (Greg marks GO / NO-GO)
+## 8. Session 2 fix list — EXECUTED July 10, 2026 (Greg approved all except X6)
 
 Cleanup (one commit each):
 
-- [ ] **C1** Delete 14 root-level stray PNGs (~23 MB). (D1)
-- [ ] **C2** Remove dead `terrainImage` path: `loadGround`/`positionGround`, `defaultLayout.terrainImage`, delete both `home-island.png` copies (~8 MB). (D2)
-- [ ] **C3** Delete unused `landmarks/boat.png`, `sprites/sand-base.png`, package `public/boat-covered.png` (~4.6 MB). (D3-D5)
-- [ ] **C4** Delete `src/lib/api/example.functions.ts`. (D6)
-- [ ] **C5** Delete 35 unused shadcn components + their exclusive radix deps. (D7) *(low value, medium churn — fine to NO-GO)*
-- [ ] **C6** Delete `tools/island-art` intermediate artifacts, keep scripts + README (~30 MB). (D8)
-- [ ] **C7** Rewrite `packages/island-scene/README.md` to match reality (9 zones, guide flow, no moored boat). (§3.3)
+- [x] **C1** Delete 14 root-level stray PNGs (~23 MB). (D1)
+- [x] **C2** Remove dead `terrainImage` path: `loadGround`/`positionGround`, `defaultLayout.terrainImage`, delete both `home-island.png` copies (~8 MB). (D2)
+- [x] **C3** Delete unused `landmarks/boat.png`, `sprites/sand-base.png`, package `public/boat-covered.png` (~4.6 MB). (D3-D5)
+- [x] **C4** Delete `src/lib/api/example.functions.ts`. (D6)
+- [x] **C5** Delete 35 unused shadcn components + 29 orphaned deps. (D7)
+- [x] **C6** Delete `tools/island-art` intermediate artifacts, kept scripts + README + raw source art (~27 MB). (D8)
+- [x] **C7** Rewrite `packages/island-scene/README.md` to match reality. (§3.3)
 
 Fixes:
 
-- [ ] **X1** Recompress + downscale guide/avatar/landmark art, lazy-load avatar-select assets, real `onLoadProgress`. (F1, F9) — *the mobile fix; largest single win in the sprint*
-- [ ] **X2** Landmark tap-targets → opaque content box instead of full texture bounds. (F3)
-- [ ] **X3** Clear pointer map when guide overlay opens (pinch-state bug). (F4)
-- [ ] **X4** Boat cinematic: tap-to-skip + missing-texture skip guard. (F5)
-- [ ] **X5** Gate `console.info` diagnostics behind a debug flag. (F11)
-- [ ] **X6** (optional, defers to 5/6) Avatar/zone diffing instead of full `rebuild()` on prop change. (F6) *(can NO-GO now; required before Session 6)*
+- [x] **X1** All art → WebP (69 MB → 2.8 MB); guide art lazy-loads after first paint; per-asset `onLoadProgress`. (F1, F9)
+- [x] **X2** Landmark tap-targets → measured opaque content boxes baked into `LANDMARK_ART`. (F3)
+- [x] **X3** Pointers retired on every pointerup + cleared when a guide opens. (F4)
+- [x] **X4** Boat cinematic: tap-to-skip + missing-texture skip guard. (F5)
+- [x] **X5** Diagnostics behind `debugLog` (dev builds only). (F11)
+- [ ] **X6** Avatar/zone diffing instead of full `rebuild()`. (F6) — **moved by Greg to Session 5 prerequisite** (must land before the build engine's state flow / Session 6 sync).
 
-Test harness (Session 2 scope, per pack):
+Test harness:
 
-- [ ] **T1** Add Vitest (devDependency; none exists today — see §6).
-- [ ] **T2** `defaultLayout` snapshot test (coordinates lock).
-- [ ] **T3** Zone/guide registry test (9 zones, locked guide names, files exist).
-- [ ] **T4** Walkability/pathfinding invariants (spawn→every zone reachable).
-- [ ] **T5** React mount smoke test with mocked renderer + `iso.ts` pure-math tests.
+- [x] **T1** Vitest 4.1.10 + jsdom (devDeps); `bun run test`; wired into the Pages workflow.
+- [x] **T2** `defaultLayout` lock test (zones/spawn/grid exact; cell tables by count + checksum).
+- [x] **T3** Zone/guide registry test (9 zones, locked roster, art files exist).
+- [x] **T4** Walkability invariants (spawn → every zone entrance pathable).
+- [x] **T5** Mount smoke test (mocked renderer) + `iso.ts` round-trip tests. 24 tests green.
 
-Decisions for Greg (block Session 3 shape, not Session 2):
+Decisions (answered by Greg, July 10, 2026):
 
-- [ ] **Q1** Mode 2 zone interiors: resurrect (guide → "visit" → interior) or cut (~1,300 lines)? (F2)
-- [ ] **Q2** Confirm `/content` lives inside `packages/island-scene` with build-time JSON imports. (§7·S3)
-- [ ] **Q3** Confirm content IDs standardize on the island's 9 zone keys. (§7·S3)
+- [x] **Q1 = A**: Mode 2 zone interiors are REVIVED as the practice space — Session 3 wires guide → interior; `ZoneView`/`zoneEnv` stay.
+- [x] **Q2**: `/content` lives at `packages/island-scene/content` with build-time JSON imports.
+- [x] **Q3**: content IDs use 4-part dot format (`<zone>.<guide>.<node>.<seq>`) keyed on the island's 9 zone keys.
 
----
+Restore point: local tag + remote branch `checkpoint-pre-session-2` at `d42759a` (tag push blocked by repo ref policy; create the GitHub tag from that branch if desired).
 
-*STOP per sprint pack: no fixes applied. Session 2 begins after Greg marks GO/NO-GO above.*
+Hideaway Den (Session 2 item #2 in the sprint pack): confirmed nothing to remove — see §3.1.
