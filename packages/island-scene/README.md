@@ -69,6 +69,11 @@ Zone keys, landmark coordinates (`defaultLayout.ts`) and the guide roster are
    time (tap to advance), then a gentle "All done!" moment. No Stars are
    awarded yet (economy wiring is a later session). Zones without a practice
    keep the explore-to-beacon "You found it!" discovery.
+7. **Voice** — dialogue and practice lines play pre-generated audio
+   (`AudioService` + [`content/audio-manifest.json`](./content/README.md)):
+   per-zone preload on entry, play on line display, tap the speaking guide to
+   replay, a persisted global 🔊 mute toggle, and a **silent** text-only
+   fallback when a file is missing. Audio is never synthesized at runtime.
 
 ## Content pipeline
 

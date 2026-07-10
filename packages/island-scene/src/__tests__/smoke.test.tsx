@@ -23,6 +23,9 @@ vi.mock("../render/SceneRenderer", () => ({
     setLayout = vi.fn();
     setAvatars = vi.fn();
     setCurrentZone = vi.fn();
+    setAudioEnabled = vi.fn();
+    isMuted = vi.fn().mockReturnValue(false);
+    toggleMute = vi.fn().mockReturnValue(true);
     walkLocalAvatarTo = vi.fn();
     zoomBy = vi.fn();
     constructor() {

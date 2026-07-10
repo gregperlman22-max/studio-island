@@ -98,6 +98,48 @@ practice's own `stars` field, then 0.
 the content version. The loader fails if the manifest and the directory
 disagree — update it when adding/removing files.
 
+## Audio (`audio-manifest.json`)
+
+Voice playback is **pre-generated files only** — the island never synthesizes
+speech at runtime. `audio-manifest.json` maps a stable content-line ID to a
+voice file served from `/public/audio`:
+
+```json
+{
+  "version": 1,
+  "entries": {
+    "calm_beach.shelly.greet.001": { "file": "audio/calm_beach/shelly-greet-001.wav", "duration": 0.4 }
+  }
+}
+```
+
+- **Keys** are the stable content IDs. Two kinds are voiced:
+  - **dialogue lines** — the `id` from a `dialogue.json` line (this includes
+    practice intro lines, which are dialogue lines).
+  - **practice steps** — steps are plain strings in `practices.json`, so their
+    audio key is *derived* deterministically as
+    `<zone>.<guide>.<practice-slug>-step.<seq>`
+    (e.g. `calm_beach.shelly.wave-breathing-step.001`). Never renumber.
+- **`file`** is relative to the served root (BASE_URL). Production files are
+  **mp3, mono, 64–96 kbps**; the wired entries today are dependency-free WAV
+  beep placeholders that prove the manifest → preload → play → replay → mute →
+  missing-file-fallback path end-to-end.
+- A line with **no** entry simply has no audio: it shows as text (silent
+  fallback) and appears in the dev-mode missing-audio report.
+
+**Adding a voice file:** drop `public/audio/<zone>/<name>.mp3`, add an entry
+keyed by the line's stable ID. That's it — the AudioService preloads it per
+zone on entry and plays it when the line is displayed.
+
+### Missing-audio checklist
+
+In a dev build the renderer logs a per-zone checklist of every line still
+needing a voice file (`[island-audio] voice coverage: …`). Programmatically,
+`audioCoverageReport()` returns the same data
+(`{ zones: [{ zone, total, withAudio, missing[] }], totalMissing }`).
+`src/__tests__/audio.test.ts` additionally fails CI if any manifest entry
+points to a file that isn't actually shipped.
+
 ## Checks that protect you
 
 `src/__tests__/content.test.ts` (runs in CI on every push touching the
