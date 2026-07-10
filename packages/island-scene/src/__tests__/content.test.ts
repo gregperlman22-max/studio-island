@@ -8,6 +8,7 @@ import {
   getStarValue,
   getZoneDialogue,
 } from "../content/loader";
+import { practiceCards } from "../content/practice";
 import { DIALOGUE_ID_RE, PRACTICE_ID_RE } from "../content/types";
 import { sampleZones } from "../defaultLayout";
 import { GUIDES } from "../render/guideCatalog";
@@ -98,5 +99,34 @@ describe("content pipeline", () => {
     for (const s of p!.steps) expect(s).toContain("PLACEHOLDER");
     expect(getStarValue(p!.id)).toBe(0);
     expect(getDialogueLine(p!.introLine)?.text).toContain("PLACEHOLDER");
+  });
+
+  it("the practice player renders introLine + steps from JSON, in order", () => {
+    // The exact card sequence the Mode-2 PracticePlayer walks through, driven
+    // straight from the content pipeline (loader → introLine text + steps).
+    const p = getPractice("calm_beach.practice.wave-breathing")!;
+    const introText = getDialogueLine(p.introLine)!.text;
+    const cards = practiceCards(p, introText);
+
+    // intro (from introLine) → one card per step → completion.
+    expect(cards).toHaveLength(1 + p.steps.length + 1);
+    expect(cards[0]).toEqual({ kind: "intro", title: p.title, body: introText });
+    p.steps.forEach((step, i) => {
+      expect(cards[i + 1]).toEqual({
+        kind: "step",
+        title: p.title,
+        body: step, // rendered verbatim from practices.json
+        index: i + 1,
+        total: p.steps.length,
+      });
+    });
+    expect(cards[cards.length - 1]).toEqual({ kind: "complete", title: p.title });
+  });
+
+  it("skips the intro card when a practice has no resolvable intro text", () => {
+    const p = getPractice("calm_beach.practice.wave-breathing")!;
+    const cards = practiceCards(p, "");
+    expect(cards[0].kind).toBe("step");
+    expect(cards).toHaveLength(p.steps.length + 1);
   });
 });
