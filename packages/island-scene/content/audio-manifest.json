@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "note": "Audio index: dialogue-line / practice-step ID -> pre-generated voice file (relative to the served root). Production files are mp3 (mono, 64-96kbps); the entries below are dependency-free WAV beep placeholders wired to prove the manifest->preload->play->replay->mute->fallback path. Lines NOT listed here surface in the dev-mode missing-audio report. IDs are the stable content IDs and are never renumbered.",
+  "entries": {
+    "welcome_dock.captain_pete.greet.001": { "file": "audio/welcome_dock/captain-pete-greet-001.wav", "duration": 0.4 },
+    "calm_beach.shelly.greet.001": { "file": "audio/calm_beach/shelly-greet-001.wav", "duration": 0.4 },
+    "calm_beach.shelly.wave-breathing-step.001": { "file": "audio/calm_beach/shelly-wave-breathing-step-001.wav", "duration": 0.4 }
+  }
+}

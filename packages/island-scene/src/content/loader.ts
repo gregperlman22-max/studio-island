@@ -184,7 +184,7 @@ const manifest = manifestJson as ContentManifest;
     ...Object.keys(practiceModules),
   ]
     .map((p) => p.replace(/^.*?content\//, ""))
-    .concat("economy/stars.json")
+    .concat("economy/stars.json", "audio-manifest.json")
     .sort();
   const listed = [...(manifest.files ?? [])].sort();
   if (JSON.stringify(discovered) !== JSON.stringify(listed)) {
