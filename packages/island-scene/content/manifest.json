@@ -2,6 +2,7 @@
   "version": 1,
   "files": [
     "audio-manifest.json",
+    "build-items.json",
     "economy/stars.json",
     "zones/arcade_cove/dialogue.json",
     "zones/art_hut/dialogue.json",

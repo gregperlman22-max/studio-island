@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "note": "Free-build island palette (Session 5). Sandtray/dollhouse-informed categories. sprite keys map to future illustrated assets per ASSET-SPEC.md; until those land, the engine renders placeholder colored shapes. stackable = may be placed ON a surface-providing item; surfaceType (non-null) = the surface this item's top provides. Stacking is item-on-surface ONLY — a stacked item never provides a surface (no towers). IDs are stable forever.",
+  "items": [
+    { "id": "structures.small-house", "name": "Small House", "category": "structures", "sprite": "build/structures/small-house", "footprint": { "w": 2, "h": 2 }, "stackable": false, "surfaceType": null },
+    { "id": "structures.treehouse", "name": "Treehouse", "category": "structures", "sprite": "build/structures/treehouse", "footprint": { "w": 2, "h": 2 }, "stackable": false, "surfaceType": null },
+    { "id": "structures.fence", "name": "Fence", "category": "structures", "sprite": "build/structures/fence", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "structures.bridge", "name": "Bridge", "category": "structures", "sprite": "build/structures/bridge", "footprint": { "w": 2, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "structures.gate", "name": "Gate", "category": "structures", "sprite": "build/structures/gate", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "structures.tent", "name": "Tent", "category": "structures", "sprite": "build/structures/tent", "footprint": { "w": 2, "h": 2 }, "stackable": false, "surfaceType": null },
+
+    { "id": "nature.tree-oak", "name": "Oak Tree", "category": "nature", "sprite": "build/nature/tree-oak", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "nature.tree-pine", "name": "Pine Tree", "category": "nature", "sprite": "build/nature/tree-pine", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "nature.tree-palm", "name": "Palm Tree", "category": "nature", "sprite": "build/nature/tree-palm", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "nature.bush", "name": "Bush", "category": "nature", "sprite": "build/nature/bush", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "nature.flowers", "name": "Flowers", "category": "nature", "sprite": "build/nature/flowers", "footprint": { "w": 1, "h": 1 }, "stackable": true, "surfaceType": null },
+    { "id": "nature.rock", "name": "Rock", "category": "nature", "sprite": "build/nature/rock", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "nature.pond", "name": "Pond", "category": "nature", "sprite": "build/nature/pond", "footprint": { "w": 2, "h": 2 }, "stackable": false, "surfaceType": null },
+    { "id": "nature.garden-bed", "name": "Garden Bed", "category": "nature", "sprite": "build/nature/garden-bed", "footprint": { "w": 2, "h": 1 }, "stackable": false, "surfaceType": "garden" },
+
+    { "id": "figures.child", "name": "Child", "category": "figures", "sprite": "build/figures/child", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "figures.adult-1", "name": "Grown-up", "category": "figures", "sprite": "build/figures/adult-1", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "figures.adult-2", "name": "Grown-up 2", "category": "figures", "sprite": "build/figures/adult-2", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "figures.baby", "name": "Baby", "category": "figures", "sprite": "build/figures/baby", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "figures.dog", "name": "Dog", "category": "figures", "sprite": "build/figures/dog", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "figures.cat", "name": "Cat", "category": "figures", "sprite": "build/figures/cat", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "figures.bird", "name": "Island Bird", "category": "figures", "sprite": "build/figures/bird", "footprint": { "w": 1, "h": 1 }, "stackable": true, "surfaceType": null },
+    { "id": "figures.crab", "name": "Beach Crab", "category": "figures", "sprite": "build/figures/crab", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "figures.knight", "name": "Brave Knight", "category": "figures", "sprite": "build/figures/knight", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "figures.dragon", "name": "Friendly Dragon", "category": "figures", "sprite": "build/figures/dragon", "footprint": { "w": 2, "h": 2 }, "stackable": false, "surfaceType": null },
+
+    { "id": "comfort.campfire", "name": "Campfire", "category": "comfort", "sprite": "build/comfort/campfire", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "comfort.lantern", "name": "Lantern", "category": "comfort", "sprite": "build/comfort/lantern", "footprint": { "w": 1, "h": 1 }, "stackable": true, "surfaceType": null },
+    { "id": "comfort.bench", "name": "Bench", "category": "comfort", "sprite": "build/comfort/bench", "footprint": { "w": 2, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "comfort.table", "name": "Table", "category": "comfort", "sprite": "build/comfort/table", "footprint": { "w": 2, "h": 1 }, "stackable": false, "surfaceType": "table" },
+    { "id": "comfort.blanket", "name": "Picnic Blanket", "category": "comfort", "sprite": "build/comfort/blanket", "footprint": { "w": 2, "h": 2 }, "stackable": false, "surfaceType": null },
+    { "id": "comfort.swing", "name": "Swing", "category": "comfort", "sprite": "build/comfort/swing", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null },
+    { "id": "comfort.mailbox", "name": "Mailbox", "category": "comfort", "sprite": "build/comfort/mailbox", "footprint": { "w": 1, "h": 1 }, "stackable": false, "surfaceType": null }
+  ]
+}
