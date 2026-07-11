@@ -118,9 +118,10 @@ IslandScene.tsx        React wrapper: lifecycle, props in / callbacks out
    └─ ZoneView.ts + zoneEnv.ts   Mode 2 parallax interiors
 ```
 
-- **Assets**: WebP only. Guide/avatar art is background-knocked-out at load
-  (`avatarTexture.ts`) and capped at 320 px; guide art lazy-loads after first
-  paint. `onLoadProgress` reports real per-asset fractions.
+- **Assets**: WebP only. Guide/avatar art ships as true-RGBA cutouts matted
+  offline (`tools/island-art/matte-characters.mjs`; the old runtime knockout
+  is gone); guide art lazy-loads after first paint. `onLoadProgress` reports
+  real per-asset fractions.
 - **Diagnostics**: `debugLog` (dev builds only); `console.warn` for real
   failures.
 - **Walk grid**: `walkableCells` in `defaultLayout.ts` is generated from the

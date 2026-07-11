@@ -3,9 +3,9 @@
  *
  * Each landmark zone has a resident guide: a friendly animal character who pops
  * in with a warm, in-character welcome the first time a child taps into that
- * zone. The illustrated guide PNGs live in `public/guides/` with capitalised
- * filenames (Bear.webp, Owl.webp, …) and, like the avatar art, ship as RGB with a
- * baked-in light background — `loadAvatarTexture` knocks that out to transparency.
+ * zone. The illustrated guide art lives in `public/guides/` with capitalised
+ * filenames (Bear.webp, Owl.webp, …) as true-RGBA cutouts, matted offline by
+ * tools/island-art/matte-characters.mjs (like the avatar art).
  *
  * This file is pure data + URL helpers; the on-screen presentation lives in
  * GuideOverlay.ts and the wiring in SceneRenderer.ts.

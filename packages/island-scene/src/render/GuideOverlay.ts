@@ -15,8 +15,8 @@ import type { GuideEntry } from "./guideCatalog";
  * as a top layer (above the world map — it does not reorder the island's own
  * layers), feeds it taps + the per-frame tick, and shows it on a zone tap.
  *
- * The guide art is knocked out to transparency by the same loader the avatars
- * use (loadAvatarTexture), so the guide sits clean against the dimmed backdrop.
+ * The guide art is a true-RGBA cutout (matted offline), so the guide sits
+ * clean against the dimmed backdrop.
  */
 
 /** Bold cel outline color, matching the rest of the scene's art register. */

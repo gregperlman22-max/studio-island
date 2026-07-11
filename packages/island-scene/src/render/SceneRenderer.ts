@@ -167,7 +167,7 @@ export class SceneRenderer {
   private currentPractice: { practice: MiniPractice; introText: string } | null = null;
   /** Pre-generated voice playback (dialogue + practice lines). */
   private audio!: AudioService;
-  /** Preloaded, background-knocked-out guide art, keyed by zone. */
+  /** Preloaded guide art (RGBA cutouts), keyed by zone. */
   private guideTextures = new Map<ZoneKey, Texture>();
   /** Lazy guide-art preload (kicked off in init, never awaited there). */
   private guidesReady: Promise<void> = Promise.resolve();
@@ -496,9 +496,10 @@ export class SceneRenderer {
     this.opts.onLoadProgress?.(Math.min(0.99, 0.05 + frac * 0.94));
   }
 
-  /** Preload the 16 illustrated animal images (selection grid + island sprite).
-   *  A failed load just leaves that entry without a texture — the card shows
-   *  its name and the island avatar falls back to the programmatic compositor. */
+  /** Preload the 16 illustrated animal images (selection grid + island
+   *  sprite) — RGBA cutouts, matted offline. A failed load just leaves that
+   *  entry without a texture — the card shows its name and the island avatar
+   *  falls back to the programmatic compositor. */
   private async loadAvatars(): Promise<void> {
     await Promise.all(
       AVATARS.map(async (a) => {
@@ -517,12 +518,11 @@ export class SceneRenderer {
     );
   }
 
-  /** Preload the 9 landmark guide images (Phase 2), one per zone. The art ships
-   *  with no alpha, so loadAvatarTexture knocks the baked-in background out to
-   *  transparency — the same pass the avatars use. A failed load just leaves
-   *  that zone without a texture; the overlay then shows a soft placeholder.
-   *  NOT awaited by init (guides aren't needed for first paint) — showGuide
-   *  waits on the returned promise if a guide is requested early. */
+  /** Preload the 9 landmark guide images (Phase 2), one per zone — RGBA
+   *  cutouts, matted offline. A failed load just leaves that zone without a
+   *  texture; the overlay then shows a soft placeholder. NOT awaited by init
+   *  (guides aren't needed for first paint) — showGuide waits on the returned
+   *  promise if a guide is requested early. */
   private async loadGuides(): Promise<void> {
     await Promise.all(
       (Object.keys(GUIDES) as ZoneKey[]).map(async (zone) => {
