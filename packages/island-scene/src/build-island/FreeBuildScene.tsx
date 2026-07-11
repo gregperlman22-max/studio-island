@@ -57,9 +57,15 @@ export function FreeBuildScene({ onExit, reducedMotion, className }: FreeBuildSc
   const [phase, setPhase] = useState<"arriving" | "building" | "departing">("arriving");
   const [category, setCategory] = useState<BuildCategory>("structures");
   const [drag, setDrag] = useState<{ item: BuildItemDef; x: number; y: number } | null>(null);
+  /** Tap-to-place: the armed palette item. Tap a chip to arm, tap the island
+   *  to place (stays armed for repeat stamping), tap the chip again to disarm.
+   *  PRIMARY flow for every input type; drag is a fine-pointer enhancement. */
+  const [armed, setArmed] = useState<BuildItemDef | null>(null);
+  const armedRef = useRef<BuildItemDef | null>(null);
   const [slots, setSlots] = useState(() => listSaveSlots());
 
   stateRef.current = buildState;
+  armedRef.current = armed;
 
   // The engine loop: event → pure reducer → state back into the view.
   const handleEvent = (event: BuildEvent) => {
@@ -79,6 +85,16 @@ export function FreeBuildScene({ onExit, reducedMotion, className }: FreeBuildSc
       container: el,
       reducedMotion: prefersReduced,
       onEvent: handleEvent,
+      // Tap-to-place: an unconsumed tap on a buildable cell places the armed
+      // item there (and stays armed for repeat stamping).
+      onCellTap: (cell) => {
+        const item = armedRef.current;
+        if (!item) return;
+        handleEvent({
+          type: "place",
+          placement: { id: nextPlacementId(), itemId: item.id, cell, rotation: 0 },
+        });
+      },
       onReady: () => renderer.playSail("arrive", () => setPhase("building")),
     });
     rendererRef.current = renderer;
@@ -100,28 +116,68 @@ export function FreeBuildScene({ onExit, reducedMotion, className }: FreeBuildSc
     rendererRef.current?.setState(buildState);
   }, [buildState]);
 
-  // ── Palette drag-to-place ─────────────────────────────────────────
-  useEffect(() => {
-    if (!drag) return;
-    const move = (e: PointerEvent) => setDrag((d) => (d ? { ...d, x: e.clientX, y: e.clientY } : d));
-    const up = (e: PointerEvent) => {
-      const cell = rendererRef.current?.cellFromClient(e.clientX, e.clientY) ?? null;
-      if (cell) {
-        handleEvent({
-          type: "place",
-          placement: { id: nextPlacementId(), itemId: drag.item.id, cell, rotation: 0 },
-        });
+  // ── Palette input ────────────────────────────────────────────────
+  // Listeners attach SYNCHRONOUSLY in the pointerdown handler with explicit
+  // pointer capture, so nothing races React's render/effect timing (the old
+  // deferred-useEffect wiring lost fast taps entirely), and pointercancel —
+  // fired whenever mobile gesture arbitration hijacks the touch — cleans up
+  // instead of leaving a stuck ghost.
+  //  - every input type: press + release without travel = arm/disarm the chip;
+  //  - fine pointers (mouse): press + travel >6px = drag-to-place (ghost),
+  //    release over the island drops it there;
+  //  - touch: no drag — a travelled touch is a palette-row pan (touch-action
+  //    pan-x), which the browser takes over via pointercancel.
+  const onChipPointerDown = (item: BuildItemDef, e: React.PointerEvent<HTMLDivElement>) => {
+    if (phase !== "building") return;
+    const el = e.currentTarget;
+    const pointerId = e.pointerId;
+    const allowDrag = e.pointerType === "mouse";
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let dragging = false;
+    try {
+      el.setPointerCapture(pointerId);
+    } catch {
+      /* capture unsupported — bubbling still reaches el's listeners */
+    }
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      if (allowDrag && !dragging && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 6) {
+        dragging = true;
       }
+      if (dragging) setDrag({ item, x: ev.clientX, y: ev.clientY });
+    };
+    const cleanup = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", cancel);
+    };
+    const up = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      cleanup();
       setDrag(null);
+      if (dragging) {
+        const cell = rendererRef.current?.cellFromClient(ev.clientX, ev.clientY) ?? null;
+        if (cell) {
+          handleEvent({
+            type: "place",
+            placement: { id: nextPlacementId(), itemId: item.id, cell, rotation: 0 },
+          });
+        }
+      } else if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 10) {
+        // Clean tap: arm (or disarm) this chip for tap-to-place.
+        setArmed((a) => (a?.id === item.id ? null : item));
+      }
     };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up, { once: true });
-    return () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
+    const cancel = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      cleanup();
+      setDrag(null); // browser took the gesture (scroll etc.) — never a stuck ghost
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drag?.item.id]);
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", cancel);
+  };
 
   const sailHome = () => {
     if (phase !== "building") return;
@@ -147,7 +203,10 @@ export function FreeBuildScene({ onExit, reducedMotion, className }: FreeBuildSc
       ref={containerRef}
       className={className}
       data-scene="free-build"
-      style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", touchAction: "none" }}
+      // touch-action is deliberately NOT set here: the canvas sets its own
+      // "none" (BuildSceneRenderer.init) so island gestures never scroll,
+      // while the palette row keeps pan-x scrolling on touch.
+      style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden" }}
     >
       {building && (
         <>
@@ -206,30 +265,38 @@ export function FreeBuildScene({ onExit, reducedMotion, className }: FreeBuildSc
                 </button>
               ))}
               <span style={{ marginLeft: "auto", fontSize: 11, color: "#6b5a44", alignSelf: "center" }}>
-                drag onto the island · tap a placed item to rotate or remove
+                {armed
+                  ? `placing ${armed.name} — tap the island · tap the chip again when done`
+                  : "tap an item, then tap the island to place it · tap a placed item to rotate or remove"}
               </span>
             </div>
-            <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
-              {getBuildItemsByCategory(category).map((item) => (
-                <div
-                  key={item.id}
-                  role="button"
-                  aria-label={`Place ${item.name}`}
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    setDrag({ item, x: e.clientX, y: e.clientY });
-                  }}
-                  style={{ ...chip, borderColor: CATEGORY_SWATCH[item.category] }}
-                >
-                  <span
+            <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2, touchAction: "pan-x" }}>
+              {getBuildItemsByCategory(category).map((item) => {
+                const isArmed = armed?.id === item.id;
+                return (
+                  <div
+                    key={item.id}
+                    role="button"
+                    aria-label={`Place ${item.name}`}
+                    aria-pressed={isArmed}
+                    onPointerDown={(e) => onChipPointerDown(item, e)}
                     style={{
-                      display: "inline-block", width: 14, height: 14, borderRadius: 4,
-                      background: CATEGORY_SWATCH[item.category], border: `2px solid ${INK}`,
+                      ...chip,
+                      borderColor: isArmed ? INK : CATEGORY_SWATCH[item.category],
+                      background: isArmed ? CATEGORY_SWATCH[item.category] : "#fff",
+                      boxShadow: isArmed ? `0 0 0 3px ${CATEGORY_SWATCH[item.category]}` : "none",
                     }}
-                  />
-                  {item.name}
-                </div>
-              ))}
+                  >
+                    <span
+                      style={{
+                        display: "inline-block", width: 14, height: 14, borderRadius: 4,
+                        background: CATEGORY_SWATCH[item.category], border: `2px solid ${INK}`,
+                      }}
+                    />
+                    {item.name}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </>
@@ -280,5 +347,10 @@ const chip: React.CSSProperties = {
   display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
   padding: "8px 12px", borderRadius: 10, border: "3px solid",
   background: "#fff", color: INK, fontSize: 13, fontWeight: 700,
-  cursor: "grab", userSelect: "none", touchAction: "none",
-};
+  cursor: "grab", userSelect: "none",
+  // pan-x (not none): a travelled touch on a chip scrolls the palette row;
+  // clean taps arm the chip; drag-to-place is mouse-only.
+  touchAction: "pan-x",
+  WebkitUserSelect: "none",
+  WebkitTouchCallout: "none",
+} as React.CSSProperties;

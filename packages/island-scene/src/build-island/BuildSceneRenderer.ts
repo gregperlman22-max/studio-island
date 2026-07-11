@@ -35,6 +35,10 @@ export interface BuildSceneOptions {
   container: HTMLElement;
   reducedMotion: boolean;
   onEvent: (event: BuildEvent) => void;
+  /** A tap landed on a buildable cell (not on a placed item or selection UI).
+   *  The host places its armed palette item here — the tap-to-place flow that
+   *  works on every input type. */
+  onCellTap?: (cell: { x: number; y: number }) => void;
   onReady?: () => void;
   onError?: (err: Error) => void;
 }
@@ -92,6 +96,10 @@ export class BuildSceneRenderer {
       return;
     }
     this.app.canvas.style.display = "block";
+    // touch-action is scoped to the CANVAS only: gestures on the island never
+    // scroll the page, while the DOM chrome around it (palette row) keeps its
+    // own pan behavior.
+    this.app.canvas.style.touchAction = "none";
     this.opts.container.appendChild(this.app.canvas);
     this.app.stage.addChild(this.backdrop, this.world);
     this.world.addChild(this.terrain, this.waves, this.view.gridLayer, this.view.itemLayer, this.view.uiLayer);
@@ -252,7 +260,11 @@ export class BuildSceneRenderer {
     if (!wasTap || (this.arrivalView && !this.arrivalView.done)) return;
     const wx = (e.global.x - this.world.position.x) / this.world.scale.x;
     const wy = (e.global.y - this.world.position.y) / this.world.scale.y;
-    this.view.handleTap(wx, wy);
+    // Selection UI / placed items first; an unconsumed tap on a buildable
+    // cell goes to the host (tap-to-place with the armed palette item).
+    if (this.view.handleTap(wx, wy)) return;
+    const cell = this.view.cellAt(wx, wy);
+    if (cell) this.opts.onCellTap?.(cell);
   };
 
   // ── Painting ─────────────────────────────────────────────────────

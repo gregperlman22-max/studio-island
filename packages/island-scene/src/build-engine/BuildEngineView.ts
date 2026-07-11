@@ -1,6 +1,6 @@
 import { Container, Graphics, Text } from "pixi.js";
 import { getBuildItem, type BuildItemDef } from "../content/buildItems";
-import { diamondPoly, tileCenter } from "../render/iso";
+import { diamondPoly, screenToTile, tileCenter } from "../render/iso";
 import { placementCells, planPlacementUpdate } from "./engine";
 import type { BuildEvent, BuildRegion, BuildState, Placement } from "./types";
 
@@ -136,6 +136,15 @@ export class BuildEngineView {
       return true; // the tap closed the selection; don't also place/walk
     }
     return false;
+  }
+
+  /** The buildable grid cell under a world point, or null (water/dock/off-
+   *  island). This is the tap-to-place target resolver: the renderer calls it
+   *  when a tap wasn't consumed by selection UI, and the host places the
+   *  armed palette item there. */
+  cellAt(wx: number, wy: number): { x: number; y: number } | null {
+    const tile = screenToTile(wx, wy);
+    return this.opts.region.buildable(tile.x, tile.y) ? tile : null;
   }
 
   /** The topmost placement whose footprint diamond(s) contain the world point. */

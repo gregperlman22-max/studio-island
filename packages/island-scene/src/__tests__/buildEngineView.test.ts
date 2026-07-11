@@ -171,3 +171,59 @@ describe("BuildEngineView — targeted updates, state-in/events-out", () => {
     expect(view.getState().placements.map((p) => p.id)).toEqual(["b"]);
   });
 });
+
+describe("tap-to-place (the touch-primary flow)", () => {
+  it("cellAt resolves buildable cells and rejects off-region points", () => {
+    const view = makeView();
+    const inCell = tileCenter(3, 3);
+    expect(view.cellAt(inCell.x, inCell.y)).toEqual({ x: 3, y: 3 });
+    const outCell = tileCenter(20, 20); // outside the 12×12 test region
+    expect(view.cellAt(outCell.x, outCell.y)).toBeNull();
+  });
+
+  it("armed-item taps place repeatedly through the host loop, never full-rebuilding", () => {
+    const view = makeView();
+    let s = state();
+    view.setState(s);
+    // Simulate the renderer+host: an unconsumed tap resolves a cell, the host
+    // places the armed item there; armed persists for repeat stamping.
+    const tapPlace = (gx: number, gy: number, id: string) => {
+      const c = tileCenter(gx, gy);
+      expect(view.handleTap(c.x, c.y)).toBe(false); // nothing consumed the tap
+      const cell = view.cellAt(c.x, c.y);
+      expect(cell).toEqual({ x: gx, y: gy });
+      s = applyBuildEvent(s, { type: "place", placement: place(id, "nature.tree-oak", cell!.x, cell!.y) }, region);
+      view.setState(s);
+    };
+    tapPlace(2, 2, "t1");
+    tapPlace(4, 4, "t2");
+    tapPlace(6, 6, "t3");
+    expect(view.stats).toEqual({ fullRebuilds: 0, bundlesBuilt: 3, bundlesRemoved: 0 });
+    expect(s.placements).toHaveLength(3);
+  });
+
+  it("the real island layout rejects dock cells and accepts the meadow", async () => {
+    const { buildRegion, DOCK_CELLS } = await import("../build-island/layout");
+    for (const c of DOCK_CELLS) expect(buildRegion.buildable(c.x, c.y), `dock ${c.x},${c.y}`).toBe(false);
+    expect(buildRegion.buildable(12, 9)).toBe(true); // open meadow, mid-island
+    expect(buildRegion.buildable(0, 0)).toBe(false); // ocean corner
+  });
+
+  it("save slots round-trip a tap-placed build across all three slots", async () => {
+    const { saveToSlot, loadFromSlot, clearSlot } = await import("../build-engine/saves");
+    localStorage.clear();
+    let s = state();
+    for (const [i, [x, y]] of [[2, 2], [4, 4], [6, 6]].entries()) {
+      s = applyBuildEvent(s, { type: "place", placement: place(`p${i}`, "comfort.bench", x, y) }, region);
+    }
+    for (const slot of [1, 2, 3] as const) {
+      expect(saveToSlot(slot, s)).toBe(true);
+      expect(loadFromSlot(slot)).toEqual(s);
+    }
+    // Mutate after saving — slots keep the saved snapshot.
+    const s2 = applyBuildEvent(s, { type: "remove", id: "p0" }, region);
+    expect(loadFromSlot(2)).toEqual(s);
+    expect(s2.placements).toHaveLength(2);
+    for (const slot of [1, 2, 3] as const) clearSlot(slot);
+  });
+});
