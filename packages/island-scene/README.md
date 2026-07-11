@@ -46,9 +46,10 @@ Zone keys, landmark coordinates (`defaultLayout.ts`) and the guide roster are
 1. **Avatar selection** — 16 illustrated animals in a scrolling grid; the
    chosen friend is confirmed via `onAvatarSelect` (host persists it; pass it
    back as `config.imageUrl` to skip the picker on return visits).
-2. **Boat arrival** — a covered pelican boat sails to shore (side-view
-   cinematic; any tap skips; reduced motion skips automatically), then
-   cross-fades up into the world map with the avatar on Welcome Dock.
+2. **Boat arrival** — the chosen friend sails to shore at the helm of the
+   covered boat (side-view cinematic; the avatar rides at the ship's wheel;
+   any tap skips; reduced motion skips automatically), then cross-fades up
+   into the world map with the avatar on Welcome Dock.
 3. **World map (Mode 1)** — tap to walk (A\* over the sand-derived walk grid),
    drag to pan, pinch/wheel to zoom. Captain Pete's welcome auto-opens once
    per mount.

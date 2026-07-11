@@ -83,18 +83,32 @@ export const LANDMARK_ART: Record<
 };
 
 /**
- * Arrival boat sprite (covered pelican boat — canopy hides the passenger, a
- * pelican captain steers). Background cut to transparency + trimmed to content.
- * Base-pinned at the hull waterline so it berths against the dock.
+ * Arrival boat sprite: the covered boat with an EMPTY helm — the ship's wheel
+ * at the stern is riderless so the player's chosen avatar can take it.
+ * Cut to transparency from the arrival-boat-bg-empty-helm.png master (kept in
+ * this directory; the *.webp url glob never bundles it) with the wake foam
+ * travelling with the hull. Base-pinned at the hull waterline so it berths
+ * against the shore.
+ *
+ *   anchorX/anchorY — hull centre / waterline, in texture fractions.
+ *   helmX/helmY     — where the rider's FEET pin (texture fractions): the
+ *                     deck behind the wheel. The rider draws UNDER the boat,
+ *                     so the wheel and hull occlude the body and the head
+ *                     shows above the wheel.
+ *   riderHeight     — rider sprite height as a fraction of the boat texture
+ *                     height (sized against the empty helm space).
  */
 export const BOAT_ART = {
-  url: landmarkUrl("boat-covered"),
-  scale: 0.23,
-  anchorX: 0.5267,
-  anchorY: 0.9062,
+  url: landmarkUrl("boat-empty-helm"),
+  anchorX: 0.4874,
+  anchorY: 0.79,
+  helmX: 0.2,
+  helmY: 0.642,
+  riderHeight: 0.54,
 };
 
-/** Full-screen painted stage for the side-view arrival cinematic. */
+/** Full-screen painted stage for the side-view arrival cinematic (the same
+ *  scene the empty-helm boat was cut from, with the boat painted out). */
 export const ARRIVAL_BG_URL = landmarkUrl("arrival-bg");
 
 export function buildZoneScene(

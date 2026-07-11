@@ -473,11 +473,17 @@ export class SceneRenderer {
       this.arrivalView = new ArrivalView(this.opts.reducedMotion);
       this.app.stage.addChild(this.arrivalView.container);
       this.app.stage.setChildIndex(this.fade, this.app.stage.children.length - 1); // keep fade on top
+      // The chosen friend rides at the boat's empty helm — the same texture
+      // the on-island avatar uses. Missing texture (art failed to load) just
+      // sails the boat riderless; the guard above already covers bg/boat.
+      const riderUrl = this.localImageUrl();
       this.arrivalView.enter(
         this.arrivalBgTex,
         this.boatTex,
         this.app.screen.width,
         this.app.screen.height,
+        "arrive",
+        riderUrl ? this.avatarTextures.get(riderUrl) : undefined,
       );
     } else {
       // No cinematic: place the avatar straight onto the dock.
@@ -505,8 +511,6 @@ export class SceneRenderer {
       AVATARS.map(async (a) => {
         const url = avatarFileUrl(a.file);
         try {
-          // The images have no alpha; loadAvatarTexture knocks the baked-in
-          // background out to transparency before handing Pixi a texture.
           const tex = await loadAvatarTexture(url);
           if (!this.destroyed) this.avatarTextures.set(url, tex);
         } catch (err) {
