@@ -78,7 +78,30 @@ baked ground shadows (the engine draws contact shadows); no baked background
 | build/comfort/swing | Swing | 1×1 | frame + rope seat |
 | build/comfort/mailbox | Mailbox | 1×1 | little flag up |
 
+## Main-island dinghy — the build-island entry point
+
+The little beached dinghy beside Welcome Dock is how the child ferries to
+the free-build island, and it is still a code-drawn placeholder
+(`TextureProvider.bake("boat")`): hull + bench + leaning oar in ~43×29 code
+px. It deserves real art — it's a tappable entry point and should read as
+inviting.
+
+- **Scene**: a friendly beached rowing dinghy, ¾ view, nose up the sand —
+  warm timber hull `#9a6b40` family, visible bench seat, one oar leaning
+  over the gunwale. Same register as everything above: chunky, rounded,
+  bold ink outline, top-edge highlight. No water — it sits on the main
+  island's beach (sand `#ecdcae`).
+- **Canvas / format**: 512×512 WebP RGBA cutout, content ~85% of canvas
+  width, bottom-center anchored at the hull's ground contact, no baked
+  shadow (the engine draws the contact-shadow ellipse).
+- **Delivery**: `public/build/world/dinghy.webp`.
+- **Registration note — NOT drop-in**: unlike the 31 build items, the
+  decoration pipeline has no size normalization (`buildDecorations`
+  multiplies native texture size by the layout scale only, and the host
+  places the dinghy at tile (38, 41), scale 1.4). Swapping in a 512-px
+  texture therefore needs a small engine change: a file-backed decoration
+  provider that normalizes the sprite to the code-drawn footprint (~43
+  world px wide at scale 1) so the layout doesn't shift.
+
 **Optional (nice-to-have):** a dedicated build-island arrival background
-(the sail cinematic currently reuses the main island's `arrival-bg`), and a
-beached-dinghy sprite to replace the programmatic ferry-stop decoration on
-the main island.
+(the sail cinematic currently reuses the main island's `arrival-bg`).
