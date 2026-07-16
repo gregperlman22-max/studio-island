@@ -1,6 +1,7 @@
 import { Application, Assets, Container, Graphics, Rectangle, Sprite, type Texture } from "pixi.js";
 import { BuildEngineView } from "../build-engine/BuildEngineView";
 import type { BuildEvent, BuildState } from "../build-engine/types";
+import type { BuildItemDef } from "../content/buildItems";
 import { ArrivalView } from "../render/ArrivalView";
 import { flatten, insetLoop, islandOutline } from "../render/coast";
 import { CLIFF } from "../render/constants";
@@ -67,6 +68,9 @@ export class BuildSceneRenderer {
   private pointerMoved = false;
   private downX = 0;
   private downY = 0;
+  /** The armed palette item (host-owned, pushed down via setArmedItem). Drives
+   *  the footprint preview and gates the reject cue. */
+  private armedItem: BuildItemDef | null = null;
 
   constructor(private opts: BuildSceneOptions) {
     this.view = new BuildEngineView({
@@ -102,7 +106,14 @@ export class BuildSceneRenderer {
     this.app.canvas.style.touchAction = "none";
     this.opts.container.appendChild(this.app.canvas);
     this.app.stage.addChild(this.backdrop, this.world);
-    this.world.addChild(this.terrain, this.waves, this.view.gridLayer, this.view.itemLayer, this.view.uiLayer);
+    this.world.addChild(
+      this.terrain,
+      this.waves,
+      this.view.gridLayer,
+      this.view.itemLayer,
+      this.view.previewLayer,
+      this.view.uiLayer,
+    );
     this.app.stage.eventMode = "static";
     this.app.stage.on("pointerdown", this.onPointerDown);
     this.app.stage.on("pointermove", this.onPointerMove);
@@ -189,6 +200,24 @@ export class BuildSceneRenderer {
     this.view.reset(state);
   }
 
+  /** The host's armed palette item (or null). Feeds the footprint preview and
+   *  the invalid-placement reject cue; presentational only. */
+  setArmedItem(item: BuildItemDef | null): void {
+    this.armedItem = item;
+    this.view.setArmedItem(item);
+  }
+
+  /** Map a stage-global point to its buildable cell and show the preview there
+   *  (null off-island → the view hides the ghost). Only while an item is armed
+   *  and the arrival cinematic isn't running. */
+  private updatePreviewAt(globalX: number, globalY: number): void {
+    if (!this.inited || this.destroyed || !this.armedItem) return;
+    if (this.arrivalView && !this.arrivalView.done) return;
+    const wx = (globalX - this.world.position.x) / this.world.scale.x;
+    const wy = (globalY - this.world.position.y) / this.world.scale.y;
+    this.view.setPreviewCell(this.view.cellAt(wx, wy));
+  }
+
   /** Grid cell under a CLIENT coordinate (palette drag-drop), or null when
    *  off-island / not buildable. */
   cellFromClient(clientX: number, clientY: number): { x: number; y: number } | null {
@@ -246,12 +275,17 @@ export class BuildSceneRenderer {
     this.pointerMoved = false;
     this.downX = e.global.x;
     this.downY = e.global.y;
+    // Show the footprint preview under the finger the moment it lands, so a
+    // touch tap (down→up, no hover) still previews where the item will go.
+    this.updatePreviewAt(e.global.x, e.global.y);
   };
 
   private onPointerMove = (e: { global: { x: number; y: number } }): void => {
     if (this.pointerDown && Math.hypot(e.global.x - this.downX, e.global.y - this.downY) > 7) {
       this.pointerMoved = true;
     }
+    // Track the preview to the pointer (desktop hover + finger slide alike).
+    this.updatePreviewAt(e.global.x, e.global.y);
   };
 
   private onPointerUp = (e: { global: { x: number; y: number } }): void => {
@@ -264,7 +298,15 @@ export class BuildSceneRenderer {
     // cell goes to the host (tap-to-place with the armed palette item).
     if (this.view.handleTap(wx, wy)) return;
     const cell = this.view.cellAt(wx, wy);
-    if (cell) this.opts.onCellTap?.(cell);
+    if (!cell) return;
+    // Armed + this cell can't take the item (occupied / footprint off-island):
+    // flash a reject cue instead of silently no-opping. Otherwise hand the tap
+    // to the host, which places through the reducer.
+    if (this.armedItem && !this.view.canPlaceItemAt(this.armedItem, cell)) {
+      this.view.flashReject(this.armedItem, cell);
+      return;
+    }
+    this.opts.onCellTap?.(cell);
   };
 
   // ── Painting ─────────────────────────────────────────────────────
@@ -331,6 +373,7 @@ export class BuildSceneRenderer {
   private update = (ticker: { deltaMS: number }): void => {
     const dt = Math.min(0.05, ticker.deltaMS / 1000);
     this.elapsed += ticker.deltaMS;
+    this.view.update(dt); // advance the reject-flash fade (no-op when idle)
     if (!this.opts.reducedMotion) this.drawWaves();
     if (this.arrivalView) {
       this.arrivalView.update(dt);

@@ -1,8 +1,8 @@
 import { Container, Graphics, Text } from "pixi.js";
 import { getBuildItem, type BuildItemDef } from "../content/buildItems";
 import { diamondPoly, screenToTile, tileCenter } from "../render/iso";
-import { placementCells, planPlacementUpdate } from "./engine";
-import type { BuildEvent, BuildRegion, BuildState, Placement } from "./types";
+import { canPlace, placementCells, planPlacementUpdate } from "./engine";
+import type { BuildEvent, BuildRegion, BuildState, Placement, Rotation } from "./types";
 
 /**
  * BuildEngineView — the engine's Pixi half (Session 5). STATE-IN/EVENTS-OUT:
@@ -19,6 +19,11 @@ import type { BuildEvent, BuildRegion, BuildState, Placement } from "./types";
  */
 
 const INK = 0x23201c;
+/** Placement-preview feedback colors: where the armed item WOULD land. */
+const PREVIEW_OK = 0x4fb85f; // clear green — this spot is free
+const PREVIEW_BAD = 0xe0533b; // warm red — occupied / off-island
+/** Reject-flash lifetime (ms). A short fade, motion-light for reduced motion. */
+const REJECT_MS = 450;
 /** Category → placeholder fill (warm, distinct, matching island palette temps). */
 const CATEGORY_COLORS: Record<BuildItemDef["category"], number> = {
   structures: 0xc98a4b, // warm timber
@@ -45,6 +50,8 @@ export class BuildEngineView {
   readonly gridLayer = new Container();
   /** Y-sorted placements. Add to the scene's entity layer. */
   readonly itemLayer = new Container();
+  /** Placement preview + reject flash (above items so validity always reads). */
+  readonly previewLayer = new Container();
   /** Selection ring + rotate/remove chips (screen-space of the world). */
   readonly uiLayer = new Container();
 
@@ -58,10 +65,20 @@ export class BuildEngineView {
   private rotateHit: { x: number; y: number; r: number } | null = null;
   private removeHit: { x: number; y: number; r: number } | null = null;
 
+  /** The armed palette item (pushed down by the host) whose footprint the
+   *  preview draws; null when nothing is selected for placing. */
+  private previewItem: BuildItemDef | null = null;
+  /** The buildable cell the preview footprint currently sits on (pointer /
+   *  finger target), or null when off-island or unarmed. */
+  private previewCell: { x: number; y: number } | null = null;
+  /** A fading red footprint shown when a placement is REJECTED (invalid tap). */
+  private rejectFx: { cells: { x: number; y: number }[]; t: number } | null = null;
+
   constructor(private opts: BuildEngineViewOptions) {
     this.itemLayer.sortableChildren = true;
     this.gridLayer.eventMode = "none";
     this.itemLayer.eventMode = "none";
+    this.previewLayer.eventMode = "none";
     this.uiLayer.eventMode = "none";
     this.drawGrid();
   }
@@ -147,6 +164,106 @@ export class BuildEngineView {
     return this.opts.region.buildable(tile.x, tile.y) ? tile : null;
   }
 
+  // ── Placement preview + reject feedback ─────────────────────────
+  // The host passes the armed palette item DOWN (props-in); the renderer feeds
+  // the pointer's target cell in. The view draws a footprint ghost — green
+  // where the item would land, red where it can't — and a reject flash when an
+  // invalid placement is attempted. Pure display: emits nothing, mutates no
+  // state, and never touches the placement bundles (the no-full-rebuild
+  // contract is unaffected).
+
+  /** Arm/disarm the previewed item. Clearing it also drops the preview cell. */
+  setArmedItem(item: BuildItemDef | null): void {
+    if (item === this.previewItem) return;
+    this.previewItem = item;
+    if (!item) this.previewCell = null;
+    this.drawPreview();
+  }
+
+  /** Move the preview footprint to a buildable cell (or null to hide it). */
+  setPreviewCell(cell: { x: number; y: number } | null): void {
+    if (!this.previewItem) {
+      if (this.previewCell) {
+        this.previewCell = null;
+        this.drawPreview();
+      }
+      return;
+    }
+    const same =
+      (!cell && !this.previewCell) ||
+      (!!cell && !!this.previewCell && cell.x === this.previewCell.x && cell.y === this.previewCell.y);
+    if (same) return;
+    this.previewCell = cell;
+    this.drawPreview();
+  }
+
+  /** Would `item` (rotation 0) legally land on `cell` right now? The renderer
+   *  asks before emitting a place, so an invalid tap flashes instead. */
+  canPlaceItemAt(item: BuildItemDef, cell: { x: number; y: number }): boolean {
+    return canPlace(
+      this.state,
+      { id: "__probe__", itemId: item.id, cell, rotation: 0 },
+      this.opts.region,
+    );
+  }
+
+  /** Kick off the reject flash over `item`'s footprint at `cell`. */
+  flashReject(item: BuildItemDef, cell: { x: number; y: number }): void {
+    this.rejectFx = {
+      cells: placementCells({ id: "__reject__", itemId: item.id, cell, rotation: 0 }, item),
+      t: REJECT_MS,
+    };
+    this.drawPreview();
+  }
+
+  /** Advance transient FX (the reject fade). Driven by the renderer's ticker;
+   *  `dt` is seconds. A no-op when nothing is animating. */
+  update(dt: number): void {
+    if (!this.rejectFx) return;
+    this.rejectFx.t -= dt * 1000;
+    if (this.rejectFx.t <= 0) this.rejectFx = null;
+    this.drawPreview();
+  }
+
+  private drawPreview(): void {
+    this.previewLayer.removeChildren().forEach((c) => c.destroy());
+
+    if (this.previewItem && this.previewCell) {
+      const placement: Placement = {
+        id: "__preview__",
+        itemId: this.previewItem.id,
+        cell: this.previewCell,
+        rotation: 0 as Rotation,
+      };
+      const cells = placementCells(placement, this.previewItem);
+      const ok = canPlace(this.state, placement, this.opts.region);
+      const color = ok ? PREVIEW_OK : PREVIEW_BAD;
+      const g = new Graphics();
+      for (const c of cells) {
+        g.poly(diamondPoly(c.x, c.y)).fill({ color, alpha: 0.22 });
+        g.poly(diamondPoly(c.x, c.y)).stroke({ width: 2, color, alpha: 0.85 });
+      }
+      // Hollow body silhouette so the ghost reads as the object, not just floor.
+      const ctr = this.footprintCenter(cells);
+      const span = Math.max(...cells.map((c) => c.x)) - Math.min(...cells.map((c) => c.x)) + 1;
+      const w = 26 + span * 14;
+      const h =
+        this.previewItem.category === "structures" ? 54 : this.previewItem.category === "figures" ? 34 : 26;
+      g.roundRect(ctr.x - w / 2, ctr.y - h, w, h, 8).stroke({ width: 2.5, color, alpha: 0.9 });
+      this.previewLayer.addChild(g);
+    }
+
+    if (this.rejectFx) {
+      const a = Math.max(0, this.rejectFx.t / REJECT_MS);
+      const g = new Graphics();
+      for (const c of this.rejectFx.cells) {
+        g.poly(diamondPoly(c.x, c.y)).fill({ color: PREVIEW_BAD, alpha: 0.5 * a });
+        g.poly(diamondPoly(c.x, c.y)).stroke({ width: 3.5, color: PREVIEW_BAD, alpha: 0.95 * a });
+      }
+      this.previewLayer.addChild(g);
+    }
+  }
+
   /** The topmost placement whose footprint diamond(s) contain the world point. */
   placementAt(wx: number, wy: number): Placement | null {
     let best: Placement | null = null;
@@ -180,6 +297,7 @@ export class BuildEngineView {
   destroy(): void {
     this.gridLayer.destroy({ children: true });
     this.itemLayer.destroy({ children: true });
+    this.previewLayer.destroy({ children: true });
     this.uiLayer.destroy({ children: true });
     this.bundles.clear();
   }

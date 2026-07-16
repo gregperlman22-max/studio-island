@@ -116,6 +116,13 @@ export function FreeBuildScene({ onExit, reducedMotion, className }: FreeBuildSc
     rendererRef.current?.setState(buildState);
   }, [buildState]);
 
+  // The armed palette item flows DOWN too (props-in): the renderer draws the
+  // footprint preview + reject cue from it. One Law holds — the scene stays
+  // presentational; it emits taps, we place.
+  useEffect(() => {
+    rendererRef.current?.setArmedItem(armed);
+  }, [armed]);
+
   // ── Palette input ────────────────────────────────────────────────
   // Listeners attach SYNCHRONOUSLY in the pointerdown handler with explicit
   // pointer capture, so nothing races React's render/effect timing (the old

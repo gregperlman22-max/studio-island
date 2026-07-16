@@ -209,6 +209,51 @@ describe("tap-to-place (the touch-primary flow)", () => {
     expect(buildRegion.buildable(0, 0)).toBe(false); // ocean corner
   });
 
+  it("canPlaceItemAt: free cell yes, occupied no, off-region footprint no", async () => {
+    const { getBuildItem } = await import("../content/buildItems");
+    const rock = getBuildItem("nature.rock")!; // 1×1 ground
+    const tent = getBuildItem("structures.tent")!; // 2×2 ground
+    const view = makeView();
+    view.setState(state(place("a", "nature.rock", 3, 3)));
+    expect(view.canPlaceItemAt(rock, { x: 3, y: 4 })).toBe(true); // free meadow cell
+    expect(view.canPlaceItemAt(rock, { x: 3, y: 3 })).toBe(false); // already occupied
+    expect(view.canPlaceItemAt(tent, { x: 10, y: 10 })).toBe(true); // 2×2 fits inside 12×12
+    expect(view.canPlaceItemAt(tent, { x: 11, y: 11 })).toBe(false); // footprint spills off-region
+  });
+
+  it("preview draws a footprint ghost only while armed + over a cell; emits nothing, never rebuilds", async () => {
+    const { getBuildItem } = await import("../content/buildItems");
+    const events: BuildEvent[] = [];
+    const view = makeView(events);
+    view.setState(state());
+    const before = { ...view.stats };
+    expect(view.previewLayer.children.length).toBe(0);
+    view.setPreviewCell({ x: 2, y: 2 }); // unarmed → nothing to preview
+    expect(view.previewLayer.children.length).toBe(0);
+    view.setArmedItem(getBuildItem("nature.tree-oak")!);
+    view.setPreviewCell({ x: 2, y: 2 });
+    expect(view.previewLayer.children.length).toBeGreaterThan(0); // ghost drawn
+    view.setArmedItem(null); // disarm clears the ghost
+    expect(view.previewLayer.children.length).toBe(0);
+    expect(events).toEqual([]); // preview is display-only
+    expect(view.stats).toEqual(before); // and never a placement rebuild
+  });
+
+  it("flashReject shows a cue that the ticker fades to nothing", async () => {
+    const { getBuildItem } = await import("../content/buildItems");
+    const events: BuildEvent[] = [];
+    const view = makeView(events);
+    view.setState(state());
+    view.flashReject(getBuildItem("nature.rock")!, { x: 5, y: 5 });
+    expect(view.previewLayer.children.length).toBeGreaterThan(0);
+    view.update(0.3); // < 450ms lifetime: still fading, still shown
+    expect(view.previewLayer.children.length).toBeGreaterThan(0);
+    view.update(0.3); // total 600ms > 450ms: cleared
+    expect(view.previewLayer.children.length).toBe(0);
+    expect(events).toEqual([]);
+    expect(view.stats.fullRebuilds).toBe(0);
+  });
+
   it("save slots round-trip a tap-placed build across all three slots", async () => {
     const { saveToSlot, loadFromSlot, clearSlot } = await import("../build-engine/saves");
     localStorage.clear();
