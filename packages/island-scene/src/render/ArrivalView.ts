@@ -1,5 +1,6 @@
 import { Container, Sprite, type Texture } from "pixi.js";
 
+import { getContentBounds } from "./avatarTexture";
 import { BOAT_ART } from "./zones";
 
 /**
@@ -10,12 +11,14 @@ import { BOAT_ART } from "./zones";
  * and berths at the shore; SceneRenderer then cross-fades up into the world
  * map, where the chosen avatar steps onto Welcome Dock.
  *
- * The boat's helm is EMPTY in the art: when a rider texture is provided (the
+ * The Pete-baked boat ships as TWO layers (hull-back / hull-front, split along
+ * the near gunwale — see BOAT_ART). When a rider texture is provided (the
  * player's chosen avatar — the same texture used on-island), it is drawn
- * UNDER the boat sprite, feet pinned to the deck behind the ship's wheel, so
- * the wheel and hull occlude the body and the head shows above the wheel —
- * each child sees their own friend sailing in. With no rider texture (art
- * still loading, or the free-build sail) the boat simply sails riderless.
+ * BETWEEN the layers, feet pinned to the deck at the near rail: hull-back
+ * (cabin, Pete, sail) sits behind it, hull-front (near rail) occludes the lower
+ * ~third, so the child reads as a passenger standing in front of the cabin
+ * while Pete drives. With no rider texture (art still loading, or the
+ * free-build sail) the boat simply sails with Pete alone.
  *
  * Screen-space only: the boat moves horizontally in pixels; nothing here touches
  * the iso grid / pathfinding. Reduced motion is handled upstream (the renderer
@@ -31,11 +34,13 @@ export class ArrivalView {
 
   private bg = new Sprite();
   private boatLayer = new Container(); // boat + rider, moved/rocked while sailing
-  private boat = new Sprite();
+  private boatBack = new Sprite();     // cabin, Pete, sail, far hull (behind rider)
   private rider = new Sprite();
+  private boatFront = new Sprite();    // near rail + hull wall (in front of rider)
 
   private bgTex?: Texture;
-  private boatTex?: Texture;
+  private boatBackTex?: Texture;
+  private boatFrontTex?: Texture;
   private riderTex?: Texture;
 
   private w = 0;
@@ -48,27 +53,33 @@ export class ArrivalView {
 
   constructor(private reducedMotion: boolean) {
     this.container.addChild(this.bg, this.boatLayer);
-    // Rider BEFORE boat: the hull and wheel occlude the rider's lower body.
-    this.boatLayer.addChild(this.rider, this.boat);
+    // Layer order: hull-back → rider → hull-front, so the near rail occludes
+    // the rider's legs and the cabin/Pete sit behind.
+    this.boatLayer.addChild(this.boatBack, this.rider, this.boatFront);
     this.container.visible = false;
-    this.boat.anchor.set(BOAT_ART.anchorX, BOAT_ART.anchorY); // hull waterline
-    this.rider.anchor.set(0.5, 1); // feet
+    // Both hull layers share the waterline anchor, so they overlay perfectly.
+    this.boatBack.anchor.set(BOAT_ART.anchorX, BOAT_ART.anchorY);
+    this.boatFront.anchor.set(BOAT_ART.anchorX, BOAT_ART.anchorY);
+    this.rider.anchor.set(0.5, 1); // feet (overridden by content bounds in build)
   }
 
   enter(
     bgTex: Texture | undefined,
-    boatTex: Texture | undefined,
+    boatBackTex: Texture | undefined,
+    boatFrontTex: Texture | undefined,
     w: number,
     h: number,
     mode: "arrive" | "depart" = "arrive",
     riderTex?: Texture,
   ): void {
     this.bgTex = bgTex;
-    this.boatTex = boatTex;
+    this.boatBackTex = boatBackTex;
+    this.boatFrontTex = boatFrontTex;
     this.riderTex = riderTex;
     this.mode = mode;
     if (bgTex) this.bg.texture = bgTex;
-    if (boatTex) this.boat.texture = boatTex;
+    if (boatBackTex) this.boatBack.texture = boatBackTex;
+    if (boatFrontTex) this.boatFront.texture = boatFrontTex;
     if (riderTex) this.rider.texture = riderTex;
     this.t = 0;
     this._done = false;
@@ -102,9 +113,8 @@ export class ArrivalView {
   private boatBerthX(): number { return this.w * 0.66; }  // near the shore on the right
   private sailFrom(): number { return this.mode === "arrive" ? this.boatStartX() : this.boatBerthX(); }
   private sailTo(): number { return this.mode === "arrive" ? this.boatBerthX() : this.boatStartX(); }
-  // Match the old boat's on-screen height: it filled ~0.29h of the screen once
-  // its transparent margins are accounted for.
-  private boatScale(): number { return (this.h * 0.29) / (this.boatTex?.height ?? 505); }
+  // Match the on-screen boat height: it fills ~0.29h of the screen.
+  private boatScale(): number { return (this.h * 0.29) / (this.boatBackTex?.height ?? 906); }
 
   private build(w: number, h: number): void {
     this.w = w;
@@ -121,28 +131,39 @@ export class ArrivalView {
       this.bg.visible = false;
     }
 
-    if (this.boatTex) {
+    const haveBoat = !!this.boatBackTex && !!this.boatFrontTex;
+    if (haveBoat) {
       const s = this.boatScale();
-      this.boat.scale.set(s);
-      this.boat.visible = true;
+      const bw = this.boatBackTex!.width * s;
+      const bh = this.boatBackTex!.height * s;
+      this.boatBack.scale.set(s);
+      this.boatFront.scale.set(s);
+      this.boatBack.visible = true;
+      this.boatFront.visible = true;
 
-      // Rider at the helm: feet on the deck behind the wheel, in boat-layer
-      // coords (the boat sprite sits at the layer origin by its anchor).
+      // Rider (passenger) at the near rail, feet pinned; content-anchored so
+      // the true feet/centre pin and the sprite scales by visible content.
       if (this.riderTex) {
-        const bw = this.boatTex.width * s;
-        const bh = this.boatTex.height * s;
-        const riderH = BOAT_ART.riderHeight * bh;
-        this.rider.scale.set(riderH / this.riderTex.height);
+        const rt = this.riderTex;
+        const b = getContentBounds(rt);
+        if (b) {
+          this.rider.anchor.set(b.centerX, b.feetY);
+          this.rider.scale.set((BOAT_ART.riderHeight * bh) / (b.contentH * rt.height));
+        } else {
+          this.rider.anchor.set(0.5, 1);
+          this.rider.scale.set((BOAT_ART.riderHeight * bh) / rt.height);
+        }
         this.rider.position.set(
-          (BOAT_ART.helmX - BOAT_ART.anchorX) * bw,
-          (BOAT_ART.helmY - BOAT_ART.anchorY) * bh,
+          (BOAT_ART.railX - BOAT_ART.anchorX) * bw,
+          (BOAT_ART.railY - BOAT_ART.anchorY) * bh,
         );
         this.rider.visible = true;
       } else {
         this.rider.visible = false;
       }
     } else {
-      this.boat.visible = false;
+      this.boatBack.visible = false;
+      this.boatFront.visible = false;
       this.rider.visible = false;
     }
     this.boatLayer.position.set(this.sailFrom(), this.waterY());
@@ -159,7 +180,7 @@ export class ArrivalView {
     const e = ap * ap * (3 - 2 * ap); // smoothstep
     const bx = this.sailFrom() + (this.sailTo() - this.sailFrom()) * e;
     this.boatLayer.position.set(bx, this.waterY() + bob);
-    // Rock the whole layer (boat + rider together) around the waterline anchor.
+    // Rock the whole layer (both hull layers + rider together) around the anchor.
     if (!this.reducedMotion) this.boatLayer.rotation = Math.sin(t * 1.2 + 0.5) * 0.025;
 
     // Once berthed, let it rest a beat before the cross-fade to the world map.

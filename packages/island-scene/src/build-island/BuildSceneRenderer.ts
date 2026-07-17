@@ -54,7 +54,8 @@ export class BuildSceneRenderer {
 
   private arrivalView?: ArrivalView;
   private arrivalDone?: () => void;
-  private boatTex?: Texture;
+  private boatBackTex?: Texture;
+  private boatFrontTex?: Texture;
   private arrivalBgTex?: Texture;
 
   private inited = false;
@@ -130,7 +131,10 @@ export class BuildSceneRenderer {
       })(),
       (async () => {
         try {
-          this.boatTex = (await Assets.load(BOAT_ART.url)) as Texture;
+          [this.boatBackTex, this.boatFrontTex] = (await Promise.all([
+            Assets.load(BOAT_ART.backUrl),
+            Assets.load(BOAT_ART.frontUrl),
+          ])) as [Texture, Texture];
         } catch {
           /* missing boat → cinematic skips (same guard as the main island) */
         }
@@ -164,15 +168,16 @@ export class BuildSceneRenderer {
       done();
       return;
     }
-    if (this.opts.reducedMotion || !this.boatTex || !this.arrivalBgTex) {
+    if (this.opts.reducedMotion || !this.boatBackTex || !this.boatFrontTex || !this.arrivalBgTex) {
       done();
       return;
     }
     this.arrivalView?.destroy();
     this.arrivalView = new ArrivalView(this.opts.reducedMotion);
     this.app.stage.addChild(this.arrivalView.container);
+    // Free-build sail is riderless — Pete ferries alone (no passenger texture).
     this.arrivalView.enter(
-      this.arrivalBgTex, this.boatTex,
+      this.arrivalBgTex, this.boatBackTex, this.boatFrontTex,
       this.app.screen.width, this.app.screen.height, mode,
     );
     this.arrivalDone = done;

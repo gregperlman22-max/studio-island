@@ -216,8 +216,10 @@ export class SceneRenderer {
   private arrivalFadeT = 0;
   /** Painted full-screen stage texture for the arrival cinematic. */
   private arrivalBgTex?: Texture;
-  /** Boat texture (used by the arrival cinematic only). */
-  private boatTex?: Texture;
+  /** Covered-boat layers (arrival cinematic only): hull-back (cabin/Pete/sail)
+   *  and hull-front (near rail), with the rider composited between them. */
+  private boatBackTex?: Texture;
+  private boatFrontTex?: Texture;
 
   private textures!: ProgrammaticTextureProvider;
   private theme!: ThemePackConfig;
@@ -467,7 +469,7 @@ export class SceneRenderer {
   private setupArrival(): void {
     // Missing-asset guard: without both the stage and the boat, the cinematic
     // is seconds of blank screen — land the avatar on the dock instead.
-    if (this.arrival === "cinematic" && (!this.arrivalBgTex || !this.boatTex)) {
+    if (this.arrival === "cinematic" && (!this.arrivalBgTex || !this.boatBackTex || !this.boatFrontTex)) {
       console.warn("[island-scene] arrival art missing — skipping the boat cinematic");
       this.arrival = "done";
     }
@@ -478,13 +480,14 @@ export class SceneRenderer {
       this.arrivalView = new ArrivalView(this.opts.reducedMotion);
       this.app.stage.addChild(this.arrivalView.container);
       this.app.stage.setChildIndex(this.fade, this.app.stage.children.length - 1); // keep fade on top
-      // The chosen friend rides at the boat's empty helm — the same texture
-      // the on-island avatar uses. Missing texture (art failed to load) just
-      // sails the boat riderless; the guard above already covers bg/boat.
+      // The chosen friend rides as a passenger between the boat's hull layers —
+      // the same texture the on-island avatar uses. Missing texture (art failed
+      // to load) just sails Pete alone; the guard above already covers bg/boat.
       const riderUrl = this.localImageUrl();
       this.arrivalView.enter(
         this.arrivalBgTex,
-        this.boatTex,
+        this.boatBackTex,
+        this.boatFrontTex,
         this.app.screen.width,
         this.app.screen.height,
         "arrive",
@@ -1174,8 +1177,15 @@ export class SceneRenderer {
       }),
       (async () => {
         try {
-          const tex = (await Assets.load(BOAT_ART.url)) as Texture;
-          if (!this.destroyed) this.boatTex = tex;
+          // Both covered-boat layers count as one first-paint asset (one bump).
+          const [back, front] = (await Promise.all([
+            Assets.load(BOAT_ART.backUrl),
+            Assets.load(BOAT_ART.frontUrl),
+          ])) as [Texture, Texture];
+          if (!this.destroyed) {
+            this.boatBackTex = back;
+            this.boatFrontTex = front;
+          }
         } catch (err) {
           console.warn("[island-scene] boat art failed to load", err);
         } finally {

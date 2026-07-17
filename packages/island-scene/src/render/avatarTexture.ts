@@ -23,19 +23,52 @@ import { computeContentBounds, type ContentBounds } from "./contentBounds";
  *  drops automatically when its texture is garbage-collected. */
 const BOUNDS = new WeakMap<Texture, ContentBounds>();
 
-/** Measured content bounds for a character texture, or undefined when the
- *  measurement was unavailable (SSR / tainted canvas / fully transparent) —
- *  callers then fall back to canvas-based anchoring. */
+/**
+ * Per-sprite pivot overrides, keyed by the source file's basename (e.g.
+ * "Squirrel.webp"). The auto-measured anchor pins the horizontal CENTRE of the
+ * content's bottom edge as the "feet" — correct for the front-facing portraits,
+ * whose ground contact IS the bbox-bottom-centre. A POSED sprite whose ground
+ * contact isn't there (a lean, one leg extended, a tail hanging below the feet)
+ * adds an entry here to override the anchor; the content HEIGHT still drives the
+ * scale. Empty today — the current cast needs none.
+ *
+ *   "Squirrel.webp": { centerX: 0.52, feetY: 0.90 },
+ */
+const PIVOT_OVERRIDES: Record<string, { centerX?: number; feetY?: number }> = {};
+
+/** Measured (+ optionally overridden) content bounds for a character texture,
+ *  or undefined when the measurement was unavailable (SSR / tainted canvas /
+ *  fully transparent) — callers then fall back to canvas-based anchoring. */
 export function getContentBounds(texture: Texture): ContentBounds | undefined {
   return BOUNDS.get(texture);
+}
+
+/** Associate content bounds with a texture. Called by loadAvatarTexture; also
+ *  public so a texture created through another path (or a test) can register
+ *  its bounds and get the same content-aware anchoring. */
+export function registerContentBounds(texture: Texture, bounds: ContentBounds): void {
+  BOUNDS.set(texture, bounds);
 }
 
 export async function loadAvatarTexture(url: string): Promise<Texture> {
   const img = await loadImage(url);
   const texture = Texture.from(img);
   const bounds = measureBounds(img);
-  if (bounds) BOUNDS.set(texture, bounds);
+  if (bounds) registerContentBounds(texture, applyPivotOverride(url, bounds));
   return texture;
+}
+
+/** Merge any per-file pivot override onto measured bounds (anchor only). */
+function applyPivotOverride(url: string, bounds: ContentBounds): ContentBounds {
+  let file: string;
+  try {
+    file = decodeURIComponent(url.split("?")[0].split("/").pop() ?? "");
+  } catch {
+    file = "";
+  }
+  const o = PIVOT_OVERRIDES[file];
+  if (!o) return bounds;
+  return { ...bounds, centerX: o.centerX ?? bounds.centerX, feetY: o.feetY ?? bounds.feetY };
 }
 
 /** Draw the decoded image to an offscreen canvas and measure its alpha bbox.

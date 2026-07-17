@@ -83,28 +83,34 @@ export const LANDMARK_ART: Record<
 };
 
 /**
- * Arrival boat sprite: the covered boat with an EMPTY helm — the ship's wheel
- * at the stern is riderless so the player's chosen avatar can take it.
- * Cut to transparency from the arrival-boat-bg-empty-helm.png master (kept in
- * this directory; the *.webp url glob never bundles it) with the wake foam
- * travelling with the hull. Base-pinned at the hull waterline so it berths
- * against the shore.
+ * Arrival boat sprite: the PETE-BAKED covered boat — Captain Pete steers at the
+ * wheel (stern/left) while the player's chosen avatar rides as a PASSENGER.
  *
- *   anchorX/anchorY — hull centre / waterline, in texture fractions.
- *   helmX/helmY     — where the rider's FEET pin (texture fractions): the
- *                     deck behind the wheel. The rider draws UNDER the boat,
- *                     so the wheel and hull occlude the body and the head
- *                     shows above the wheel.
- *   riderHeight     — rider sprite height as a fraction of the boat texture
- *                     height (sized against the empty helm space).
+ * Shipped as TWO layers, split offline from boat-covered.png along the near
+ * gunwale (tools/island-art/split-covered-boat.mjs):
+ *   backUrl  — hull-back: cabin, Pete, sail, mast, far hull (BEHIND the rider);
+ *   frontUrl — hull-front: the near rail + hull wall + wake (IN FRONT).
+ * ArrivalView renders back → rider → front, so the rider stands in front of the
+ * cabin at the near rail with the hull edge crossing the legs (visible knees-up).
+ * The empty-helm boat (boat-empty-helm.webp) stays banked for future use.
+ *
+ *   anchorX/anchorY — hull centre / waterline, in texture fractions (both
+ *                     layers share it, so they overlay perfectly).
+ *   railX/railY     — where the passenger's FEET pin (texture fractions): the
+ *                     deck at the near rail, amidships-right of Pete.
+ *   riderHeight     — the rider's FULL content height as a fraction of the boat
+ *                     texture height (content-anchored: the sprite is scaled by
+ *                     its measured content, then the near rail occludes the
+ *                     lower ~third). ~0.47 reads as a child beside adult Pete.
  */
 export const BOAT_ART = {
-  url: landmarkUrl("boat-empty-helm"),
+  backUrl: landmarkUrl("boat-covered-back"),
+  frontUrl: landmarkUrl("boat-covered-front"),
   anchorX: 0.4874,
   anchorY: 0.79,
-  helmX: 0.2,
-  helmY: 0.642,
-  riderHeight: 0.54,
+  railX: 0.44,
+  railY: 0.8,
+  riderHeight: 0.47,
 };
 
 /** Full-screen painted stage for the side-view arrival cinematic (the same
