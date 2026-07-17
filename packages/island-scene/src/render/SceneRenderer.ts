@@ -404,10 +404,15 @@ export class SceneRenderer {
     this.fade.alpha = 0;
 
     // Phase 1: a new child (no avatar chosen yet) picks a friend BEFORE the
-    // boat arrival. Once the local avatar already carries a chosen image (the
+    // world shows. Once the local avatar already carries a chosen image (the
     // host seeds config.imageUrl from its own persistence), skip straight to
-    // the cinematic. Reduced motion / starting in a zone skip both.
-    if (this.arrival !== "done" && !this.localImageUrl()) {
+    // the cinematic / dock. The picker is forced whenever there is no chosen
+    // image — even under reduced motion, which only skips the boat cinematic,
+    // not the choice — so the programmatic (flat) fallback never renders for a
+    // child who simply hasn't picked yet. Starting directly inside a zone keeps
+    // its own flow. (onAvatarChosen handles the reduced-motion completion:
+    // pick → placeAvatarOnDock, no cinematic.)
+    if (!initialZone && !this.localImageUrl()) {
       this.arrival = "select";
     }
 
@@ -503,15 +508,17 @@ export class SceneRenderer {
   }
 
   /** Preload the 16 illustrated animal images (selection grid + island
-   *  sprite) — RGBA cutouts, matted offline. A failed load just leaves that
-   *  entry without a texture — the card shows its name and the island avatar
-   *  falls back to the programmatic compositor. */
+   *  sprite) — RGBA cutouts, matted offline. This is awaited before the first
+   *  avatar view is built, so a chosen animal is present when the world paints
+   *  and the programmatic (flat) fallback never shows for it. A single transient
+   *  failure is retried once; only a hard failure leaves an entry textureless
+   *  (its card shows the name; the island avatar uses the compositor). */
   private async loadAvatars(): Promise<void> {
     await Promise.all(
       AVATARS.map(async (a) => {
         const url = avatarFileUrl(a.file);
         try {
-          const tex = await loadAvatarTexture(url);
+          const tex = await this.loadAvatarWithRetry(url);
           if (!this.destroyed) this.avatarTextures.set(url, tex);
         } catch (err) {
           console.warn(`[island-scene] avatar art failed to load: ${a.file}`, err);
@@ -520,6 +527,17 @@ export class SceneRenderer {
         }
       }),
     );
+  }
+
+  /** Load a character texture, retrying once after a short backoff — a single
+   *  transient network blip shouldn't drop a child to the flat fallback. */
+  private async loadAvatarWithRetry(url: string): Promise<Texture> {
+    try {
+      return await loadAvatarTexture(url);
+    } catch {
+      await new Promise((r) => setTimeout(r, 250));
+      return loadAvatarTexture(url);
+    }
   }
 
   /** Preload the 9 landmark guide images (Phase 2), one per zone — RGBA

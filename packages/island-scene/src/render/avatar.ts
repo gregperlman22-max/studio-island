@@ -1,5 +1,6 @@
 import { Container, Graphics, Sprite, type Texture } from "pixi.js";
 import type { AccessoryKey, AvatarConfig, Species } from "../types";
+import { getContentBounds } from "./avatarTexture";
 import { hexNum, shade } from "./iso";
 
 /**
@@ -65,7 +66,14 @@ export function buildAvatarSprite(config: AvatarConfig): AvatarSprite {
  * `displayColor` tints the selection ring + a soft golden glow shown when this
  * is the local (selected) avatar.
  */
-const IMG_AVATAR_H = 50; // rendered art height in avatar-local px (pre-AVATAR_SCALE)
+// Target VISIBLE animal height in avatar-local px (pre-AVATAR_SCALE). Sizing by
+// the *content* height (not the padded 480×640 canvas) makes every animal read
+// at the same size regardless of its baked margin. 44 keeps the well-centred
+// reference sprites (~Bunny) at their prior size; tune here, not per sprite.
+const IMG_AVATAR_CONTENT_H = 44;
+// Fallback height (applied to the full canvas) when content bounds are
+// unavailable — the pre-content-bounds behaviour, unchanged.
+const IMG_AVATAR_H = 50;
 
 export function buildImageAvatarSprite(
   texture: Texture,
@@ -86,9 +94,18 @@ export function buildImageAvatarSprite(
   container.addChild(ring);
 
   const spr = new Sprite(texture);
-  const scale = IMG_AVATAR_H / (texture.height || IMG_AVATAR_H);
-  spr.anchor.set(0.5, 1); // bottom-centre = feet/ground contact
-  spr.scale.set(scale);
+  // Content-aware anchor + scale: pin the TRUE feet / horizontal centre and
+  // scale by the visible content height, so the feet meet the contact shadow
+  // and every animal reads the same size. Sprites whose bounds couldn't be
+  // measured fall back to canvas-bottom-centre anchoring.
+  const bounds = getContentBounds(texture);
+  if (bounds) {
+    spr.anchor.set(bounds.centerX, bounds.feetY);
+    spr.scale.set(IMG_AVATAR_CONTENT_H / (bounds.contentH * (texture.height || 1)));
+  } else {
+    spr.anchor.set(0.5, 1); // bottom-centre = feet/ground contact
+    spr.scale.set(IMG_AVATAR_H / (texture.height || IMG_AVATAR_H));
+  }
   spr.position.set(0, 2); // sit just above the contact shadow
   container.addChild(spr);
 
