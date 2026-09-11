@@ -1,14 +1,18 @@
-import { Container, Graphics, Sprite, Text, type Texture } from "pixi.js";
+import { BlurFilter, Container, Graphics, Sprite, Text, type Texture } from "pixi.js";
 import type { AvatarConfig, ThemePalette, ZoneKey } from "../types";
 import type { ZoneInterior, ZoneTap } from "./ZoneInterior";
 import { getZoneDialogue } from "../content/loader";
 import { debugLog } from "./debug";
+import { drawDecor, drawHotspotIcon, drawLeaf, drawLeafTick } from "./treehouseDecorArt";
 import {
+  ART_EDGE_TOP,
+  ART_FILL_TOP_FAR,
   DECOR_ITEMS,
   HOTSPOTS,
   LEAF_SIZES,
   backButtonRect,
   coverRect,
+  roomFit,
   hitPill,
   hitRect,
   layoutHotspots,
@@ -23,6 +27,7 @@ import {
   type PlacedHotspot,
   type PuzzleState,
   type Rect,
+  type RoomFit,
 } from "./treehouseModel";
 
 /**
@@ -74,8 +79,10 @@ export class TreehouseRoom implements ZoneInterior {
   private h = 0;
   private elapsed = 0;
   private bgTex?: Texture;
-  /** The painting's on-screen rect (cover-fit); decor + hotspots anchor to it. */
-  private img: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** The painting's on-screen rect; decor + hotspots anchor to it. On portrait
+   *  viewports it is pulled back from cover so the whole room reads (see
+   *  roomFit), and the leftover height is filled with the art's edge tones. */
+  private img: RoomFit = { x: 0, y: 0, w: 0, h: 0, mode: "cover" };
 
   private spots: PlacedHotspot[] = [];
   private backRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
@@ -211,8 +218,8 @@ export class TreehouseRoom implements ZoneInterior {
     this.w = w;
     this.h = h;
     this.img = this.bgTex
-      ? coverRect(this.bgTex.width, this.bgTex.height, w, h)
-      : { x: 0, y: 0, w, h };
+      ? roomFit(this.bgTex.width, this.bgTex.height, w, h)
+      : { x: 0, y: 0, w, h, mode: "cover" };
 
     this.drawBackground();
     this.drawDecor();
@@ -231,6 +238,7 @@ export class TreehouseRoom implements ZoneInterior {
   private drawBackground(): void {
     this.bgLayer.removeChildren().forEach((c) => c.destroy());
     if (this.bgTex) {
+      if (this.img.mode === "portrait") this.bgLayer.addChild(this.drawPortraitFill());
       const s = new Sprite(this.bgTex);
       s.position.set(this.img.x, this.img.y);
       s.width = this.img.w;
@@ -266,19 +274,89 @@ export class TreehouseRoom implements ZoneInterior {
     return c;
   }
 
+  /**
+   * Portrait framing backdrop.
+   *
+   * On a tablet the painting is shown at full width, which leaves height over.
+   * Rather than bar that space off, we fill the whole viewport with the SAME
+   * painting, cover-fit, blurred and dimmed. The colour, light direction and
+   * shapes behind the art are therefore the room's own — it reads as depth
+   * around a framed view, not as a letterbox. A warm gradient sits underneath
+   * so the screen is still right if the blur filter is unavailable.
+   */
+  private drawPortraitFill(): Container {
+    const c = new Container();
+    const { x, y, w, h } = this.img;
+
+    // 1. Warm base, ramping off the painting's own edge tones.
+    const base = new Graphics();
+    const BANDS = 20;
+    const near = parseInt(ART_EDGE_TOP.slice(1), 16);
+    const far = parseInt(ART_FILL_TOP_FAR.slice(1), 16);
+    for (let i = 0; i < BANDS; i++) {
+      const t = i / (BANDS - 1);
+      const mix = (shift: number): number => {
+        const a = (near >> shift) & 0xff;
+        const b = (far >> shift) & 0xff;
+        return Math.round(b + (a - b) * t);
+      };
+      base.rect(0, (this.h * i) / BANDS, this.w, this.h / BANDS + 1)
+        .fill((mix(16) << 16) | (mix(8) << 8) | mix(0));
+    }
+    c.addChild(base);
+
+    // 2. The room itself, blurred and pushed back.
+    if (this.bgTex) {
+      // Over-scaled past cover so the blurred content does NOT line up with
+      // the crisp painting in front of it — that misalignment is what makes it
+      // read as depth rather than as a doubled image.
+      const cover = coverRect(this.bgTex.width, this.bgTex.height, this.w, this.h);
+      const zoom = 1.3;
+      const amb = new Sprite(this.bgTex);
+      amb.width = cover.w * zoom;
+      amb.height = cover.h * zoom;
+      amb.position.set(
+        cover.x - (cover.w * (zoom - 1)) / 2,
+        cover.y - (cover.h * (zoom - 1)) / 2,
+      );
+      amb.alpha = 0.8;
+      try {
+        amb.filters = [new BlurFilter({ strength: Math.max(10, this.w * 0.02) })];
+      } catch {
+        // No filter support — keep it faint so it can't read as a second room.
+        amb.alpha = 0.25;
+      }
+      c.addChild(amb);
+      const scrim = new Graphics();
+      scrim.rect(0, 0, this.w, this.h).fill({ color: 0x2a1708, alpha: 0.34 });
+      c.addChild(scrim);
+    }
+
+    // 3. A soft drop shadow so the crisp painting sits in FRONT of all that.
+    const edge = new Graphics();
+    for (let i = 1; i <= 5; i++) {
+      edge.rect(x - i * 2, y - i * 2, w + i * 4, h + i * 4)
+        .stroke({ width: 4, color: 0x120a02, alpha: 0.1 });
+    }
+    c.addChild(edge);
+    return c;
+  }
+
   /** The child's saved decorations, sitting in the room itself. */
   private drawDecor(): void {
     this.decorLayer.removeChildren().forEach((c) => c.destroy());
-    const size = Math.max(26, Math.min(54, Math.min(this.w, this.h) * 0.07));
+    // Scaled off the PAINTING, not the viewport, so a decoration keeps its
+    // size relative to the furniture around it at every framing.
+    const size = Math.max(46, Math.min(132, this.img.w * 0.078));
     for (const item of DECOR_ITEMS) {
       if (!this.decor.includes(item.id)) continue;
-      const t = new Text({ text: item.icon, style: { fontSize: size } });
-      t.anchor.set(0.5);
-      t.position.set(
+      const g = new Graphics();
+      g.position.set(
         this.img.x + item.ax * this.img.w,
         this.img.y + item.ay * this.img.h,
       );
-      this.decorLayer.addChild(t);
+      drawDecor(item.id, g, size);
+      this.decorLayer.addChild(g);
     }
   }
 
@@ -297,9 +375,9 @@ export class TreehouseRoom implements ZoneInterior {
         .fill({ color: 0xffffff, alpha: 0.5 });
       c.addChild(g);
 
-      const icon = new Text({ text: s.icon, style: { fontSize: fontSize * 1.5 } });
-      icon.anchor.set(0.5);
+      const icon = new Graphics();
       icon.position.set(-s.w / 2 + s.h * 0.46, 0);
+      drawHotspotIcon(s.id, icon, s.h * 0.6);
       c.addChild(icon);
 
       const label = new Text({
@@ -307,7 +385,13 @@ export class TreehouseRoom implements ZoneInterior {
         style: { fontFamily: FONT, fontSize, fontWeight: "800", fill: INK },
       });
       label.anchor.set(0, 0.5);
-      label.position.set(-s.w / 2 + s.h * 0.86, 0);
+      const textLeft = -s.w / 2 + s.h * 0.86;
+      // Same fit rule as the back pill: the pill is sized from the viewport and
+      // the label from its own metrics, so on a narrow tablet "Leaf Puzzle"
+      // could run out past its pill and into the next one. Shrink to fit.
+      const room = s.w / 2 - 12 - textLeft;
+      if (label.width > room && label.width > 0) label.scale.set(room / label.width);
+      label.position.set(textLeft, 0);
       c.addChild(label);
 
       this.hotspotLayer.addChild(c);
@@ -443,14 +527,25 @@ export class TreehouseRoom implements ZoneInterior {
       this.panelHits.push({ id: `decor:${item.id}`, rect });
 
       const g = new Graphics();
+      // Selected tiles get a honey ring and a tick rather than a honey flood:
+      // filling them drowned the illustration that says what they are.
       g.roundRect(cx, cy, tw, th, 16)
-        .fill(on ? HONEY : 0xffffff)
-        .stroke({ width: on ? 5 : 3, color: INK });
+        .fill(on ? 0xfff6e4 : 0xffffff)
+        .stroke({ width: 3, color: INK });
+      if (on) {
+        g.roundRect(cx + 4, cy + 4, tw - 8, th - 8, 12)
+          .stroke({ width: 4, color: HONEY });
+      }
       this.panelLayer.addChild(g);
+      if (on) {
+        const tick = new Graphics();
+        drawLeafTick(tick, cx + tw - 17, cy + 17, 12);
+        this.panelLayer.addChild(tick);
+      }
 
-      const icon = new Text({ text: item.icon, style: { fontSize: Math.min(th * 0.42, 40) } });
-      icon.anchor.set(0.5);
-      icon.position.set(cx + tw / 2, cy + th * 0.38);
+      const icon = new Graphics();
+      icon.position.set(cx + tw / 2, cy + th * 0.4);
+      drawDecor(item.id, icon, Math.min(th * 0.62, 62));
       this.panelLayer.addChild(icon);
 
       const label = new Text({
@@ -500,26 +595,21 @@ export class TreehouseRoom implements ZoneInterior {
       };
       if (!this.puzzle.done) this.panelHits.push({ id: `leaf:${leaf.rank}`, rect });
 
-      const wobble =
-        this.shake > 0 && this.puzzle.wrongRank === leaf.rank && !this.opts.reducedMotion
-          ? Math.sin(this.shake * 44) * 7
-          : 0;
+      const wobbling =
+        this.shake > 0 && this.puzzle.wrongRank === leaf.rank && !this.opts.reducedMotion;
+      const offsetX = wobbling ? Math.sin(this.shake * 44) * 7 : 0;
+      // A settled tilt per slot so the row reads as gathered leaves rather
+      // than a row of identical icons; solved ones straighten up.
+      const tilt = solved ? 0 : (leaf.slot - 1.5) * 0.13 + (leaf.rank % 2 ? 0.06 : -0.05);
 
       const g = new Graphics();
-      g.ellipse(cx + wobble, midY, size * 0.42, size * 0.62)
-        .fill(solved ? 0x8fc46a : 0x5f9e46)
-        .stroke({ width: 4, color: INK });
-      g.moveTo(cx + wobble, midY + size * 0.62).lineTo(cx + wobble, midY + size * 0.86)
-        .stroke({ width: 4, color: 0x6e4a2a });
-      g.moveTo(cx + wobble, midY - size * 0.55).lineTo(cx + wobble, midY + size * 0.55)
-        .stroke({ width: 2, color: 0x2f6b3a, alpha: 0.5 });
+      drawLeaf(g, cx, midY, { size, tilt, solved, offsetX });
+      this.panelLayer.addChild(g);
+
       if (solved) {
-        const tick = new Text({ text: "✓", style: { fontSize: 20, fill: 0x2f6b3a, fontWeight: "900" } });
-        tick.anchor.set(0.5);
-        tick.position.set(cx + wobble, midY + size * 0.95);
-        this.panelLayer.addChild(g, tick);
-      } else {
-        this.panelLayer.addChild(g);
+        const tick = new Graphics();
+        drawLeafTick(tick, cx + offsetX, midY + size * 0.62, Math.max(9, size * 0.17));
+        this.panelLayer.addChild(tick);
       }
     }
 
@@ -528,7 +618,10 @@ export class TreehouseRoom implements ZoneInterior {
     const dots = new Graphics();
     LEAF_SIZES.forEach((_, i) => {
       const cx = r.x + r.w / 2 + (i - (LEAF_SIZES.length - 1) / 2) * 22;
-      dots.circle(cx, dotY, 7).fill(i < this.puzzle.progress ? 0x5f9e46 : 0xd9cbb2).stroke({ width: 2, color: INK });
+      const done = i < this.puzzle.progress;
+      dots.circle(cx, dotY, done ? 8 : 7)
+        .fill(done ? 0x6fae52 : 0xe4d6bb)
+        .stroke({ width: 2.5, color: INK });
     });
     this.panelLayer.addChild(dots);
   }

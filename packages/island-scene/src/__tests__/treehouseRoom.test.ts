@@ -54,6 +54,7 @@ vi.mock("pixi.js", () => {
     moveTo() { return this; }
     lineTo() { return this; }
     bezierCurveTo() { return this; }
+    quadraticCurveTo() { return this; }
     fill() { return this; }
     stroke() { return this; }
     clear() { return this; }
@@ -76,6 +77,7 @@ const {
   tapLeaf,
   toggleDecor,
 } = await import("../render/treehouseModel");
+const { roomFit, PORTRAIT_ASPECT_MIN, PORTRAIT_ASPECT_MAX } = await import("../render/treehouseModel");
 const { TreehouseRoom } = await import("../render/TreehouseRoom");
 const { getZoneDialogue } = await import("../content/loader");
 const { TREEHOUSE_ROOM_URL } = await import("../render/treehouseArt");
@@ -133,14 +135,14 @@ describe("room geometry", () => {
   });
 
   it("places all three actions on desktop, anchored to the art", () => {
-    const img = coverRect(ART_W, ART_H, DESKTOP.w, DESKTOP.h);
+    const img = roomFit(ART_W, ART_H, DESKTOP.w, DESKTOP.h);
     const { mode, spots } = layoutHotspots(img, DESKTOP.w, DESKTOP.h);
     expect(mode).toBe("anchored");
     expect(spots.map((s) => s.id)).toEqual(HOTSPOTS.map((h) => h.id));
   });
 
   it("stacks the actions on a phone instead of squeezing three abreast", () => {
-    const img = coverRect(ART_W, ART_H, PHONE.w, PHONE.h);
+    const img = roomFit(ART_W, ART_H, PHONE.w, PHONE.h);
     const { mode, spots } = layoutHotspots(img, PHONE.w, PHONE.h);
     expect(mode).toBe("stack");
     // distinct rows, same column
@@ -157,7 +159,7 @@ describe("room geometry", () => {
       { w: 2560, h: 1080 }, // ultrawide
     ];
     for (const { w, h } of sizes) {
-      const img = coverRect(ART_W, ART_H, w, h);
+      const img = roomFit(ART_W, ART_H, w, h);
       const { spots } = layoutHotspots(img, w, h);
       for (const s of spots) {
         expect(s.h, `${w}x${h} ${s.id} height`).toBeGreaterThanOrEqual(MIN_TAP);
@@ -199,7 +201,7 @@ describe("room artwork", () => {
     // multi-shape placeholder ground)
     expect(room.bgLayer.children).toHaveLength(1);
     const sprite = room.bgLayer.children[0];
-    const fit = coverRect(ART_W, ART_H, DESKTOP.w, DESKTOP.h);
+    const fit = roomFit(ART_W, ART_H, DESKTOP.w, DESKTOP.h);
     expect(sprite.width).toBeCloseTo(fit.w, 3);
     expect(sprite.height).toBeCloseTo(fit.h, 3);
     expect(sprite.position.x).toBeCloseTo(fit.x, 3);
@@ -209,12 +211,109 @@ describe("room artwork", () => {
     const room = mk();
     room.setBackground({ width: ART_W, height: ART_H });
     room.enter("treehouse_hideaway", {} as never, null, DESKTOP.w, DESKTOP.h);
-    const img = coverRect(ART_W, ART_H, DESKTOP.w, DESKTOP.h);
+    const img = roomFit(ART_W, ART_H, DESKTOP.w, DESKTOP.h);
     for (const s of room.spots) {
       const anchor = HOTSPOTS.find((h) => h.id === s.id)!;
       expect(s.x, s.id).toBeCloseTo(img.x + anchor.ax * img.w, 0);
       expect(s.y, s.id).toBeCloseTo(img.y + anchor.ay * img.h, 0);
     }
+  });
+});
+
+describe("portrait framing", () => {
+  // Cover-fitting 16:9 art onto a 3:4 tablet throws away the chest and the
+  // nook and leaves a tree-trunk close-up. Portrait framing pulls the art back
+  // so the room reads whole, and fills the leftover height with its own edge
+  // tones. Landscape must be untouched.
+  it("leaves landscape viewports on plain cover", () => {
+    for (const [w, h] of [[1440, 900], [1920, 1080], [844, 390], [2560, 1080]]) {
+      const fit = roomFit(ART_W, ART_H, w, h);
+      expect(fit.mode, `${w}x${h}`).toBe("cover");
+      expect(fit, `${w}x${h}`).toMatchObject(coverRect(ART_W, ART_H, w, h));
+    }
+  });
+
+  it("brings the chest and the nook back into view on portrait tablets", () => {
+    for (const [w, h] of [[1024, 1366], [768, 1024]]) {
+      const fit = roomFit(ART_W, ART_H, w, h);
+      expect(fit.mode, `${w}x${h}`).toBe("portrait");
+      const leftAx = (0 - fit.x) / fit.w;
+      const rightAx = (w - fit.x) / fit.w;
+      for (const a of HOTSPOTS) {
+        expect(a.ax, `${w}x${h} ${a.id} visible`).toBeGreaterThan(leftAx);
+        expect(a.ax, `${w}x${h} ${a.id} visible`).toBeLessThan(rightAx);
+      }
+      // …and strictly more of the room than cover-fit showed.
+      const cover = coverRect(ART_W, ART_H, w, h);
+      expect(fit.w, `${w}x${h}`).toBeLessThan(cover.w);
+    }
+  });
+
+  it("never distorts the painting, at any viewport", () => {
+    for (const [w, h] of [[1440, 900], [1024, 1366], [768, 1024], [390, 844], [844, 390], [320, 568]]) {
+      const fit = roomFit(ART_W, ART_H, w, h);
+      expect(fit.w / fit.h, `${w}x${h} aspect`).toBeCloseTo(ART_W / ART_H, 4);
+    }
+  });
+
+  it("shows the room's full width on portrait tablets", () => {
+    for (const [w, h] of [[1024, 1366], [768, 1024], [800, 1280]]) {
+      const fit = roomFit(ART_W, ART_H, w, h);
+      expect(fit.mode, `${w}x${h}`).toBe("portrait");
+      expect(fit.w, `${w}x${h} width`).toBeCloseTo(w, 3);
+      expect(fit.x, `${w}x${h} x`).toBeCloseTo(0, 3);
+    }
+  });
+
+  it("leaves phones on full-bleed cover rather than a thin strip", () => {
+    // At phone aspects, full-width art would be a ~25%-tall band: exactly the
+    // letterbox this framing exists to avoid. Phones keep cover + the stacked
+    // button layout.
+    for (const [w, h] of [[390, 844], [360, 640], [320, 568]]) {
+      expect(roomFit(ART_W, ART_H, w, h).mode, `${w}x${h}`).toBe("cover");
+    }
+  });
+
+  it("puts every action's painted object on screen at portrait tablet sizes", () => {
+    // The chest and the nook live at the painting's outer edges; this is the
+    // whole reason portrait framing exists.
+    const OBJECTS = { decorate: [0.0, 0.17], puzzle: [0.39, 0.67], story: [0.56, 0.95] };
+    for (const [w, h] of [[1024, 1366], [768, 1024]]) {
+      const fit = roomFit(ART_W, ART_H, w, h);
+      for (const [id, [from, to]] of Object.entries(OBJECTS)) {
+        expect((fit.x + from * fit.w) >= -0.5, `${w}x${h} ${id} left`).toBe(true);
+        expect((fit.x + to * fit.w) <= w + 0.5, `${w}x${h} ${id} right`).toBe(true);
+      }
+    }
+  });
+
+  it("centres the framed room, so the backdrop reads as depth on both sides", () => {
+    const fit = roomFit(ART_W, ART_H, 1024, 1366);
+    const above = fit.y;
+    const below = 1366 - (fit.y + fit.h);
+    expect(above).toBeGreaterThan(0);
+    expect(below).toBeGreaterThan(0);
+    expect(Math.abs(above - below)).toBeLessThan(2);
+  });
+
+  it("switches modes at the documented aspect band, not somewhere arbitrary", () => {
+    const h = 1000;
+    expect(roomFit(ART_W, ART_H, PORTRAIT_ASPECT_MAX * h + 1, h).mode).toBe("cover");
+    expect(roomFit(ART_W, ART_H, PORTRAIT_ASPECT_MAX * h - 1, h).mode).toBe("portrait");
+    expect(roomFit(ART_W, ART_H, PORTRAIT_ASPECT_MIN * h + 1, h).mode).toBe("portrait");
+    expect(roomFit(ART_W, ART_H, PORTRAIT_ASPECT_MIN * h - 1, h).mode).toBe("cover");
+  });
+
+  it("paints the fill behind the art only in portrait", () => {
+    const portrait = mk();
+    portrait.setBackground({ width: ART_W, height: ART_H });
+    portrait.enter("treehouse_hideaway", {} as never, null, 1024, 1366);
+    expect(portrait.bgLayer.children).toHaveLength(2); // fill + painting
+
+    const land = mk();
+    land.setBackground({ width: ART_W, height: ART_H });
+    land.enter("treehouse_hideaway", {} as never, null, DESKTOP.w, DESKTOP.h);
+    expect(land.bgLayer.children).toHaveLength(1); // painting only
   });
 });
 
@@ -229,20 +328,22 @@ describe("responsive layout against the real art", () => {
     ["tablet landscape", 1366, 1024, "anchored"],
     ["phone landscape", 844, 390, "anchored"],
     ["ultrawide", 2560, 1080, "anchored"],
-    ["tablet portrait", 1024, 1366, "row"],
-    ["ipad portrait", 768, 1024, "row"],
+    // Portrait framing puts the whole room on screen, so the buttons can go
+    // back onto their objects instead of falling into a row.
+    ["tablet portrait", 1024, 1366, "anchored"],
+    ["ipad portrait", 768, 1024, "anchored"],
     ["phone portrait", 390, 844, "stack"],
     ["small phone portrait", 360, 640, "stack"],
   ];
 
   it.each(CASES)("%s uses the %s layout", (_n, w, h, mode) => {
-    expect(layoutHotspots(coverRect(ART_W, ART_H, w, h), w, h).mode).toBe(mode);
+    expect(layoutHotspots(roomFit(ART_W, ART_H, w, h), w, h).mode).toBe(mode);
   });
 
   it("every anchored button actually sits on its painted object", () => {
     for (const [name, w, h, mode] of CASES) {
       if (mode !== "anchored") continue;
-      const img = coverRect(ART_W, ART_H, w, h);
+      const img = roomFit(ART_W, ART_H, w, h);
       for (const s of layoutHotspots(img, w, h).spots) {
         const a = HOTSPOTS.find((x) => x.id === s.id)!;
         // within a few px of the anchor => not shoved aside by clamping
@@ -270,10 +371,41 @@ describe("responsive layout against the real art", () => {
     expect(redrawn.scale.x).toBeLessThanOrEqual(1);
   });
 
+  it("hotspot labels are shrunk to fit their pills", () => {
+    const room = mk();
+    room.setBackground({ width: ART_W, height: ART_H });
+    room.enter("treehouse_hideaway", {} as never, null, 768, 1024);
+    const labels = room.hotspotLayer.children.flatMap((c: { children: unknown[] }) => c.children);
+    const leaf = labels.find((c: { text?: string }) => c.text === "Leaf Puzzle");
+    expect(leaf, "leaf label exists").toBeTruthy();
+    leaf.width = 400; // absurdly wide for a 169px pill
+    room.drawHotspots();
+    const again = room.hotspotLayer.children
+      .flatMap((c: { children: unknown[] }) => c.children)
+      .find((c: { text?: string }) => c.text === "Leaf Puzzle");
+    expect(again.scale.x).toBeLessThanOrEqual(1);
+  });
+
+  it("leaves visible breathing room between adjacent pills", () => {
+    // 768x1024 is the tightest anchored case: three pills across a narrow
+    // tablet. They must not merely avoid overlapping, they must look apart.
+    for (const [w, h] of [[768, 1024], [1024, 1366], [1440, 900]]) {
+      const spots = layoutHotspots(roomFit(ART_W, ART_H, w, h), w, h).spots;
+      for (let i = 0; i < spots.length; i++) {
+        for (let j = i + 1; j < spots.length; j++) {
+          const a = spots[i], b = spots[j];
+          const dx = Math.abs(a.x - b.x) - (a.w + b.w) / 2;
+          const dy = Math.abs(a.y - b.y) - (a.h + b.h) / 2;
+          expect(Math.max(dx, dy), `${w}x${h}: ${a.id} vs ${b.id}`).toBeGreaterThanOrEqual(16);
+        }
+      }
+    }
+  });
+
   it("the back button never collides with a hotspot", () => {
     for (const [name, w, h] of CASES) {
       const back = backButtonRect(w, h);
-      for (const s of layoutHotspots(coverRect(ART_W, ART_H, w, h), w, h).spots) {
+      for (const s of layoutHotspots(roomFit(ART_W, ART_H, w, h), w, h).spots) {
         const apart =
           s.x - s.w / 2 >= back.x + back.w ||
           s.x + s.w / 2 <= back.x ||

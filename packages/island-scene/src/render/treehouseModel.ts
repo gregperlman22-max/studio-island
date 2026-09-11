@@ -48,6 +48,82 @@ export function coverRect(
   return { x: (screenW - w) / 2, y: (screenH - h) / 2, w, h };
 }
 
+/**
+ * Portrait framing.
+ *
+ * The room is painted 16:9. Cover-fitting it onto a 3:4 tablet crops away ~58%
+ * of the WIDTH, which throws out the treasure chest and the reading nook and
+ * leaves a child staring at a close-up of the tree trunk — not a room.
+ *
+ * So on portrait viewports the art is scaled DOWN until most of its width is
+ * back on screen, while still covering at least PORTRAIT_MIN_COVER of the
+ * viewport height (fill is capped at 1 - that). The leftover height becomes a
+ * warm gradient continuing the painting's own edge tones — mostly ABOVE the
+ * art, where the room's dark wooden ceiling reads naturally as roof space in
+ * shadow, leaving the floor near the bottom of the screen where a child
+ * expects it. That is a framing choice, not a letterbox: no black bars, no
+ * distortion, and the aspect ratio is never touched.
+ *
+ * Landscape (including desktop and phone-landscape) is untouched: plain cover.
+ */
+
+/** Portrait framing applies inside this band of viewport aspects (w/h).
+ *  Above it, landscape cover is right. BELOW it — phones — the art would be
+ *  reduced to a thin strip, which is the letterbox we are avoiding, so phones
+ *  keep full-bleed cover and rely on the stacked button layout instead. */
+export const PORTRAIT_ASPECT_MAX = 1.2;
+export const PORTRAIT_ASPECT_MIN = 0.6;
+/** Share of the leftover height placed above the art (rest goes below). */
+export const PORTRAIT_TOP_SHARE = 0.5;
+
+/** Mean colour of the painting's top edge band — the wooden ceiling. */
+export const ART_EDGE_TOP = "#763c07";
+/** Mean colour of the painting's bottom edge band — the honey floor. */
+export const ART_EDGE_BOTTOM = "#a75713";
+/** Where each gradient lands at the far screen edge (the room in shadow). */
+export const ART_FILL_TOP_FAR = "#3a1c04";
+export const ART_FILL_BOTTOM_FAR = "#6b360b";
+
+export interface RoomFit extends Rect {
+  /** "cover" fills the viewport; "portrait" pulls back and fills vertically. */
+  mode: "cover" | "portrait";
+}
+
+/**
+ * How the painting is framed for this viewport. Hotspots and decorations
+ * anchor to the returned rect either way, so they follow the art unchanged.
+ */
+export function roomFit(
+  texW: number,
+  texH: number,
+  screenW: number,
+  screenH: number,
+): RoomFit {
+  if (!(texW > 0) || !(texH > 0)) {
+    return { x: 0, y: 0, w: screenW, h: screenH, mode: "cover" };
+  }
+  const aspect = screenW / screenH;
+  if (aspect >= PORTRAIT_ASPECT_MAX || aspect < PORTRAIT_ASPECT_MIN) {
+    return { ...coverRect(texW, texH, screenW, screenH), mode: "cover" };
+  }
+  // Show the room's FULL WIDTH. Anything less keeps cropping the treasure
+  // chest and the reading nook, which live at the painting's outer edges —
+  // and those two objects are exactly the context two of the three buttons
+  // need. The height this leaves over is not empty: TreehouseRoom fills it
+  // with a blurred, dimmed copy of the same painting, so the screen reads as
+  // the room seen through a frame rather than art floating in a bar.
+  const scale = screenW / texW;
+  const w = texW * scale;
+  const h = texH * scale;
+  const x = (screenW - w) / 2;
+  // Taller than the screen after all (a near-square viewport): plain cover.
+  const y =
+    h >= screenH
+      ? (screenH - h) / 2
+      : (screenH - h) * PORTRAIT_TOP_SHARE;
+  return { x, y, w, h, mode: "portrait" };
+}
+
 // ── Primary interactions ────────────────────────────────────────────
 
 export type HotspotId = "decorate" | "puzzle" | "story";
@@ -55,7 +131,6 @@ export type HotspotId = "decorate" | "puzzle" | "story";
 export interface HotspotAnchor {
   id: HotspotId;
   label: string;
-  icon: string;
   /**
    * Where this action lives ON THE PAINTING, as a fraction of the image's
    * width/height — so the button follows the art at every aspect ratio rather
@@ -75,9 +150,9 @@ export interface HotspotAnchor {
 }
 
 export const HOTSPOTS: readonly HotspotAnchor[] = [
-  { id: "decorate", label: "Decorate", icon: "🎨", ax: 0.21, ay: 0.78 },
-  { id: "puzzle", label: "Leaf Puzzle", icon: "🍃", ax: 0.53, ay: 0.8 },
-  { id: "story", label: "Story Nook", icon: "📖", ax: 0.8, ay: 0.78 },
+  { id: "decorate", label: "Decorate", ax: 0.21, ay: 0.78 },
+  { id: "puzzle", label: "Leaf Puzzle", ax: 0.53, ay: 0.8 },
+  { id: "story", label: "Story Nook", ax: 0.8, ay: 0.78 },
 ] as const;
 
 export interface PlacedHotspot extends HotspotAnchor {
@@ -142,7 +217,7 @@ export function layoutHotspots(
     };
   }
 
-  const w = clamp(screenW * 0.24, minPillW, 240);
+  const w = clamp(screenW * 0.22, minPillW, 240);
   const h = clamp(screenH * 0.1, MIN_TAP, 84);
   // How far a button may be nudged off its anchor and still read as sitting on
   // its object. Beyond this the object is cropped away (cover-fit crops hard on
@@ -208,7 +283,6 @@ export type DecorId = "lantern" | "plant" | "cushion" | "garland";
 export interface DecorItem {
   id: DecorId;
   label: string;
-  icon: string;
   /** Where the decoration sits in the room, as image fractions. */
   ax: number;
   ay: number;
@@ -217,10 +291,10 @@ export interface DecorItem {
 /** Placed against the shipped painting: quiet spots that read as "added to
  *  the room" without burying painted detail. */
 export const DECOR_ITEMS: readonly DecorItem[] = [
-  { id: "lantern", label: "Lantern", icon: "🏮", ax: 0.33, ay: 0.2 },
-  { id: "plant", label: "Plant", icon: "🪴", ax: 0.3, ay: 0.66 },
-  { id: "cushion", label: "Cushion", icon: "🧸", ax: 0.74, ay: 0.89 },
-  { id: "garland", label: "Garland", icon: "✨", ax: 0.5, ay: 0.07 },
+  { id: "lantern", label: "Lantern", ax: 0.33, ay: 0.2 },
+  { id: "plant", label: "Plant", ax: 0.3, ay: 0.66 },
+  { id: "cushion", label: "Cushion", ax: 0.74, ay: 0.89 },
+  { id: "garland", label: "Garland", ax: 0.5, ay: 0.07 },
 ] as const;
 
 const DECOR_KEY = "engage-island.treehouse.decor";
