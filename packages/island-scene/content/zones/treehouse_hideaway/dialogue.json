@@ -8,6 +8,38 @@
       "next": null,
       "choices": null,
       "audio": null
+    },
+    {
+      "id": "treehouse_hideaway.olive.story.001",
+      "speaker": "olive",
+      "text": "Olive tucked her wings in close and opened a well-loved book. Outside, the evening turned gold.",
+      "next": ["treehouse_hideaway.olive.story.002"],
+      "choices": null,
+      "audio": null
+    },
+    {
+      "id": "treehouse_hideaway.olive.story.002",
+      "speaker": "olive",
+      "text": "\"Once,\" she read, \"there was a small creature who could not sleep. So the tree grew a room just for resting.\"",
+      "next": ["treehouse_hideaway.olive.story.003"],
+      "choices": null,
+      "audio": null
+    },
+    {
+      "id": "treehouse_hideaway.olive.story.003",
+      "speaker": "olive",
+      "text": "\"It had round windows for watching the sky, and lanterns that never burned too bright.\"",
+      "next": ["treehouse_hideaway.olive.story.004"],
+      "choices": null,
+      "audio": null
+    },
+    {
+      "id": "treehouse_hideaway.olive.story.004",
+      "speaker": "olive",
+      "text": "Olive closed the book softly. \"That room is this one,\" she said. \"Stay as long as you like.\"",
+      "next": null,
+      "choices": null,
+      "audio": null
     }
   ]
 }
