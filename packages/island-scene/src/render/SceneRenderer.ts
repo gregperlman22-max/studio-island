@@ -41,6 +41,9 @@ import { buildCampfireFx, buildArtHutFx, buildFishFx } from "./landmarkFx";
 import { findPath, nearestWalkable, type WalkGrid } from "./pathfind";
 import { planZoneUpdate } from "./sceneDiff";
 import { ZoneView } from "./ZoneView";
+import { TreehouseRoom } from "./TreehouseRoom";
+import { TREEHOUSE_ROOM_TARGET, TREEHOUSE_ROOM_URL } from "./treehouseArt";
+import type { ZoneInterior } from "./ZoneInterior";
 import { GuideOverlay } from "./GuideOverlay";
 import { getDialogueLine, getGreeting, getPractices } from "../content/loader";
 import { logMissingAudioReport } from "../content/audio";
@@ -157,8 +160,11 @@ export class SceneRenderer {
   private fireflyDots: {
     g: Graphics; cx: number; cy: number; rx: number; ry: number; phase: number; speed: number;
   }[] = [];
-  /** Mode 2 — third-person zone view (parallax, screen space). */
+  /** Mode 2 — third-person zone view (parallax, screen space). Used by the
+   *  eight SCROLLING interiors; Treehouse Hideaway uses TreehouseRoom. */
   private zoneView!: ZoneView;
+  /** Mode 2 — Treehouse Hideaway's single painted room (no scrolling). */
+  private treehouseRoom!: TreehouseRoom;
   /** Phase 2 — landmark guide overlay (screen space, top layer). */
   private guideOverlay!: GuideOverlay;
   /** Mode-2 practice experience (screen space, above the zone view). */
@@ -325,6 +331,11 @@ export class SceneRenderer {
     }
 
     this.zoneView = new ZoneView({ reducedMotion: this.opts.reducedMotion });
+    this.treehouseRoom = new TreehouseRoom({ reducedMotion: this.opts.reducedMotion });
+    // The room painting is optional: it loads in the background and the room
+    // swaps it in when (if) it arrives. A missing file just keeps the
+    // code-drawn stand-in — it must never block entering the zone.
+    void this.loadTreehouseArt();
     this.guideOverlay = new GuideOverlay({ reducedMotion: this.opts.reducedMotion });
     this.practicePlayer = new PracticePlayer({ reducedMotion: this.opts.reducedMotion });
     this.audio = new AudioService({ enabled: this.opts.audioEnabled });
@@ -351,7 +362,8 @@ export class SceneRenderer {
     // and below the guide overlay + fade, so a guide card / arrival fade always
     // wins if both somehow coexist.
     this.app.stage.addChild(
-      this.backdrop, this.zoneView.container, this.practicePlayer.container,
+      this.backdrop, this.zoneView.container, this.treehouseRoom.container,
+      this.practicePlayer.container,
       this.world, this.zoneLabels, this.guideOverlay.container, this.fade,
     );
     // Sliding the guide back out returns to the world map (already behind it);
@@ -677,8 +689,8 @@ export class SceneRenderer {
     this.destroyAllZoneBundles();
     this.buildZones();
     this.buildDecorations();
-    if (this.currentZone && this.zoneView.active) {
-      this.zoneView.restyle(theme.palette, this.localCfg());
+    if (this.currentZone && this.interior.active) {
+      this.interior.restyle(theme.palette, this.localCfg());
     }
   }
 
@@ -719,8 +731,8 @@ export class SceneRenderer {
     if (!this.inited || this.destroyed) return;
     this.avatars = avatars;
     this.reconcileAvatars();
-    if (this.currentZone && this.zoneView.active) {
-      this.zoneView.restyle(this.theme.palette, this.localCfg());
+    if (this.currentZone && this.interior.active) {
+      this.interior.restyle(this.theme.palette, this.localCfg());
     }
   }
 
@@ -783,7 +795,7 @@ export class SceneRenderer {
     if (dir === "enter") {
       // Build the parallax zone view beneath the world map; the world stays on
       // top and tilts + fades to reveal it.
-      this.zoneView.enter(
+      this.interiorFor(zone).enter(
         zone, this.theme.palette, this.localCfg(),
         this.app.screen.width, this.app.screen.height,
       );
@@ -824,7 +836,7 @@ export class SceneRenderer {
     if (zone) {
       // Mode 2: hide the entire world map (backdrop + camera-panned world) so
       // nothing from Mode 1 bleeds through behind the parallax layers.
-      this.zoneView.enter(
+      this.interiorFor(zone).enter(
         zone,
         this.theme.palette,
         this.localCfg(),
@@ -840,12 +852,61 @@ export class SceneRenderer {
       this.startPractice();
       debugLog(`[island-scene] applyMode → Mode 2 (zone view: ${zone})`);
     } else {
-      this.zoneView.hide();
+      this.hideInteriors();
       this.practicePlayer.hide();
       this.currentPractice = null;
       this.world.visible = true;
       this.backdrop.visible = true;
       debugLog("[island-scene] applyMode → Mode 1 (world map)");
+    }
+  }
+
+  /**
+   * Zones whose interior is a single stationary ROOM rather than the
+   * side-scrolling parallax view. Everything not listed here keeps ZoneView
+   * exactly as it was — this set is the entire blast radius of the Treehouse
+   * conversion.
+   */
+  private static readonly ROOM_ZONES: ReadonlySet<ZoneKey> = new Set<ZoneKey>([
+    "treehouse_hideaway",
+  ]);
+
+  private isRoomZone(zone: ZoneKey | null): boolean {
+    return zone !== null && SceneRenderer.ROOM_ZONES.has(zone);
+  }
+
+  /** The interior responsible for `zone` (defaults to the current zone). */
+  private interiorFor(zone: ZoneKey | null): ZoneInterior {
+    return this.isRoomZone(zone) ? this.treehouseRoom : this.zoneView;
+  }
+
+  /** Whichever interior is on screen right now. */
+  private get interior(): ZoneInterior {
+    return this.interiorFor(this.currentZone);
+  }
+
+  /** Hide both interiors — cheap, and leaves no stale room behind a zone. */
+  private hideInteriors(): void {
+    this.zoneView.hide();
+    this.treehouseRoom.hide();
+  }
+
+  /** Load the painted Treehouse room, if the art has shipped. When it hasn't,
+   *  TREEHOUSE_ROOM_URL is null and we request nothing at all — the room draws
+   *  its code-built stand-in and the console stays clean. */
+  private async loadTreehouseArt(): Promise<void> {
+    if (!TREEHOUSE_ROOM_URL) {
+      debugLog(
+        `[island-scene] treehouse room art not shipped yet — using the code-drawn stand-in ` +
+          `(drop it at ${TREEHOUSE_ROOM_TARGET})`,
+      );
+      return;
+    }
+    try {
+      const tex = (await Assets.load(TREEHOUSE_ROOM_URL)) as Texture;
+      if (!this.destroyed) this.treehouseRoom.setBackground(tex);
+    } catch (err) {
+      console.warn("[island-scene] treehouse room art failed to load", err);
     }
   }
 
@@ -871,7 +932,9 @@ export class SceneRenderer {
     } else {
       this.currentPractice = null;
     }
-    this.zoneView.setHasPractice(!!practice);
+    // Beacon-vs-practice only applies to the scrolling interiors; a room zone
+    // has no beacon to suppress.
+    if (!this.isRoomZone(zone)) this.zoneView.setHasPractice(!!practice);
   }
 
   /** Open the current zone's practice (idempotent — ignored if already up or
@@ -899,7 +962,8 @@ export class SceneRenderer {
     const tiltP = tr.dir === "enter" ? p : 1 - p;
     this.applyTilt(tiltP, tr);
     // The parallax beneath keeps animating across the whole transition.
-    if (this.zoneView.active) this.zoneView.update(dt);
+    const during = this.interiorFor(tr.zone);
+    if (during.active) during.update(dt);
     if (tr.t >= 1) this.finishTransition(tr);
   }
 
@@ -931,7 +995,7 @@ export class SceneRenderer {
       debugLog(`[island-scene] transition done → Mode 2 (${tr.zone})`);
     } else {
       this.currentZone = null;
-      this.zoneView.hide();
+      this.hideInteriors();
       this.practicePlayer.hide();
       this.currentPractice = null;
       this.world.visible = true;
@@ -961,7 +1025,7 @@ export class SceneRenderer {
       const o = this.islandLayout();
       this.island.coverWater(o.cx, o.cy, o.waterW, o.waterH);
     }
-    if (this.currentZone) this.zoneView.resize(this.app.screen.width, this.app.screen.height);
+    if (this.currentZone) this.interior.resize(this.app.screen.width, this.app.screen.height);
     this.guideOverlay.resize(this.app.screen.width, this.app.screen.height);
     this.practicePlayer.resize(this.app.screen.width, this.app.screen.height);
     this.arrivalView?.resize(this.app.screen.width, this.app.screen.height);
@@ -1915,7 +1979,7 @@ export class SceneRenderer {
     // as soon as the zone view is on screen (don't wait for the fade-in to
     // finish — that just made early taps feel dead).
     if (this.currentZone !== null) {
-      if (!this.zoneView.active || this.trans) return; // no taps mid-transition
+      if (!this.interior.active || this.trans) return; // no taps mid-transition
       this.pointerDown = true;
       this.pointerMoved = false;
       this.downX = e.global.x;
@@ -2027,7 +2091,7 @@ export class SceneRenderer {
       const wasZoneTap = this.pointerDown && !this.pointerMoved && !this.trans;
       this.pointerDown = false;
       if (wasZoneTap) {
-        const kind = this.zoneView.handleTap(e.global.x, e.global.y);
+        const kind = this.interior.handleTap(e.global.x, e.global.y);
         if (kind === "exit") {
           debugLog("[island-scene] in-scene exit tapped → onZoneExit");
           this.opts.onZoneExit?.();
@@ -2132,7 +2196,7 @@ export class SceneRenderer {
     // parallax (Mode 2).
     if (!this.trans) {
       if (this.currentZone === null) this.followCamera(dt);
-      else this.zoneView.update(dt);
+      else this.interior.update(dt);
     }
     this.positionZoneLabels();
 
