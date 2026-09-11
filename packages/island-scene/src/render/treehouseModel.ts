@@ -55,13 +55,11 @@ export function coverRect(
  * of the WIDTH, which throws out the treasure chest and the reading nook and
  * leaves a child staring at a close-up of the tree trunk — not a room.
  *
- * So on portrait viewports the art is scaled DOWN until most of its width is
- * back on screen, while still covering at least PORTRAIT_MIN_COVER of the
- * viewport height (fill is capped at 1 - that). The leftover height becomes a
- * warm gradient continuing the painting's own edge tones — mostly ABOVE the
- * art, where the room's dark wooden ceiling reads naturally as roof space in
- * shadow, leaving the floor near the bottom of the screen where a child
- * expects it. That is a framing choice, not a letterbox: no black bars, no
+ * So inside the portrait aspect band the art is shown at its FULL WIDTH,
+ * centred, and the leftover height is filled by TreehouseRoom with the same
+ * painting — cover-fit, over-scaled, blurred and dimmed. The colour and light
+ * behind the art are therefore the room's own, so the screen reads as depth
+ * around a framed view rather than art in a bar. No black bars, no
  * distortion, and the aspect ratio is never touched.
  *
  * Landscape (including desktop and phone-landscape) is untouched: plain cover.
@@ -73,16 +71,17 @@ export function coverRect(
  *  keep full-bleed cover and rely on the stacked button layout instead. */
 export const PORTRAIT_ASPECT_MAX = 1.2;
 export const PORTRAIT_ASPECT_MIN = 0.6;
-/** Share of the leftover height placed above the art (rest goes below). */
+/** Share of the leftover height placed above the art (rest goes below).
+ *  0.5 centres the framed room, so the blurred surround reads as depth on
+ *  both sides rather than as a bar hanging off one edge. */
 export const PORTRAIT_TOP_SHARE = 0.5;
 
-/** Mean colour of the painting's top edge band — the wooden ceiling. */
+/** Mean colour of the painting's top edge band, measured off the shipped art.
+ *  It is the warm base under the blurred backdrop, so the screen is still
+ *  right if the blur filter is unavailable. */
 export const ART_EDGE_TOP = "#763c07";
-/** Mean colour of the painting's bottom edge band — the honey floor. */
-export const ART_EDGE_BOTTOM = "#a75713";
-/** Where each gradient lands at the far screen edge (the room in shadow). */
+/** Where that base lands at the screen edge — the room in shadow. */
 export const ART_FILL_TOP_FAR = "#3a1c04";
-export const ART_FILL_BOTTOM_FAR = "#6b360b";
 
 export interface RoomFit extends Rect {
   /** "cover" fills the viewport; "portrait" pulls back and fills vertically. */
