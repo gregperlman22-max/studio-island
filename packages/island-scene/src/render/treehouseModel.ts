@@ -58,20 +58,26 @@ export interface HotspotAnchor {
   icon: string;
   /**
    * Where this action lives ON THE PAINTING, as a fraction of the image's
-   * width/height. These are the ONE place to retune when the final painted
-   * room lands: point each at the object it belongs to (the decorating shelf,
-   * the leaf pile, the reading nook) and the button follows the art at every
-   * aspect ratio. Values below are aimed at the described composition —
-   * cosy nook right, big tree centre, plants/shelf left.
+   * width/height — so the button follows the art at every aspect ratio rather
+   * than floating at a fixed screen position.
+   *
+   * Tuned against the shipped 2000x1125 room (treehouse-hideaway.webp). Each
+   * sits BESIDE its object on quiet floor/bench rather than on top of it, so
+   * the painted detail the button refers to stays visible:
+   *   decorate — just right of the open treasure chest (chest art ends ~0.17);
+   *   puzzle   — on the rug under the round table, clear of the leaf tiles
+   *              that fill the table top (~0.45-0.58 x, ~0.68-0.75 y);
+   *   story    — on the bench base below the cushions and the open book
+   *              (book art ~0.71-0.82 x, ~0.57-0.63 y).
    */
   ax: number;
   ay: number;
 }
 
 export const HOTSPOTS: readonly HotspotAnchor[] = [
-  { id: "decorate", label: "Decorate", icon: "🎨", ax: 0.18, ay: 0.66 },
-  { id: "puzzle", label: "Leaf Puzzle", icon: "🍃", ax: 0.5, ay: 0.76 },
-  { id: "story", label: "Story Nook", icon: "📖", ax: 0.82, ay: 0.62 },
+  { id: "decorate", label: "Decorate", icon: "🎨", ax: 0.21, ay: 0.78 },
+  { id: "puzzle", label: "Leaf Puzzle", icon: "🍃", ax: 0.53, ay: 0.8 },
+  { id: "story", label: "Story Nook", icon: "📖", ax: 0.8, ay: 0.78 },
 ] as const;
 
 export interface PlacedHotspot extends HotspotAnchor {
@@ -138,13 +144,20 @@ export function layoutHotspots(
 
   const w = clamp(screenW * 0.24, minPillW, 240);
   const h = clamp(screenH * 0.1, MIN_TAP, 84);
-  const anchored: PlacedHotspot[] = HOTSPOTS.map((s) => ({
-    ...s,
-    x: clamp(img.x + s.ax * img.w, PAD + w / 2, screenW - PAD - w / 2),
-    y: clamp(img.y + s.ay * img.h, PAD + h / 2, screenH - PAD - h / 2),
-    w,
-    h,
-  }));
+  // How far a button may be nudged off its anchor and still read as sitting on
+  // its object. Beyond this the object is cropped away (cover-fit crops hard on
+  // phone-portrait and ultrawide), and pinning the button to the screen edge
+  // would point at nothing — the deterministic row below is the honest answer.
+  const DRIFT = 8;
+  let drifted = false;
+  const anchored: PlacedHotspot[] = HOTSPOTS.map((s) => {
+    const rawX = img.x + s.ax * img.w;
+    const rawY = img.y + s.ay * img.h;
+    const x = clamp(rawX, PAD + w / 2, screenW - PAD - w / 2);
+    const y = clamp(rawY, PAD + h / 2, screenH - PAD - h / 2);
+    if (Math.abs(x - rawX) > DRIFT || Math.abs(y - rawY) > DRIFT) drifted = true;
+    return { ...s, x, y, w, h };
+  });
 
   const overlapping = anchored.some((a, i) =>
     anchored.some(
@@ -154,7 +167,7 @@ export function layoutHotspots(
         Math.abs(a.y - b.y) < (a.h + b.h) / 2 + GAP,
     ),
   );
-  if (!overlapping) return { mode: "anchored", spots: anchored };
+  if (!overlapping && !drifted) return { mode: "anchored", spots: anchored };
 
   const y = screenH - PAD - h / 2;
   const span = w * 3 + GAP * 2;
@@ -201,11 +214,13 @@ export interface DecorItem {
   ay: number;
 }
 
+/** Placed against the shipped painting: quiet spots that read as "added to
+ *  the room" without burying painted detail. */
 export const DECOR_ITEMS: readonly DecorItem[] = [
-  { id: "lantern", label: "Lantern", icon: "🏮", ax: 0.3, ay: 0.3 },
-  { id: "plant", label: "Plant", icon: "🪴", ax: 0.12, ay: 0.8 },
-  { id: "cushion", label: "Cushion", icon: "🧸", ax: 0.74, ay: 0.8 },
-  { id: "garland", label: "Garland", icon: "✨", ax: 0.52, ay: 0.14 },
+  { id: "lantern", label: "Lantern", icon: "🏮", ax: 0.33, ay: 0.2 },
+  { id: "plant", label: "Plant", icon: "🪴", ax: 0.3, ay: 0.66 },
+  { id: "cushion", label: "Cushion", icon: "🧸", ax: 0.74, ay: 0.89 },
+  { id: "garland", label: "Garland", icon: "✨", ax: 0.5, ay: 0.07 },
 ] as const;
 
 const DECOR_KEY = "engage-island.treehouse.decor";

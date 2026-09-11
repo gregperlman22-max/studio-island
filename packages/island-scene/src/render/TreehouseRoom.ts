@@ -37,11 +37,13 @@ import {
  * There is no camera, no world width, no walk target and no avatar sprite in
  * here. Nothing in this class scrolls.
  *
- * ART CONTRACT: the room is a single painted image set through
- * `setBackground()` and drawn COVER-fit. Until that art lands the class draws
- * a warm code-built stand-in so the room is reviewable — see `drawFallback`.
- * All interface text is drawn HERE, in code, over the painting; none of it
- * may be baked into the artwork.
+ * ART CONTRACT: the room is the single painted image
+ * (assets/interiors/treehouse-hideaway.webp), set through `setBackground()`
+ * and drawn COVER-fit. That painting is the design authority. All interface
+ * text is drawn HERE, in code, over it; none of it is baked into the artwork,
+ * so the art can be repainted without touching a label. When the texture is
+ * unavailable — a load failure, or the moment before it decodes — the room
+ * shows a plain warm ground (`drawPlaceholderGround`), never a mock room.
  */
 
 const INK = 0x23201c;
@@ -119,7 +121,7 @@ export class TreehouseRoom implements ZoneInterior {
     this.container.visible = true;
     debugLog(
       `[island-scene] TreehouseRoom.enter ${w}x${h} — single room, no scroll ` +
-        `(bg=${this.bgTex ? "painted" : "FALLBACK"}, decor=${this.decor.length}, pages=${this.pages.length})`,
+        `(bg=${this.bgTex ? "painted" : "awaiting art"}, decor=${this.decor.length}, pages=${this.pages.length})`,
     );
   }
 
@@ -236,59 +238,30 @@ export class TreehouseRoom implements ZoneInterior {
       this.bgLayer.addChild(s);
       return;
     }
-    this.bgLayer.addChild(this.drawFallback());
+    this.bgLayer.addChild(this.drawPlaceholderGround());
   }
 
   /**
-   * TEMPORARY stand-in for the painted room — a warm, deliberately simple
-   * interior so the layout and all three activities can be reviewed before
-   * the final artwork exists. It is NOT the visual target and should be
-   * deleted the day the painting lands (see setBackground / ASSET STATUS).
+   * Shown ONLY when the painting is unavailable: a load failure, or the brief
+   * moment before the texture decodes on a cold cache. It is deliberately a
+   * plain warm ground, NOT a mock room — the painted art is the design
+   * authority and nothing here should ever be mistaken for it.
+   *
+   * (This replaced the code-built stand-in room that stood in before
+   * treehouse-hideaway.webp shipped.)
    */
-  private drawFallback(): Container {
+  private drawPlaceholderGround(): Container {
     const { w, h } = this;
     const c = new Container();
     const g = new Graphics();
-
-    // Honey-wood wall, warmer toward the floor.
-    const bands = 22;
+    const bands = 16;
     for (let i = 0; i < bands; i++) {
       const t = i / (bands - 1);
-      const r = Math.round(0x6d + t * 0x3e);
-      const gr = Math.round(0x49 + t * 0x2f);
-      const b = Math.round(0x2a + t * 0x18);
+      const r = Math.round(0x7a + t * 0x2c);
+      const gr = Math.round(0x55 + t * 0x25);
+      const b = Math.round(0x33 + t * 0x16);
       g.rect(0, (h * i) / bands, w, h / bands + 1).fill((r << 16) | (gr << 8) | b);
     }
-    // Plank seams.
-    for (let y = h * 0.08; y < h * 0.72; y += Math.max(26, h * 0.07)) {
-      g.rect(0, y, w, 2).fill({ color: 0x4a3320, alpha: 0.35 });
-    }
-    // Floor.
-    g.rect(0, h * 0.72, w, h * 0.28).fill(0x8a5c31);
-    g.rect(0, h * 0.72, w, 4).fill({ color: 0xd9a463, alpha: 0.5 });
-
-    // Central living tree.
-    g.poly([w * 0.44, h * 0.78, w * 0.46, h * 0.1, w * 0.54, h * 0.1, w * 0.56, h * 0.78])
-      .fill(0x6b4526)
-      .stroke({ width: 4, color: INK });
-    g.ellipse(w * 0.5, h * 0.78, w * 0.12, h * 0.03).fill(0x5a381e);
-
-    // Round windows with golden evening light.
-    for (const cx of [w * 0.16, w * 0.84]) {
-      const r = Math.min(w, h) * 0.11;
-      g.circle(cx, h * 0.32, r).fill(0xf6d08a).stroke({ width: 5, color: 0x5a3c22 });
-      g.circle(cx, h * 0.32, r * 0.98).fill({ color: 0xffe9b8, alpha: 0.55 });
-    }
-
-    // Reading nook + lanterns.
-    g.roundRect(w * 0.68, h * 0.6, w * 0.22, h * 0.16, 16).fill(0xc07a4a).stroke({ width: 4, color: INK });
-    for (const cx of [w * 0.3, w * 0.7]) {
-      g.circle(cx, h * 0.2, Math.min(w, h) * 0.035).fill(0xffca6b).stroke({ width: 3, color: INK });
-      g.circle(cx, h * 0.2, Math.min(w, h) * 0.075).fill({ color: 0xffca6b, alpha: 0.16 });
-    }
-
-    // Warm vignette so code-drawn UI still reads against it.
-    g.rect(0, 0, w, h).fill({ color: 0x2a1a0c, alpha: 0.12 });
     c.addChild(g);
     return c;
   }
@@ -359,6 +332,11 @@ export class TreehouseRoom implements ZoneInterior {
       },
     });
     label.anchor.set(0.5);
+    // The pill is sized from the viewport, the label from its own metrics, so
+    // on a narrow phone the text can be wider than the pill. Shrink it to fit
+    // rather than letting it spill over the painting.
+    const room = r.w - 22;
+    if (label.width > room && label.width > 0) label.scale.set(room / label.width);
     label.position.set(r.x + r.w / 2, r.y + r.h / 2);
     this.uiLayer.addChild(label);
   }

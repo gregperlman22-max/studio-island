@@ -78,6 +78,7 @@ const {
 } = await import("../render/treehouseModel");
 const { TreehouseRoom } = await import("../render/TreehouseRoom");
 const { getZoneDialogue } = await import("../content/loader");
+const { TREEHOUSE_ROOM_URL } = await import("../render/treehouseArt");
 
 // The room keeps private state; tests reach in deliberately.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -87,6 +88,9 @@ const mk = (reducedMotion = false): Room =>
 
 const PHONE = { w: 390, h: 844 };
 const DESKTOP = { w: 1440, h: 900 };
+/** The shipped painting, treehouse-hideaway.webp. */
+const ART_W = 2000;
+const ART_H = 1125;
 
 /** Open the room at a size and return it. */
 function entered(size = DESKTOP, reducedMotion = false): Room {
@@ -115,11 +119,11 @@ beforeEach(() => {
 
 describe("room geometry", () => {
   it("cover-fits the painting so it always fills the viewport", () => {
-    const r = coverRect(2048, 1152, 390, 844); // tall phone, wide art
+    const r = coverRect(ART_W, ART_H, 390, 844); // tall phone, wide art
     expect(r.w).toBeGreaterThanOrEqual(390);
     expect(r.h).toBeGreaterThanOrEqual(844);
     // aspect preserved
-    expect(r.w / r.h).toBeCloseTo(2048 / 1152, 5);
+    expect(r.w / r.h).toBeCloseTo(ART_W / ART_H, 5);
     // centred
     expect(r.x + r.w / 2).toBeCloseTo(195, 5);
   });
@@ -129,14 +133,14 @@ describe("room geometry", () => {
   });
 
   it("places all three actions on desktop, anchored to the art", () => {
-    const img = coverRect(2048, 1152, DESKTOP.w, DESKTOP.h);
+    const img = coverRect(ART_W, ART_H, DESKTOP.w, DESKTOP.h);
     const { mode, spots } = layoutHotspots(img, DESKTOP.w, DESKTOP.h);
     expect(mode).toBe("anchored");
     expect(spots.map((s) => s.id)).toEqual(HOTSPOTS.map((h) => h.id));
   });
 
   it("stacks the actions on a phone instead of squeezing three abreast", () => {
-    const img = coverRect(2048, 1152, PHONE.w, PHONE.h);
+    const img = coverRect(ART_W, ART_H, PHONE.w, PHONE.h);
     const { mode, spots } = layoutHotspots(img, PHONE.w, PHONE.h);
     expect(mode).toBe("stack");
     // distinct rows, same column
@@ -153,7 +157,7 @@ describe("room geometry", () => {
       { w: 2560, h: 1080 }, // ultrawide
     ];
     for (const { w, h } of sizes) {
-      const img = coverRect(2048, 1152, w, h);
+      const img = coverRect(ART_W, ART_H, w, h);
       const { spots } = layoutHotspots(img, w, h);
       for (const s of spots) {
         expect(s.h, `${w}x${h} ${s.id} height`).toBeGreaterThanOrEqual(MIN_TAP);
@@ -175,6 +179,108 @@ describe("room geometry", () => {
       const back = backButtonRect(w, h);
       expect(back.h).toBeGreaterThanOrEqual(MIN_TAP);
       expect(back.x + back.w).toBeLessThanOrEqual(w);
+    }
+  });
+});
+
+describe("room artwork", () => {
+  it("resolves the shipped painting through the build-time glob", () => {
+    // If this is null the art file was deleted/renamed and every child would
+    // get the plain warm ground instead of the room.
+    expect(TREEHOUSE_ROOM_URL).toBeTruthy();
+    expect(TREEHOUSE_ROOM_URL).toMatch(/treehouse-hideaway.*\.webp/);
+  });
+
+  it("draws the painting itself once a texture is supplied", () => {
+    const room = mk();
+    room.setBackground({ width: ART_W, height: ART_H });
+    room.enter("treehouse_hideaway", {} as never, null, DESKTOP.w, DESKTOP.h);
+    // one child: the cover-fit sprite, sized to the cover rect (not the
+    // multi-shape placeholder ground)
+    expect(room.bgLayer.children).toHaveLength(1);
+    const sprite = room.bgLayer.children[0];
+    const fit = coverRect(ART_W, ART_H, DESKTOP.w, DESKTOP.h);
+    expect(sprite.width).toBeCloseTo(fit.w, 3);
+    expect(sprite.height).toBeCloseTo(fit.h, 3);
+    expect(sprite.position.x).toBeCloseTo(fit.x, 3);
+  });
+
+  it("anchors hotspots to the PAINTING, not the viewport", () => {
+    const room = mk();
+    room.setBackground({ width: ART_W, height: ART_H });
+    room.enter("treehouse_hideaway", {} as never, null, DESKTOP.w, DESKTOP.h);
+    const img = coverRect(ART_W, ART_H, DESKTOP.w, DESKTOP.h);
+    for (const s of room.spots) {
+      const anchor = HOTSPOTS.find((h) => h.id === s.id)!;
+      expect(s.x, s.id).toBeCloseTo(img.x + anchor.ax * img.w, 0);
+      expect(s.y, s.id).toBeCloseTo(img.y + anchor.ay * img.h, 0);
+    }
+  });
+});
+
+describe("responsive layout against the real art", () => {
+  // Where the objects are on screen, the buttons sit on them ("anchored").
+  // Where cover-fit crops them away, pinning a button to the screen edge would
+  // point at nothing, so a deterministic arrangement is used instead.
+  const CASES: [string, number, number, string][] = [
+    ["desktop", 1440, 900, "anchored"],
+    ["desktop 1080p", 1920, 1080, "anchored"],
+    ["laptop", 1280, 800, "anchored"],
+    ["tablet landscape", 1366, 1024, "anchored"],
+    ["phone landscape", 844, 390, "anchored"],
+    ["ultrawide", 2560, 1080, "anchored"],
+    ["tablet portrait", 1024, 1366, "row"],
+    ["ipad portrait", 768, 1024, "row"],
+    ["phone portrait", 390, 844, "stack"],
+    ["small phone portrait", 360, 640, "stack"],
+  ];
+
+  it.each(CASES)("%s uses the %s layout", (_n, w, h, mode) => {
+    expect(layoutHotspots(coverRect(ART_W, ART_H, w, h), w, h).mode).toBe(mode);
+  });
+
+  it("every anchored button actually sits on its painted object", () => {
+    for (const [name, w, h, mode] of CASES) {
+      if (mode !== "anchored") continue;
+      const img = coverRect(ART_W, ART_H, w, h);
+      for (const s of layoutHotspots(img, w, h).spots) {
+        const a = HOTSPOTS.find((x) => x.id === s.id)!;
+        // within a few px of the anchor => not shoved aside by clamping
+        expect(Math.abs(s.x - (img.x + a.ax * img.w)), `${name} ${s.id} x`).toBeLessThanOrEqual(8);
+        expect(Math.abs(s.y - (img.y + a.ay * img.h)), `${name} ${s.id} y`).toBeLessThanOrEqual(8);
+      }
+    }
+  });
+
+  it("the back label is shrunk to fit its pill on narrow screens", () => {
+    // jsdom Text has no real metrics, so drive the fit directly: a label wider
+    // than the pill must be scaled down, never left to spill over the art.
+    const room = mk();
+    room.setBackground({ width: ART_W, height: ART_H });
+    room.enter("treehouse_hideaway", {} as never, null, PHONE.w, PHONE.h);
+    const label = room.uiLayer.children.find((c: { text?: string }) =>
+      (c.text ?? "").includes("Back to Island"),
+    );
+    expect(label, "back label exists").toBeTruthy();
+    label.width = 260; // wider than the 148px phone pill
+    room.drawBack();
+    const redrawn = room.uiLayer.children.find((c: { text?: string }) =>
+      (c.text ?? "").includes("Back to Island"),
+    );
+    expect(redrawn.scale.x).toBeLessThanOrEqual(1);
+  });
+
+  it("the back button never collides with a hotspot", () => {
+    for (const [name, w, h] of CASES) {
+      const back = backButtonRect(w, h);
+      for (const s of layoutHotspots(coverRect(ART_W, ART_H, w, h), w, h).spots) {
+        const apart =
+          s.x - s.w / 2 >= back.x + back.w ||
+          s.x + s.w / 2 <= back.x ||
+          s.y - s.h / 2 >= back.y + back.h ||
+          s.y + s.h / 2 <= back.y;
+        expect(apart, `${name}: back vs ${s.id}`).toBe(true);
+      }
     }
   });
 });

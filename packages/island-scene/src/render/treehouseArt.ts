@@ -1,43 +1,38 @@
 /**
  * Treehouse Hideaway room art.
  *
- * RECOMMENDED TARGET ASSET — drop the final painting in at exactly:
+ * The painting SHIPS at:
  *
  *     packages/island-scene/src/assets/interiors/treehouse-hideaway.webp
  *
- * Nothing else needs to change. The glob below is resolved by Vite AT BUILD
- * TIME, so:
- *   - while the folder is empty it yields `null`, the renderer never requests
- *     the image, and no 404 reaches the console;
- *   - the moment the file exists it is bundled, content-hashed and handed to
- *     TreehouseRoom automatically.
- * That is why this is a glob rather than a plain `new URL(...)` (which fails
- * the build when the target is missing) or a public/ URL (which would 404
- * every load until the art ships).
+ * 2000x1125 (16:9). Replacing it is a file swap — the glob below is resolved
+ * by Vite AT BUILD TIME, so the new file is bundled and content-hashed with no
+ * code change. It stays a glob (rather than `new URL(...)`) so that deleting or
+ * renaming the art degrades to a plain warm ground instead of failing the
+ * build.
  *
- * SPEC for the painting — the room is drawn COVER-fit and centred:
+ * SPEC for a replacement — the room is drawn COVER-fit and centred:
  *   - one full-room illustration; NO interface text, labels or buttons baked
  *     in. Every label is drawn in code over the top (see TreehouseRoom.ts);
- *   - landscape, ~2048×1152 (16:9), which covers phone through desktop
- *     without visible stretching;
- *   - keep the subject clear of the outer ~8%: that band crops away on tall
- *     phone and ultrawide viewports;
- *   - leave the three interaction areas visually uncluttered — the buttons
- *     sit over them. `HOTSPOTS` in treehouseModel.ts currently anchors
- *     Decorate left, Leaf Puzzle centre-low and Story Nook right; retune
- *     those three fractions to the finished composition.
+ *   - landscape 16:9, which covers phone through desktop without stretching;
+ *   - cover-fit crops hard on portrait: at phone portrait only the middle
+ *     ~26% of the WIDTH survives, so anything that must always be visible
+ *     belongs near the horizontal centre;
+ *   - the three interaction anchors in `treehouseModel.HOTSPOTS` are tuned to
+ *     THIS composition (chest lower-left, round table lower-centre, cushion
+ *     nook right). A recomposed room needs those three fractions retuned.
  */
 
-/** Build-time lookup: empty until the painting is committed. */
+/** Build-time lookup. Resolves treehouse-hideaway.webp to a hashed URL. */
 const roomArt = import.meta.glob<string>(
   "../assets/interiors/treehouse-hideaway.{webp,png,jpg,jpeg}",
   { eager: true, query: "?url", import: "default" },
 );
 
-/** Bundled URL for the painted room, or null while the art has not shipped. */
+/** Bundled URL for the painted room; null only if the art file is absent. */
 export const TREEHOUSE_ROOM_URL: string | null =
   Object.values(roomArt)[0] ?? null;
 
-/** Where a new painting must be placed for the glob above to pick it up. */
+/** Where a replacement painting must be placed for the glob to pick it up. */
 export const TREEHOUSE_ROOM_TARGET =
   "packages/island-scene/src/assets/interiors/treehouse-hideaway.webp";
