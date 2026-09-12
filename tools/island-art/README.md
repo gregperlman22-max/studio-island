@@ -4,6 +4,26 @@ Replaces the procedurally-drawn Home Island terrain with a finished illustrated
 island. This folder holds the **source art**, the **processing scripts**, and
 the **cleaned transparent PNG** the engine renders as its ground sprite.
 
+## Core avatar delivery
+
+- `source/core-avatars/*.png` — the six approved Island Friend illustrations as
+  delivered (~6.5 MB total, up to 1086x1448). **Source art only.** This folder
+  is outside `public/`, so none of it is ever downloaded by a browser or copied
+  into the built site.
+- `optimize-core-avatars.mjs` — builds the runtime files into
+  `packages/island-scene/public/avatars/core/*.webp` (~492 KB total, a 92.5%
+  reduction). Re-runnable: `npm install && node optimize-core-avatars.mjs`.
+
+  The art is never redrawn — one uniform downscale plus a WebP encode with
+  alpha. The scale is chosen per character so each one's CHARACTER (not its
+  canvas) lands at ~780px tall, and is never allowed to upscale: Daisy and Remy
+  ship on much smaller canvases and are re-encoded at native size rather than
+  enlarged. Because the scale is uniform, the normalised content bounds the
+  renderer anchors on are unchanged, so feet alignment and in-world height are
+  untouched; the script asserts that drift stays under a pixel and fails if the
+  geometry moves. Do not add a trim/crop step — cropping the transparent
+  padding WOULD move those bounds.
+
 ## Files
 
 - `source/home-island-raw.png` — original delivered art (1536×1024 RGBA, warm

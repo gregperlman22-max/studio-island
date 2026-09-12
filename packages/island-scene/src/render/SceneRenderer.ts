@@ -32,7 +32,7 @@ import {
 import { ProgrammaticTextureProvider } from "./TextureProvider";
 import { buildAvatarSprite, buildImageAvatarSprite, type AvatarSprite } from "./avatar";
 import { AvatarSelect } from "./AvatarSelect";
-import { AVATARS, avatarByKey, avatarFileUrl } from "./avatarCatalog";
+import { CORE_AVATARS, avatarByKey, avatarFileUrl } from "./avatarCatalog";
 import { loadAvatarTexture } from "./avatarTexture";
 import { biomeAt, landContext } from "./biome";
 import { islandOutline, flatten, insetLoop, clusterOutline, type Pt } from "./coast";
@@ -216,6 +216,8 @@ export class SceneRenderer {
   private avatarSelect?: AvatarSelect;
   /** Preloaded avatar PNGs, keyed by their served URL. */
   private avatarTextures = new Map<string, Texture>();
+  /** In-flight on-demand avatar loads, so we never double-fetch one. */
+  private pendingAvatarUrls = new Set<string>();
   /** Chosen avatar image URL (in-session). Overrides the local avatar art even
    *  if the host doesn't echo it back through the avatars prop. */
   private selectedImageUrl: string | null = null;
@@ -406,10 +408,11 @@ export class SceneRenderer {
 
     // First-paint assets load in parallel with per-item progress (see
     // bumpProgress): 10 island sprites + 9 landmarks + boat + arrival bg +
-    // 16 avatar-select images. Guide art is NOT awaited — it lazy-loads in
-    // the background and showGuide waits for it only if a guide is requested
-    // before it lands.
-    this.assetsTotal = 10 + 11 + AVATARS.length;
+    // the SIX core friends. The ten legacy avatars are deliberately not
+    // preloaded — nothing shows them — so the blocking payload tracks the
+    // picker. Guide art is NOT awaited; it lazy-loads in the background and
+    // showGuide waits for it only if a guide is requested before it lands.
+    this.assetsTotal = 10 + 11 + CORE_AVATARS.length;
     this.guidesReady = this.loadGuides();
     await Promise.all([this.loadIsland(), this.loadLandmarks(), this.loadAvatars()]);
 
@@ -522,15 +525,19 @@ export class SceneRenderer {
     this.opts.onLoadProgress?.(Math.min(0.99, 0.05 + frac * 0.94));
   }
 
-  /** Preload the 16 illustrated animal images (selection grid + island
-   *  sprite) — RGBA cutouts, matted offline. This is awaited before the first
-   *  avatar view is built, so a chosen animal is present when the world paints
-   *  and the programmatic (flat) fallback never shows for it. A single transient
-   *  failure is retried once; only a hard failure leaves an entry textureless
-   *  (its card shows the name; the island avatar uses the compositor). */
+  /** Preload the six core friends (picker card + island sprite). Awaited
+   *  before the first avatar view is built, so the chosen friend is present
+   *  when the world paints and the programmatic (flat) fallback never shows
+   *  for it. A single transient failure is retried once; only a hard failure
+   *  leaves an entry textureless (its card shows the name; the island avatar
+   *  uses the compositor).
+   *
+   *  Legacy avatars are NOT preloaded. They are unreachable from the picker;
+   *  a host that still supplies a legacy imageUrl gets it loaded on demand by
+   *  `ensureAvatarTexture`. */
   private async loadAvatars(): Promise<void> {
     await Promise.all(
-      AVATARS.map(async (a) => {
+      CORE_AVATARS.map(async (a) => {
         const url = avatarFileUrl(a.file);
         try {
           const tex = await this.loadAvatarWithRetry(url);
@@ -542,6 +549,27 @@ export class SceneRenderer {
         }
       }),
     );
+  }
+
+  /**
+   * Make sure `url` has a texture, fetching it if it wasn't preloaded. Covers
+   * a host that supplies a legacy avatar imageUrl: the picker never offers
+   * those, so they aren't in the first-paint set, but a saved selection must
+   * still render as its illustration rather than the flat compositor.
+   */
+  private ensureAvatarTexture(url: string): void {
+    if (!url || this.avatarTextures.has(url) || this.pendingAvatarUrls.has(url)) return;
+    this.pendingAvatarUrls.add(url);
+    void this.loadAvatarWithRetry(url)
+      .then((tex) => {
+        if (this.destroyed) return;
+        this.avatarTextures.set(url, tex);
+        this.reconcileAvatars(); // redraw now that the art exists
+      })
+      .catch((err) => {
+        console.warn(`[island-scene] avatar art failed to load: ${url}`, err);
+      })
+      .finally(() => this.pendingAvatarUrls.delete(url));
   }
 
   /** Load a character texture, retrying once after a short backoff — a single
@@ -627,7 +655,16 @@ export class SceneRenderer {
     const local = this.localId ? this.avatarViews.get(this.localId) : null;
     if (local) local.container.visible = false;
 
-    const select = new AvatarSelect(this.avatarTextures, (key) => this.onAvatarChosen(key));
+    const select = new AvatarSelect(
+      this.avatarTextures,
+      (key) => this.onAvatarChosen(key),
+      // The picker is staged on the island's own painted arrival shore — the
+      // same landscape the boat cinematic then sails across, so the two screens
+      // read as one place. It is already preloaded for the cinematic, so this
+      // costs no extra download; AvatarSelect falls back to its banded wash if
+      // the art failed to load.
+      { reducedMotion: this.opts.reducedMotion, bgTex: this.arrivalBgTex },
+    );
     this.avatarSelect = select;
     this.app.stage.addChild(select.container);
     this.app.stage.setChildIndex(this.fade, this.app.stage.children.length - 1); // keep fade on top
@@ -1636,6 +1673,9 @@ export class SceneRenderer {
     // otherwise the programmatic compositor. Same AvatarSprite contract, so the
     // movement/idle system is untouched — just a swapped texture.
     const imageUrl = this.effectiveImageUrl(a);
+    // A legacy (non-preloaded) selection fetches on demand; the compositor
+    // covers the frame or two until it lands.
+    if (imageUrl) this.ensureAvatarTexture(imageUrl);
     const imageTex = imageUrl ? this.avatarTextures.get(imageUrl) : undefined;
     const sprite = imageTex
       ? buildImageAvatarSprite(imageTex, a.config.displayColor)
