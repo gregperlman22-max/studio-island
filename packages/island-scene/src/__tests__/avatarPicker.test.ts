@@ -13,8 +13,10 @@ import {
 import {
   CARD_ASPECT,
   CARD_ASPECT_MAX,
+  headerHeight,
   minCardW,
   pickerLayout,
+  rosterButtonGap,
 } from "../render/avatarPickerLayout";
 
 /**
@@ -207,6 +209,59 @@ describe("responsive picker layout", () => {
       // and never sits on top of the cards
       expect(r.y, `${name} clears cards`).toBeGreaterThanOrEqual(viewport.y + viewport.h - 0.001);
     }
+  });
+
+  it("keeps Continue attached to the roster, not stranded at the bottom", () => {
+    // The button used to be pinned to the bottom of the screen while the cards
+    // centred in what was left, which on a desktop opened ~170px of empty
+    // background between the two. The roster band and the button are one block
+    // now, so the gap is the designed one at every size.
+    for (const [name, w, h] of CASES) {
+      const { continueRect: r, viewport } = pickerLayout(KEYS, w, h);
+      const gap = r.y - (viewport.y + viewport.h);
+      expect(gap, `${name} gap`).toBeGreaterThanOrEqual(0);
+      expect(gap, `${name} gap`).toBeLessThanOrEqual(rosterButtonGap(h) + 0.001);
+    }
+  });
+
+  it("sizes the card band to its content, so no hole opens inside it", () => {
+    for (const [name, w, h] of CASES) {
+      const L = pickerLayout(KEYS, w, h);
+      if (L.scrolls) continue;
+      expect(L.viewport.h, `${name} band`).toBeCloseTo(L.contentH, 3);
+    }
+  });
+
+  it("lets the roster claim the desktop, not a strip in the middle of it", () => {
+    // The regression this guards: a 1240px cap left 1920 desktops showing six
+    // 195px cards in a sea of background, which read as a debug grid.
+    for (const [name, w, h] of [
+      ["desktop", 1440, 900], ["desktop 1080p", 1920, 1080], ["laptop", 1280, 800],
+    ] as [string, number, number][]) {
+      const L = pickerLayout(KEYS, w, h);
+      const gridW = L.cardW * L.cols + (L.cols - 1) * (w >= 1100 ? 18 : 14);
+      expect(gridW / w, `${name} width share`).toBeGreaterThan(0.82);
+      // and tall enough that the character, not the empty background, is the
+      // thing the eye lands on.
+      expect(L.cardH / h, `${name} height share`).toBeGreaterThan(0.42);
+    }
+  });
+
+  it("leaves the whole composition inside the screen, under the header", () => {
+    for (const [name, w, h] of CASES) {
+      const L = pickerLayout(KEYS, w, h);
+      expect(L.viewport.y, `${name} clears header`).toBeGreaterThanOrEqual(
+        headerHeight(w, h) - 0.001,
+      );
+      expect(L.continueRect.y + L.continueRect.h, `${name} bottom`).toBeLessThanOrEqual(h);
+    }
+  });
+
+  it("only scrolls where six large cards genuinely cannot fit", () => {
+    // Scrolling needs the "More friends" affordance, so it must stay confined
+    // to the phones that actually need it.
+    const scrolling = CASES.filter(([, w, h]) => pickerLayout(KEYS, w, h).scrolls);
+    expect(scrolling.map(([n]) => n)).toEqual(["phone portrait", "small phone portrait"]);
   });
 
   it("centres a short final row instead of leaving it ragged", () => {

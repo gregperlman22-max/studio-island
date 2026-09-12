@@ -658,7 +658,12 @@ export class SceneRenderer {
     const select = new AvatarSelect(
       this.avatarTextures,
       (key) => this.onAvatarChosen(key),
-      { reducedMotion: this.opts.reducedMotion },
+      // The picker is staged on the island's own painted arrival shore — the
+      // same landscape the boat cinematic then sails across, so the two screens
+      // read as one place. It is already preloaded for the cinematic, so this
+      // costs no extra download; AvatarSelect falls back to its banded wash if
+      // the art failed to load.
+      { reducedMotion: this.opts.reducedMotion, bgTex: this.arrivalBgTex },
     );
     this.avatarSelect = select;
     this.app.stage.addChild(select.container);
