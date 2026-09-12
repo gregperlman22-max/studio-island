@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { sampleZones } from "../defaultLayout";
-import { AVATARS } from "../render/avatarCatalog";
+import { AVATARS, CORE_AVATARS, LEGACY_AVATARS } from "../render/avatarCatalog";
 import { GUIDES } from "../render/guideCatalog";
 import type { ZoneKey } from "../types";
 
@@ -54,7 +54,11 @@ describe("zone/guide registry", () => {
     }
   });
 
-  it("the avatar catalog has 16 entries whose art files exist in public/avatars", () => {
+  it("every avatar's art file exists in public/avatars", () => {
+    // Six core friends the picker offers, plus the ten legacy characters that
+    // stay resolvable for old saved selections and a future "More Friends".
+    expect(CORE_AVATARS).toHaveLength(6);
+    expect(LEGACY_AVATARS).toHaveLength(10);
     expect(AVATARS).toHaveLength(16);
     for (const a of AVATARS) {
       expect(existsSync(join(PUBLIC_DIR, "avatars", a.file)), a.file).toBe(true);

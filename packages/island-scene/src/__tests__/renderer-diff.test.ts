@@ -158,6 +158,10 @@ vi.mock("pixi.js", () => {
 // the programmatic texture provider (neither affects update routing).
 vi.mock("../render/avatarTexture", () => ({
   loadAvatarTexture: async () => ({ width: 100, height: 100 }),
+  // The picker and the in-world sprite both size by measured content bounds;
+  // undefined is the documented "couldn't measure" path (canvas fallback).
+  getContentBounds: () => undefined,
+  registerContentBounds: () => {},
 }));
 vi.mock("../render/TextureProvider", () => ({
   ProgrammaticTextureProvider: class {
