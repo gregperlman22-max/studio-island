@@ -16,8 +16,12 @@
  * `onAvatarSelect` and every downstream movement/arrival path are unchanged.
  * Do not renumber or rename these keys.
  *
- * Art lives under `public/avatars/`: the core six in `core/` as the delivered
- * production PNGs, the legacy cast as the older matted WebPs beside them.
+ * Art lives under `public/avatars/`: the core six in `core/`, the legacy cast
+ * beside them. Both are WebP with alpha. The core six are BUILT from the
+ * approved PNGs by tools/island-art/optimize-core-avatars.mjs — those sources
+ * live in tools/island-art/source/core-avatars/ and are deliberately outside
+ * public/ so they never reach a browser. Re-run that script after an art drop;
+ * do not hand-edit anything in core/.
  */
 
 export interface AvatarOption {
@@ -39,37 +43,37 @@ export const CORE_AVATARS: readonly AvatarOption[] = [
   {
     key: "otter",
     name: "Ollie the Otter",
-    file: "core/ollie-the-otter.png",
+    file: "core/ollie-the-otter.webp",
     traits: ["Curious", "Kind", "Brave"],
   },
   {
     key: "dog",
     name: "Doug the Dog",
-    file: "core/doug-the-dog.png",
+    file: "core/doug-the-dog.webp",
     traits: ["Loyal", "Friendly", "Energetic"],
   },
   {
     key: "cat",
     name: "Matt the Cat",
-    file: "core/matt-the-cat.png",
+    file: "core/matt-the-cat.webp",
     traits: ["Clever", "Calm", "Creative"],
   },
   {
     key: "bunny",
     name: "Sunny the Bunny",
-    file: "core/sunny-the-bunny.png",
+    file: "core/sunny-the-bunny.webp",
     traits: ["Upbeat", "Friendly", "Brave"],
   },
   {
     key: "deer",
     name: "Daisy the Deer",
-    file: "core/daisy-the-deer.png",
+    file: "core/daisy-the-deer.webp",
     traits: ["Thoughtful", "Gentle", "Observant"],
   },
   {
     key: "red_panda",
     name: "Remy the Red Panda",
-    file: "core/remy-the-red-panda.png",
+    file: "core/remy-the-red-panda.webp",
     traits: ["Playful", "Creative", "Kind"],
   },
 ] as const;

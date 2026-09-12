@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -54,14 +54,32 @@ describe("core roster", () => {
   it("resolves core keys to the NEW art, not the legacy file", () => {
     for (const a of CORE_AVATARS) {
       expect(avatarImageUrl(a.key), a.key).toBe(avatarFileUrl(a.file));
-      expect(a.file, a.key).toMatch(/^core\/.+\.png$/);
+      expect(a.file, a.key).toMatch(/^core\/.+\.webp$/);
     }
   });
 
-  it("ships all six production images", () => {
+  it("ships all six production images, and no source PNG in public/", () => {
     for (const a of CORE_AVATARS) {
       expect(existsSync(join(PUBLIC_DIR, "avatars", a.file)), a.file).toBe(true);
     }
+    // The ~6.5 MB approved originals live in tools/island-art/source and must
+    // never be served: anything ending .png under public/avatars/core would be
+    // a source file that leaked into the runtime download.
+    const shipped = readdirSync(join(PUBLIC_DIR, "avatars", "core"));
+    expect(shipped.filter((f) => f.endsWith(".png"))).toEqual([]);
+    expect(shipped.sort()).toEqual(
+      CORE_AVATARS.map((a) => a.file.replace("core/", "")).sort(),
+    );
+  });
+
+  it("keeps the six production avatars under the delivery budget", () => {
+    // Guards the optimisation: the sources total ~6.5 MB and would otherwise
+    // creep back in via a careless art drop.
+    const bytes = CORE_AVATARS.reduce(
+      (n, a) => n + statSync(join(PUBLIC_DIR, "avatars", a.file)).size,
+      0,
+    );
+    expect(bytes, `${(bytes / 1024).toFixed(0)} KB`).toBeLessThan(1.5 * 1024 * 1024);
   });
 
   it("gives every friend exactly three traits", () => {
@@ -85,7 +103,7 @@ describe("core roster", () => {
   });
 
   it("URL-encodes filenames without mangling the core/ folder separator", () => {
-    expect(avatarFileUrl("core/ollie-the-otter.png")).toContain("/core/ollie-the-otter.png");
+    expect(avatarFileUrl("core/ollie-the-otter.webp")).toContain("/core/ollie-the-otter.webp");
     expect(avatarFileUrl("Polar Bear.webp")).toContain("Polar%20Bear.webp");
   });
 });
