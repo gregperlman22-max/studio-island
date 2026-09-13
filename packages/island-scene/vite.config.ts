@@ -44,5 +44,14 @@ export default defineConfig({
         outDir: "dist-demo",
         emptyOutDir: true,
         sourcemap: true,
+        rollupOptions: {
+          input: {
+            // The demo harness, plus the travel proof-of-concept page. The POC
+            // is a separate entry so it shares nothing with the demo bundle and
+            // can be deleted in one commit if the gate fails.
+            main: resolve(__dirname, "index.html"),
+            "poc-travel": resolve(__dirname, "poc-travel.html"),
+          },
+        },
       },
 });
