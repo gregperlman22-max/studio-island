@@ -220,6 +220,19 @@ export interface AvatarInstance {
 
 export type SceneMode = "studio" | "play" | "session";
 
+/**
+ * The scene's top-level phase, reported through `onPhaseChange`.
+ *
+ * Hosts use it to keep world-navigation chrome off the screens that come
+ * before the world: a hint reading "tap a zone to visit" is wrong on the
+ * avatar picker, where there are no zones (issue #5).
+ *
+ * `travel` is declared but not yet reachable — guided travel between the world
+ * map and a landmark is later S-89 work. It is named now so a host's switch
+ * doesn't have to widen when it lands.
+ */
+export type ScenePhase = "select" | "arrival" | "world" | "travel" | "interior";
+
 export interface IslandSceneCallbacks {
   /** Fires after the local avatar has walked to a zone's entrance — the host
    *  typically responds by setting `currentZone` to enter the zone interior. */
@@ -244,6 +257,12 @@ export interface IslandSceneCallbacks {
    * — not required for the avatar to appear.
    */
   onAvatarSelect?: (avatarKey: string) => void;
+  /**
+   * Fires when the scene moves between top-level phases, and once on the
+   * first frame with the starting phase. The renderer has always tracked
+   * this; nothing surfaced it, so host chrome had to guess (issue #5).
+   */
+  onPhaseChange?: (phase: ScenePhase) => void;
   /** Fires once after all assets are preloaded and the first frame is rendered. */
   onReady?: () => void;
   /** Fires for any non-recoverable runtime error inside the renderer. */

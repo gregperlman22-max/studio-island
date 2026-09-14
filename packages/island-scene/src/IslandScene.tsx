@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import type { IslandSceneHandle, IslandSceneProps } from "./types";
+import type { IslandSceneHandle, IslandSceneProps, ScenePhase } from "./types";
 import { SceneRenderer } from "./render/SceneRenderer";
 import { readMutePreference } from "./render/AudioService";
 
@@ -33,6 +33,7 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
       onObjectInteract,
       onAvatarMove,
       onAvatarSelect,
+      onPhaseChange,
       className,
     } = props;
 
@@ -44,9 +45,19 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
     // The child's global mute toggle, seeded from the persisted preference so
     // the icon is right before the renderer has even mounted.
     const [muted, setMuted] = useState<boolean>(() => readMutePreference());
+    /**
+     * Which screen the child is actually on (issue #5).
+     *
+     * Before this, the zoom buttons were conditional on `!inZone` only, so
+     * they stayed up over the avatar picker and the boat cinematic — screens
+     * with nothing to zoom, where on a phone they also sat over the card
+     * corner and the Continue button. Seeded to "arrival" because that is
+     * what the renderer starts in; it corrects itself on the first frame.
+     */
+    const [phase, setPhase] = useState<ScenePhase>("arrival");
 
-    const cbRef = useRef({ onReady, onError, onLoadProgress, onZoneTap, onActivityEnter, onZoneExit, onObjectInteract, onAvatarMove, onAvatarSelect });
-    cbRef.current = { onReady, onError, onLoadProgress, onZoneTap, onActivityEnter, onZoneExit, onObjectInteract, onAvatarMove, onAvatarSelect };
+    const cbRef = useRef({ onReady, onError, onLoadProgress, onZoneTap, onActivityEnter, onZoneExit, onObjectInteract, onAvatarMove, onAvatarSelect, onPhaseChange });
+    cbRef.current = { onReady, onError, onLoadProgress, onZoneTap, onActivityEnter, onZoneExit, onObjectInteract, onAvatarMove, onAvatarSelect, onPhaseChange };
 
     useEffect(() => {
       const el = containerRef.current;
@@ -72,6 +83,10 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
         onObjectInteract: (id, z) => cbRef.current.onObjectInteract?.(id, z),
         onAvatarMove: (id, p) => cbRef.current.onAvatarMove?.(id, p),
         onAvatarSelect: (key) => cbRef.current.onAvatarSelect?.(key),
+        onPhaseChange: (p) => {
+          setPhase(p);
+          cbRef.current.onPhaseChange?.(p);
+        },
       });
       rendererRef.current = renderer;
 
@@ -136,6 +151,15 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
     };
 
     const inZone = !!effectiveZone;
+    /**
+     * World-navigation chrome belongs to the world map only.
+     *
+     * Zoom pans an island the child cannot see from the picker or the boat, so
+     * it goes away on both. Mute deliberately does NOT: a child may well want
+     * to silence the arrival cinematic, and taking that away to tidy the
+     * corner would be the wrong trade (issue #5 raises this explicitly).
+     */
+    const showZoom = phase === "world";
 
     return (
       <div
@@ -148,6 +172,7 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
           overflow: "hidden",
         }}
         data-mode={mode}
+        data-phase={phase}
         data-zone={effectiveZone ?? ""}
         data-audio={audioEnabled ? "on" : "off"}
         data-theme={themePack.key}
@@ -164,7 +189,7 @@ export const IslandScene = forwardRef<IslandSceneHandle, IslandSceneProps>(
             gap: 8,
           }}
         >
-          {!inZone && (
+          {showZoom && (
             <>
               <button type="button" aria-label="Zoom in" style={zoomBtn} onClick={() => rendererRef.current?.zoomBy(1.25)}>+</button>
               <button type="button" aria-label="Zoom out" style={zoomBtn} onClick={() => rendererRef.current?.zoomBy(0.8)}>−</button>

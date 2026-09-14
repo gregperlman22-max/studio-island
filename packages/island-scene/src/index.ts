@@ -10,6 +10,22 @@ export {
   type AvatarOption,
 } from "./render/avatarCatalog";
 export * from "./content/types";
+// ── Quest Table (S-89 EC-1) ──
+// The pure model only. QuestTable.ts is a renderer internal, reached through
+// the Treehouse interior, not constructed by a host.
+export {
+  EC1_CHOICES,
+  EC1_PROMPT,
+  applyChoice,
+  choiceById,
+  dioramaStage,
+  layoutChoiceCards,
+  openingScene,
+  questRoomFit,
+  type ChoiceId,
+  type DioramaScene,
+  type QuestChoice,
+} from "./quest/questTableModel";
 export { practiceCards, type PracticeCard } from "./content/practice";
 export {
   contentReport,

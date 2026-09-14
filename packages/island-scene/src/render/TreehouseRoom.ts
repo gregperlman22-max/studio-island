@@ -4,6 +4,8 @@ import type { ZoneInterior, ZoneTap } from "./ZoneInterior";
 import { getZoneDialogue } from "../content/loader";
 import { debugLog } from "./debug";
 import { drawDecor, drawHotspotIcon, drawLeaf, drawLeafTick } from "./treehouseDecorArt";
+import { QuestTable } from "../quest/QuestTable";
+import { TABLE, questRoomFit } from "../quest/questTableModel";
 import {
   ART_EDGE_TOP,
   ART_FILL_TOP_FAR,
@@ -17,6 +19,7 @@ import {
   hitRect,
   layoutHotspots,
   loadDecor,
+  MIN_TAP,
   newPuzzle,
   saveDecor,
   storyPages,
@@ -39,8 +42,23 @@ import {
  * large labelled buttons over the painting — Decorate, Leaf Puzzle, Story
  * Nook — plus an obvious way back to the island.
  *
- * There is no camera, no world width, no walk target and no avatar sprite in
- * here. Nothing in this class scrolls.
+ * There is no camera, no world width and no walk target in here. Nothing in
+ * this class scrolls.
+ *
+ * S-89 / EC-1 — TWO NOTES THAT SUPERSEDE EARLIER COMMENTS IN THIS FILE:
+ *
+ * 1. The room now hosts the QUEST TABLE: the painted round table becomes a
+ *    magical object a child picks up, with a miniature world rising from it.
+ *    It is NOT a fourth activity card. It is drawn in the room's own
+ *    perspective with the room lit around it, and it deliberately does not use
+ *    `drawPanel`/`panelLayer` — those draw a scrimmed card, which is exactly
+ *    what the Quest Table must never become. See QuestTable.ts.
+ * 2. This room previously drew no avatar at all, documented as intentional.
+ *    That no longer holds while the Quest Table is in use: the child's chosen
+ *    Island Friend and Olive both stand on the floor either side of the table
+ *    (issue #6 plumbing). With the table closed the room is unchanged — whether
+ *    the Friend should simply live in this room is a separate design question
+ *    and is NOT answered here.
  *
  * ART CONTRACT: the room is the single painted image
  * (assets/interiors/treehouse-hideaway.webp), set through `setBackground()`
@@ -73,7 +91,16 @@ export class TreehouseRoom implements ZoneInterior {
   private hotspotLayer = new Container();
   private uiLayer = new Container();
   private panelLayer = new Container();
+  private questLayer = new Container();
   private fx = new Container();
+
+  /** The Quest Table. Owns the diorama, the two room characters and the
+   *  illustrated choices; draws into `questLayer`, above the room and below
+   *  the tap FX. */
+  private quest: QuestTable;
+  private questOpen = false;
+  /** Screen rect of the table top, the tap target that opens the table. */
+  private tableRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
 
   private w = 0;
   private h = 0;
@@ -102,23 +129,36 @@ export class TreehouseRoom implements ZoneInterior {
   private ripples: { g: Graphics; age: number }[] = [];
 
   constructor(private opts: TreehouseRoomOptions) {
+    this.quest = new QuestTable({ reducedMotion: opts.reducedMotion });
     this.container.addChild(
       this.bgLayer,
       this.decorLayer,
+      this.questLayer,
       this.hotspotLayer,
       this.uiLayer,
       this.panelLayer,
       this.fx,
     );
+    this.questLayer.addChild(this.quest.container);
     this.panelLayer.visible = false;
     this.container.visible = false;
   }
 
   // ── ZoneInterior ──────────────────────────────────────────────────
 
-  /** `zone` and `cfg` are part of the shared interior contract; this room is
-   *  Treehouse-only and draws no avatar, so neither is used. */
-  enter(_zone: ZoneKey, _palette: ThemePalette, _cfg: AvatarConfig | null, w: number, h: number): void {
+  /** `zone` and `palette` are part of the shared interior contract; this room
+   *  is Treehouse-only and painted, so neither is used. `cfg`/`avatarTex` ARE
+   *  used now — the Quest Table stands the chosen Island Friend in the room. */
+  enter(
+    _zone: ZoneKey,
+    _palette: ThemePalette,
+    _cfg: AvatarConfig | null,
+    w: number,
+    h: number,
+    avatarTex?: Texture,
+  ): void {
+    if (avatarTex) this.quest.setTextures({ friend: avatarTex });
+    this.closeQuest();
     this.decor = loadDecor();
     this.puzzle = newPuzzle(Date.now() & 0xffff);
     this.pages = storyPages(getZoneDialogue("treehouse_hideaway"));
@@ -135,6 +175,7 @@ export class TreehouseRoom implements ZoneInterior {
   hide(): void {
     this.container.visible = false;
     this.closePanel();
+    this.closeQuest();
   }
 
   get active(): boolean {
@@ -146,10 +187,18 @@ export class TreehouseRoom implements ZoneInterior {
     this.build(w, h);
   }
 
-  /** Theme/avatar prop changes don't reskin a painted room; kept for the
-   *  shared interior contract. */
-  restyle(_palette: ThemePalette, _cfg: AvatarConfig | null): void {
-    // no-op by design
+  /** Theme changes don't reskin a painted room. A late-arriving avatar texture
+   *  DOES matter — it is how the chosen Friend reaches the Quest Table when
+   *  the art finished loading after the child walked in. */
+  restyle(_palette: ThemePalette, _cfg: AvatarConfig | null, avatarTex?: Texture): void {
+    if (avatarTex) this.quest.setTextures({ friend: avatarTex });
+  }
+
+  /** Olive's art, and the three island characters standing in as the group in
+   *  the miniature story. Supplied by the renderer, which owns every texture
+   *  cache; safe before or after `enter`. */
+  setQuestCast(olive: Texture | undefined, group: Texture[]): void {
+    this.quest.setTextures({ olive, group });
   }
 
   /**
@@ -165,6 +214,22 @@ export class TreehouseRoom implements ZoneInterior {
   handleTap(sx: number, sy: number): ZoneTap {
     this.spawnRipple(sx, sy);
 
+    // The Quest Table, while it is in use, gets first refusal on every tap —
+    // but only inside its own affordances. A tap that lands on nothing does
+    // NOT close it: a child resting a finger on the room should not put the
+    // magical object down.
+    if (this.questOpen) {
+      const q = this.quest.handleTap(sx, sy);
+      if (q === "close") {
+        this.closeQuest();
+        return "move";
+      }
+      if (q === "choice") return "activity";
+      // Back to Island still works with the table open.
+      if (hitRect(this.backRect, sx, sy)) return "exit";
+      return "move";
+    }
+
     // An open card swallows every tap beneath it.
     if (this.open) {
       if (this.closeRect && hitRect(this.closeRect, sx, sy)) {
@@ -179,6 +244,11 @@ export class TreehouseRoom implements ZoneInterior {
 
     if (hitRect(this.backRect, sx, sy)) return "exit";
 
+    if (hitRect(this.tableRect, sx, sy)) {
+      this.openQuest();
+      return "activity";
+    }
+
     const spot = this.spots.find((s) => hitPill(s, sx, sy));
     if (spot) {
       this.openPanel(spot.id);
@@ -191,6 +261,7 @@ export class TreehouseRoom implements ZoneInterior {
     if (!this.container.visible) return;
     this.elapsed += dt;
     this.tickRipples(dt);
+    this.quest.update(dt);
 
     if (this.savedToast > 0) {
       this.savedToast = Math.max(0, this.savedToast - dt);
@@ -201,8 +272,10 @@ export class TreehouseRoom implements ZoneInterior {
       if (this.open === "puzzle") this.drawPanel();
     }
 
-    // Gentle breathing on the three buttons so they read as tappable.
-    if (!this.opts.reducedMotion && !this.open) {
+    // Gentle breathing on the pills + the table marker so they read as
+    // tappable. Silent while the table is in use — nothing in the room should
+    // be competing with the story on it.
+    if (!this.opts.reducedMotion && !this.open && !this.questOpen) {
       const pulse = 1 + 0.02 * Math.sin(this.elapsed * 2.2);
       for (const child of this.hotspotLayer.children) child.scale.set(pulse);
     }
@@ -212,27 +285,45 @@ export class TreehouseRoom implements ZoneInterior {
     this.container.destroy({ children: true });
   }
 
+  /** Whether the Quest Table is in use — surfaced for tests + diagnostics. */
+  get questTableOpen(): boolean {
+    return this.questOpen;
+  }
+
   // ── Room ──────────────────────────────────────────────────────────
 
   private build(w: number, h: number): void {
     this.w = w;
     this.h = h;
+    // With the Quest Table in use the subject is narrower and specific —
+    // Olive, the table, the Friend — and that band must never be cropped.
+    // `questRoomFit` pulls the framing back only when it would be (phone
+    // portrait); desktop and tablet get the room's normal fit unchanged.
+    const fit = this.questOpen ? questRoomFit : roomFit;
     this.img = this.bgTex
-      ? roomFit(this.bgTex.width, this.bgTex.height, w, h)
+      ? fit(this.bgTex.width, this.bgTex.height, w, h)
       : { x: 0, y: 0, w, h, mode: "cover" };
 
     this.drawBackground();
     this.drawDecor();
+    this.layoutTableRect();
 
+    // The three activity pills step aside while the table is in use: they are
+    // the room's OTHER things to do, and leaving them up would turn a shared
+    // object into a screen with a toolbar.
     const layout = layoutHotspots(this.img, w, h);
-    this.spots = layout.spots;
+    this.spots = this.questOpen ? [] : layout.spots;
     this.drawHotspots();
+    if (this.questOpen) this.quest.relayout(this.img, w, h);
 
     this.backRect = backButtonRect(w, h);
     this.drawBack();
 
     if (this.open) this.drawPanel();
-    debugLog(`[island-scene] TreehouseRoom layout → hotspots ${layout.mode}`);
+    debugLog(
+      `[island-scene] TreehouseRoom layout → hotspots ${this.questOpen ? "hidden (quest)" : layout.mode}` +
+        ` fit=${this.img.mode}`,
+    );
   }
 
   private drawBackground(): void {
@@ -360,8 +451,99 @@ export class TreehouseRoom implements ZoneInterior {
     }
   }
 
+  // ── Quest Table ───────────────────────────────────────────────────
+
+  /**
+   * The tap target that picks the table up: the painted table's TOP SURFACE,
+   * resolved to screen space. Anchored to the art (not the viewport) so it
+   * stays on the table at every framing, exactly like HOTSPOTS.
+   *
+   * Generously padded past the painted ellipse — a child aiming at a table
+   * aims at the table, not at a 30px-tall band of wood.
+   */
+  private layoutTableRect(): void {
+    const cx = this.img.x + TABLE.cx * this.img.w;
+    const cy = this.img.y + TABLE.cy * this.img.h;
+    const w = Math.max(MIN_TAP * 1.6, TABLE.halfW * 2 * this.img.w);
+    const h = Math.max(MIN_TAP, TABLE.topRy * 4.2 * this.img.h);
+    this.tableRect = { x: cx - w / 2, y: cy - h / 2, w, h };
+  }
+
+  /**
+   * The invitation, drawn ON the table while it is closed: a leaf-bound book
+   * with a warm glow under it, plus a small label. Not a pill — the whole
+   * point is that the child taps an object in the room, so the affordance has
+   * to be an object.
+   *
+   * STAND-IN ART. Production replaces this with the painted closed Quest
+   * Table dressing — see ASSET-SPEC-S89.md.
+   */
+  private drawTableMarker(): void {
+    if (this.questOpen) return;
+    const cx = this.tableRect.x + this.tableRect.w / 2;
+    const cy = this.tableRect.y + this.tableRect.h / 2;
+    const s = Math.max(30, Math.min(84, this.img.w * 0.048));
+    const c = new Container();
+    c.position.set(cx, cy);
+
+    const g = new Graphics();
+    // Warm glow on the wood.
+    g.ellipse(0, s * 0.3, s * 1.25, s * 0.42).fill({ color: HONEY, alpha: 0.2 });
+    g.ellipse(0, s * 0.3, s * 0.85, s * 0.28).fill({ color: HONEY, alpha: 0.22 });
+    // A closed book, seen at the room's angle.
+    g.roundRect(-s * 0.52, -s * 0.36, s * 1.04, s * 0.62, s * 0.08)
+      .fill(0x6e4a2a)
+      .stroke({ width: 3.5, color: INK });
+    g.roundRect(-s * 0.44, -s * 0.3, s * 0.92, s * 0.14, s * 0.05)
+      .fill({ color: 0xffffff, alpha: 0.28 });
+    // Pages edge.
+    g.roundRect(-s * 0.46, 0.04 * s, s * 0.92, s * 0.14, s * 0.04)
+      .fill(0xf2e4c4)
+      .stroke({ width: 2.5, color: INK });
+    // A leaf clasp, tying it to the Treehouse.
+    g.ellipse(s * 0.18, -s * 0.06, s * 0.2, s * 0.12).fill(0x6fae52).stroke({ width: 2.5, color: INK });
+    c.addChild(g);
+
+    const label = new Text({
+      text: "Quest Table",
+      style: {
+        fontFamily: FONT,
+        fontSize: Math.max(13, Math.min(18, s * 0.28)),
+        fontWeight: "900",
+        fill: 0xfffaf0,
+        stroke: { color: INK, width: 4 },
+      },
+    });
+    label.anchor.set(0.5, 0);
+    label.position.set(0, s * 0.5);
+    c.addChild(label);
+    this.hotspotLayer.addChild(c);
+  }
+
+  private openQuest(): void {
+    this.questOpen = true;
+    this.closePanel();
+    // Re-run the room build so the framing pulls back to take in the table
+    // and both characters, then open the table into that framing.
+    this.build(this.w, this.h);
+    this.quest.open(this.img, this.w, this.h);
+    debugLog("[island-scene] Quest Table → picked up");
+  }
+
+  private closeQuest(): void {
+    if (!this.questOpen) {
+      this.quest.close();
+      return;
+    }
+    this.questOpen = false;
+    this.quest.close();
+    this.build(this.w, this.h);
+    debugLog("[island-scene] Quest Table → put down");
+  }
+
   private drawHotspots(): void {
     this.hotspotLayer.removeChildren().forEach((c) => c.destroy());
+    this.drawTableMarker();
     for (const s of this.spots) {
       const c = new Container();
       c.position.set(s.x, s.y);

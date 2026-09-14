@@ -77,6 +77,17 @@ const MIN_ZOOM = 0.36;
 const MAX_ZOOM = 2.5;
 /** Mode 1 ↔ Mode 2 camera-tilt + cross-fade duration (seconds). */
 const TILT_DURATION = 1.0;
+/** The three island characters who play the group in the Quest Table's
+ *  miniature story. Catalog keys, so they resolve through the same loader
+ *  everything else uses. Front to back as they stand in the clearing. */
+const QUEST_GROUP_KEYS = ["hedgehog", "squirrel", "penguin"] as const;
+
+/**
+ * The scene's top-level phase. `travel` is declared but not yet reachable —
+ * guided travel is later S-89 work; naming it here keeps hosts from having to
+ * widen their switch when it lands.
+ */
+export type ScenePhase = "select" | "arrival" | "world" | "travel" | "interior";
 
 interface AvatarView {
   id: string;
@@ -116,6 +127,16 @@ export interface RendererCallbacks {
   onActivityEnter?: (zoneKey: ZoneKey) => void;
   /** Fires when the player taps the in-scene exit path in the zone view (Mode 2). */
   onZoneExit?: () => void;
+  /**
+   * Fires whenever the scene moves between its top-level phases (issue #5).
+   *
+   * The renderer has always known which phase it is in; nothing surfaced it,
+   * so the host's hint bar and the package's own zoom control both stayed up
+   * over the avatar picker and the arrival cinematic — telling a child to
+   * "tap a zone to visit" on a screen with no zones. This is the one signal
+   * both of them needed.
+   */
+  onPhaseChange?: (phase: ScenePhase) => void;
 }
 
 export interface RendererOptions extends RendererCallbacks {
@@ -222,6 +243,8 @@ export class SceneRenderer {
    *  if the host doesn't echo it back through the avatars prop. */
   private selectedImageUrl: string | null = null;
   private arrivalFadeT = 0;
+  /** Last phase reported to the host — so the callback fires on change only. */
+  private phase: ScenePhase | null = null;
   /** Painted full-screen stage texture for the arrival cinematic. */
   private arrivalBgTex?: Texture;
   /** Covered-boat layers (arrival cinematic only): hull-back (cabin/Pete/sail)
@@ -338,6 +361,7 @@ export class SceneRenderer {
     // swaps it in when (if) it arrives. A missing file just keeps the
     // code-drawn stand-in — it must never block entering the zone.
     void this.loadTreehouseArt();
+    void this.loadQuestCast();
     this.guideOverlay = new GuideOverlay({ reducedMotion: this.opts.reducedMotion });
     this.practicePlayer = new PracticePlayer({ reducedMotion: this.opts.reducedMotion });
     this.audio = new AudioService({ enabled: this.opts.audioEnabled });
@@ -552,6 +576,48 @@ export class SceneRenderer {
   }
 
   /**
+   * Load the Quest Table's cast: Olive, plus the three island characters who
+   * play the group in the miniature story.
+   *
+   * The group is drawn from LEGACY_AVATARS — ten characters from the original
+   * 16-animal wall that already ship in public/, are in the right register, and
+   * have nothing rendering them today. Reusing them means the Quest Table needs
+   * NO new character art to prove itself, which is the whole point of EC-1.
+   *
+   * Not awaited by init (nothing needs it for first paint) and every failure is
+   * per-texture: a character that won't load simply doesn't appear, and the
+   * table still works.
+   *
+   * EC-1 NOTE: Olive resolves to the generic nine-guide owl. The upgraded Olive
+   * is an acceptance dependency, not a code change — see ASSET-SPEC-S89.md.
+   */
+  private async loadQuestCast(): Promise<void> {
+    const group: Texture[] = [];
+    await Promise.all(
+      QUEST_GROUP_KEYS.map(async (key, i) => {
+        const entry = avatarByKey(key);
+        if (!entry) return;
+        const url = avatarFileUrl(entry.file);
+        try {
+          const tex = this.avatarTextures.get(url) ?? (await this.loadAvatarWithRetry(url));
+          if (this.destroyed) return;
+          this.avatarTextures.set(url, tex);
+          group[i] = tex;
+        } catch (err) {
+          console.warn(`[island-scene] quest cast art failed to load: ${entry.file}`, err);
+        }
+      }),
+    );
+    if (this.destroyed) return;
+    await this.guidesReady;
+    if (this.destroyed) return;
+    this.treehouseRoom.setQuestCast(
+      this.guideTextures.get("treehouse_hideaway"),
+      group.filter(Boolean),
+    );
+  }
+
+  /**
    * Make sure `url` has a texture, fetching it if it wasn't preloaded. Covers
    * a host that supplies a legacy avatar imageUrl: the picker never offers
    * those, so they aren't in the first-paint set, but a saved selection must
@@ -565,6 +631,12 @@ export class SceneRenderer {
         if (this.destroyed) return;
         this.avatarTextures.set(url, tex);
         this.reconcileAvatars(); // redraw now that the art exists
+        // An interior already on screen was built before this texture
+        // existed, so it is still showing the programmatic fallback. Push the
+        // art in rather than making the child leave and come back.
+        if (this.currentZone && this.interior.active) {
+          this.interior.restyle(this.theme.palette, this.localCfg(), this.localAvatarTexture());
+        }
       })
       .catch((err) => {
         console.warn(`[island-scene] avatar art failed to load: ${url}`, err);
@@ -727,7 +799,7 @@ export class SceneRenderer {
     this.buildZones();
     this.buildDecorations();
     if (this.currentZone && this.interior.active) {
-      this.interior.restyle(theme.palette, this.localCfg());
+      this.interior.restyle(theme.palette, this.localCfg(), this.localAvatarTexture());
     }
   }
 
@@ -835,6 +907,7 @@ export class SceneRenderer {
       this.interiorFor(zone).enter(
         zone, this.theme.palette, this.localCfg(),
         this.app.screen.width, this.app.screen.height,
+        this.localAvatarTexture(),
       );
       this.prepareZonePractice(zone);
       this.audio.preloadZone(zone); // per-zone voice preload on entry
@@ -879,6 +952,7 @@ export class SceneRenderer {
         this.localCfg(),
         this.app.screen.width,
         this.app.screen.height,
+        this.localAvatarTexture(),
       );
       this.world.visible = false;
       this.backdrop.visible = false;
@@ -947,12 +1021,49 @@ export class SceneRenderer {
     }
   }
 
+  /**
+   * Work out the current phase and report it if it changed. Cheap enough to
+   * call from the tick; the callback only fires on an actual transition.
+   */
+  private reportPhase(): void {
+    const next: ScenePhase =
+      this.arrival === "select"
+        ? "select"
+        : this.arrival !== "done"
+          ? "arrival"
+          : this.currentZone !== null
+            ? "interior"
+            : "world";
+    if (next === this.phase) return;
+    this.phase = next;
+    debugLog(`[island-scene] phase → ${next}`);
+    this.opts.onPhaseChange?.(next);
+  }
+
+  /**
+   * The chosen Island Friend's RESOLVED texture, or undefined when the art
+   * hasn't loaded (or failed). This is the missing link issue #6 describes:
+   * interiors were handed an `AvatarConfig`, which describes a procedural
+   * animal and carries at most a URL, never a texture — and the cache lives
+   * here, out of their reach.
+   */
+  private localAvatarTexture(): Texture | undefined {
+    const url = this.localImageUrl();
+    return url ? this.avatarTextures.get(url) : undefined;
+  }
+
   /** The local avatar's config (used to draw the same animal in Mode 2). */
   private localCfg(): AvatarConfig | null {
     const a = this.localId
       ? this.avatars.find((x) => x.id === this.localId)
       : this.avatars[0];
-    return a?.config ?? null;
+    if (!a) return null;
+    // Fold the in-session pick in. Without this an avatar chosen on the
+    // picker never reaches an interior even as a URL — the host has to
+    // round-trip it through `avatars[].config.imageUrl` first, and the demo
+    // harness only does that because it happens to listen to onAvatarSelect.
+    const url = a.config.imageUrl ?? this.selectedImageUrl ?? undefined;
+    return url === a.config.imageUrl ? a.config : { ...a.config, imageUrl: url };
   }
 
   /**
@@ -2224,6 +2335,7 @@ export class SceneRenderer {
 
     this.tickZoneTransition(dt);
     this.tickArrival(dt);
+    this.reportPhase();
     this.maybeAutoGreet();
     if (this.guideOverlay.active) this.guideOverlay.update(dt);
     if (this.practicePlayer.active) this.practicePlayer.update(dt);

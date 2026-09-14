@@ -1,6 +1,6 @@
-import { Container, Graphics, Text } from "pixi.js";
+import { Container, Graphics, Text, type Texture } from "pixi.js";
 import type { AvatarConfig, ZoneKey, ThemePalette } from "../types";
-import { buildAvatarSprite, type AvatarSprite } from "./avatar";
+import { buildAvatarSprite, buildImageAvatarSprite, type AvatarSprite } from "./avatar";
 import { buildZoneEnv, PARALLAX, type EnvLayers, type ZoneEnv } from "./zoneEnv";
 import { debugLog } from "./debug";
 
@@ -52,6 +52,10 @@ export class ZoneView {
   private zone: ZoneKey | null = null;
   private palette!: ThemePalette;
   private cfg: AvatarConfig | null = null;
+  /** The chosen Island Friend's art. When present the character in this zone
+   *  IS the animal the child picked; without it we fall back to the
+   *  programmatic compositor (issue #6). */
+  private avatarTex: Texture | undefined;
   private avatar: AvatarSprite | null = null;
   /** When the zone has a mini-practice, the renderer's PracticePlayer is the
    *  activity — so reaching the beacon skips the "You found it!" flourish and
@@ -82,10 +86,18 @@ export class ZoneView {
   }
 
   /** Build (or rebuild) the environment for `zone` at the given size. */
-  enter(zone: ZoneKey, palette: ThemePalette, cfg: AvatarConfig | null, w: number, h: number): void {
+  enter(
+    zone: ZoneKey,
+    palette: ThemePalette,
+    cfg: AvatarConfig | null,
+    w: number,
+    h: number,
+    avatarTex?: Texture,
+  ): void {
     this.zone = zone;
     this.palette = palette;
     this.cfg = cfg;
+    this.avatarTex = avatarTex;
     this.build(w, h);
     // Spawn left of the beacon, facing it.
     this.charX = this.targetX = this.env.spawnX;
@@ -124,10 +136,21 @@ export class ZoneView {
     };
     this.env = buildZoneEnv(this.zone!, layers, w, h, this.palette);
 
-    // (Re)build the avatar at zone scale: ~2× the world-map size, 3/4 side view.
+    // (Re)build the avatar at zone scale: ~2× the world-map size.
+    //
+    // The chosen Island Friend's painted art when it has loaded, the
+    // programmatic compositor only as a fallback. Before S-89 this was always
+    // the compositor, so a child who picked Ollie the Otter walked into a zone
+    // and found a code-drawn animal standing in for them (issue #6). Both
+    // paths return the same {container, setSelected} shape, so nothing else in
+    // this class changes.
     this.charLayer.removeChildren();
     this.avatar = null;
-    if (this.cfg) {
+    if (this.avatarTex) {
+      this.avatar = buildImageAvatarSprite(this.avatarTex, this.cfg?.displayColor ?? "#ffd76a");
+      this.avatar.container.scale.set(this.charScale());
+      this.charLayer.addChild(this.avatar.container);
+    } else if (this.cfg) {
       this.avatar = buildAvatarSprite(this.cfg);
       this.avatar.container.scale.set(this.charScale());
       this.charLayer.addChild(this.avatar.container);
@@ -162,10 +185,11 @@ export class ZoneView {
   }
 
   /** Re-skin in place (theme / avatar prop change) without losing position. */
-  restyle(palette: ThemePalette, cfg: AvatarConfig | null): void {
+  restyle(palette: ThemePalette, cfg: AvatarConfig | null, avatarTex?: Texture): void {
     if (!this.zone) return;
     this.palette = palette;
     this.cfg = cfg;
+    if (avatarTex) this.avatarTex = avatarTex;
     const frac = this.env ? this.charX / this.env.worldWidth : 0.2;
     this.build(this.w, this.h);
     this.charX = this.targetX = frac * this.env.worldWidth;

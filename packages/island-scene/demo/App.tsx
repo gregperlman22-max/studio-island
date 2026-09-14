@@ -13,10 +13,22 @@ import {
   type AvatarInstance,
   type IslandSceneHandle,
   type SceneMode,
+  type ScenePhase,
   type Species,
   type ThemePackKey,
   type ZoneKey,
 } from "../src";
+// The demo lives INSIDE the package, so the review-capture hook below reads the
+// renderer's own layout model directly rather than going through the public
+// API. Nothing here is part of the published contract.
+import { roomFit } from "../src/render/treehouseModel";
+import {
+  TABLE,
+  dioramaStage,
+  layoutChoiceCards,
+  questRoomFit,
+  EC1_CHOICES,
+} from "../src/quest/questTableModel";
 
 /**
  * Free-build island ferry stop: a dinghy decoration beside Welcome Dock,
@@ -24,6 +36,58 @@ import {
  * is untouched) using the existing decorations + onObjectInteract pattern.
  * Cell (38, 41) is walkable beach just west of the dock.
  */
+/**
+ * Review-capture hooks — DEV HARNESS ONLY, never part of the product.
+ *
+ * Screenshots and recordings of a Pixi canvas are only worth reviewing if they
+ * are deterministic, so the harness can be driven by URL:
+ *
+ *   ?avatar=otter                 skip the picker with that Island Friend
+ *   ?zone=treehouse_hideaway      open straight into that interior
+ *   ?panel=0                      hide the dev-tools button
+ *
+ * and `window.__ec1` reports where the Quest Table's affordances actually are,
+ * computed with the SAME pure model the renderer draws from — so if the layout
+ * moves, the capture follows it instead of silently missing.
+ */
+const REVIEW = new URLSearchParams(
+  typeof location === "undefined" ? "" : location.search,
+);
+/** The shipped room painting, treehouse-hideaway.webp. */
+const ROOM_ART = { w: 2000, h: 1125 };
+
+function installCaptureHook() {
+  if (typeof window === "undefined") return;
+  const geom = (questOpen: boolean) => {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const fit = questOpen ? questRoomFit : roomFit;
+    const img = fit(ROOM_ART.w, ROOM_ART.h, w, h);
+    return { img, w, h };
+  };
+  (window as unknown as Record<string, unknown>).__ec1 = {
+    /** Centre of the painted table — the tap that picks the Quest Table up. */
+    table: () => {
+      const { img } = geom(false);
+      return { x: img.x + TABLE.cx * img.w, y: img.y + TABLE.cy * img.h };
+    },
+    /** Centre of choice card `i`, with the table already open. */
+    card: (i: number) => {
+      const { img, w, h } = geom(true);
+      const cards = layoutChoiceCards(img, w, h, EC1_CHOICES.map((c) => c.id));
+      const c = cards[i];
+      return c ? { x: c.x + c.w / 2, y: c.y + c.h / 2 } : null;
+    },
+    /** Centre of the diorama stage, for framing a recording. */
+    stage: () => {
+      const { img } = geom(true);
+      const st = dioramaStage(img);
+      return { x: st.cx, y: st.cy };
+    },
+  };
+}
+installCaptureHook();
+
 const DINGHY_ID = "dinghy-to-build-island";
 const layoutWithDinghy = {
   ...sampleLayout,
@@ -40,6 +104,7 @@ const layoutWithDinghy = {
  */
 export function DemoApp() {
   const [open, setOpen] = useState(false);
+  const showDevButton = REVIEW.get("panel") !== "0";
   const [themeKey, setThemeKey] = useState<ThemePackKey>("sprout");
   const [mode, setMode] = useState<SceneMode>("studio");
   // Default ON so the scratch voice files are exercised on review (the in-scene
@@ -48,7 +113,12 @@ export function DemoApp() {
   const [reducedMotion, setReducedMotion] = useState(false);
   const [hideTextLabels, setHideTextLabels] = useState(false);
   const [lockLighthouse, setLockLighthouse] = useState(false);
-  const [currentZone, setCurrentZone] = useState<ZoneKey | null>(null);
+  const [currentZone, setCurrentZone] = useState<ZoneKey | null>(
+    (REVIEW.get("zone") as ZoneKey | null) ?? null,
+  );
+  /** Which screen the child is on, reported by the scene (issue #5). The hint
+   *  below is world-map guidance and is wrong everywhere else. */
+  const [phase, setPhase] = useState<ScenePhase>("arrival");
   /** "main" = the guided island; "build" = the free-build island. */
   const [scene, setScene] = useState<"main" | "build">("main");
 
@@ -60,7 +130,9 @@ export function DemoApp() {
     bodyColor: "#f3c1d6",
     accessoryKey: "scarf",
     displayColor: "#c47b9a",
-    imageUrl: undefined,
+    // ?avatar=<key> seeds the pick so a capture lands on the same screen every
+    // run. Without it this stays undefined and the picker runs as normal.
+    imageUrl: avatarImageUrl(REVIEW.get("avatar") ?? "") ?? undefined,
   }));
 
   const [log, setLog] = useState<string[]>([]);
@@ -122,6 +194,7 @@ export function DemoApp() {
         audioEnabled={audioEnabled}
         reducedMotion={reducedMotion}
         hideTextLabels={hideTextLabels}
+        onPhaseChange={(p: ScenePhase) => { setPhase(p); append(`onPhaseChange(${p})`); }}
         onReady={() => append("onReady")}
         onLoadProgress={(p) => append(`onLoadProgress(${p.toFixed(2)})`)}
         onZoneTap={(z: ZoneKey) => { append(`onZoneTap(${z}) → enter`); setCurrentZone(z); }}
@@ -144,6 +217,7 @@ export function DemoApp() {
       )}
 
       {/* Floating dev-tools toggle — the only chrome over the scene. */}
+      {showDevButton && (
       <button
         onClick={() => setOpen((o) => !o)}
         title="Developer controls"
@@ -167,6 +241,7 @@ export function DemoApp() {
       >
         {open ? "×" : "⚙"}
       </button>
+      )}
 
       {open && (
         <div
@@ -262,7 +337,13 @@ export function DemoApp() {
         </div>
       )}
 
-      {/* Minimal always-on hint for first-time reviewers. */}
+      {/* Minimal hint for first-time reviewers — WORLD MAP ONLY.
+          It used to be always-on, which meant a child on the avatar picker or
+          the boat cinematic was told to "tap a zone to visit" on a screen with
+          no zones, and on a phone it sat over the picker's Continue button
+          (issue #5, host half). The scene reports its phase now, so the hint
+          can simply not be there. */}
+      {phase === "world" && scene === "main" && (
       <div
         style={{
           position: "absolute",
@@ -280,6 +361,7 @@ export function DemoApp() {
       >
         Tap to walk · tap a zone to visit · drag to look around
       </div>
+      )}
     </div>
   );
 }
