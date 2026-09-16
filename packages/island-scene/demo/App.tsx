@@ -45,6 +45,7 @@ import {
  *   ?avatar=otter                 skip the picker with that Island Friend
  *   ?zone=treehouse_hideaway      open straight into that interior
  *   ?panel=0                      hide the dev-tools button
+ *   ?rm=1                         start in reduced motion (same as the toggle)
  *
  * and `window.__ec1` reports where the Quest Table's affordances actually are,
  * computed with the SAME pure model the renderer draws from — so if the layout
@@ -110,7 +111,7 @@ export function DemoApp() {
   // Default ON so the scratch voice files are exercised on review (the in-scene
   // 🔊 button toggles the persisted child mute on top of this host enable).
   const [audioEnabled, setAudioEnabled] = useState(true);
-  const [reducedMotion, setReducedMotion] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(REVIEW.get("rm") === "1");
   const [hideTextLabels, setHideTextLabels] = useState(false);
   const [lockLighthouse, setLockLighthouse] = useState(false);
   const [currentZone, setCurrentZone] = useState<ZoneKey | null>(

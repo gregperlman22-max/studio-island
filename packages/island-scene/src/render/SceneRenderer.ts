@@ -32,7 +32,7 @@ import {
 import { ProgrammaticTextureProvider } from "./TextureProvider";
 import { buildAvatarSprite, buildImageAvatarSprite, type AvatarSprite } from "./avatar";
 import { AvatarSelect } from "./AvatarSelect";
-import { CORE_AVATARS, avatarByKey, avatarFileUrl } from "./avatarCatalog";
+import { AVATARS, CORE_AVATARS, avatarByKey, avatarFileUrl } from "./avatarCatalog";
 import { loadAvatarTexture } from "./avatarTexture";
 import { biomeAt, landContext } from "./biome";
 import { islandOutline, flatten, insetLoop, clusterOutline, type Pt } from "./coast";
@@ -52,6 +52,8 @@ import { PracticePlayer } from "./PracticePlayer";
 import { AudioService } from "./AudioService";
 import { GUIDES, guideFileUrl, guideForZone } from "./guideCatalog";
 import { ArrivalView } from "./ArrivalView";
+import { TravelView } from "../travel/TravelView";
+import { travelPoseUrl } from "../travel/travelKit";
 import { LayeredIsland, type IslandLayoutOpts, type LandmarkMark } from "./LayeredIsland";
 import { buildWalkGrid } from "./walkgrid";
 import { debugLog } from "./debug";
@@ -230,6 +232,11 @@ export class SceneRenderer {
   // that cinematic up into the world map; "done" = normal.
   private arrival: "select" | "cinematic" | "fade" | "done" = "cinematic";
   private arrivalView?: ArrivalView;
+  /** Guided travel (EC-2). Owns the destination card, the journey and the
+   *  arrival greeting — everything between the world map and the Treehouse. */
+  private travel?: TravelView;
+  /** The zone the journey is heading to, while one is running. */
+  private travelZone: ZoneKey | null = null;
   /** One-shot guard: Captain Pete's welcome auto-opens exactly once, the first
    *  time the scene is on the island map and fully ready (see maybeAutoGreet). */
   private greeted = false;
@@ -946,6 +953,79 @@ export class SceneRenderer {
     debugLog(`[island-scene] beginTransition ${dir} → ${zone}`);
   }
 
+  /**
+   * Start the guided journey to `zone`: snapshot the island the child is
+   * leaving, then show the destination card.
+   */
+  private beginJourney(zone: ZoneKey): void {
+    this.travelZone = zone;
+    const view = this.ensureTravel();
+    const key = this.localAvatarKey();
+    const pose = travelPoseUrl(key);
+    if (pose.substituted && key) {
+      debugLog(
+        `[island-scene] travel pose SUBSTITUTED for "${key}" — using the ` +
+          `front-facing portrait; the 3/4-back pose has not shipped ` +
+          `(public/avatars/travel/${key}-travel.webp)`,
+      );
+    }
+    view.setFriend(this.localAvatarTexture(), key, pose.substituted);
+    view.setOlive(this.guideTextures.get(zone));
+    view.setMapSnapshot(this.captureWorldMap());
+    void view.load().then(() => {
+      if (this.destroyed || this.travelZone !== zone) return;
+      view.begin(this.app.screen.width, this.app.screen.height);
+      this.reportPhase();
+    });
+  }
+
+  private ensureTravel(): TravelView {
+    if (!this.travel) {
+      this.travel = new TravelView({ reducedMotion: this.opts.reducedMotion });
+      this.app.stage.addChild(this.travel.container);
+      this.app.stage.setChildIndex(this.fade, this.app.stage.children.length - 1);
+    }
+    return this.travel;
+  }
+
+  /** End the journey, whichever way it ended. */
+  private endJourney(): void {
+    this.travelZone = null;
+    this.travel?.hide();
+    this.reportPhase();
+  }
+
+  /**
+   * A still of the world map exactly as the child last saw it, for the journey
+   * map to show. A snapshot (rather than a drawing of the island) is what keeps
+   * the journey map recognisably connected to the Island.
+   */
+  private captureWorldMap(): Texture | undefined {
+    try {
+      // Extract the VISIBLE FRAME, not the world container's bounds. The world
+      // is far larger than the screen and mostly ocean, so `generateTexture` on
+      // it returns the whole island plus a sea of blue — not the view the child
+      // was just looking at, which is the whole point of a snapshot.
+      return this.app.renderer.extract.texture({
+        target: this.app.stage,
+        frame: new Rectangle(0, 0, this.app.screen.width, this.app.screen.height),
+        resolution: 1,
+        antialias: false,
+      });
+    } catch (err) {
+      console.warn("[island-scene] world-map snapshot failed", err);
+      return undefined;
+    }
+  }
+
+  /** Catalog key of the Friend the child chose. */
+  private localAvatarKey(): string {
+    const url = this.localImageUrl();
+    if (!url) return "";
+    for (const a of AVATARS) if (avatarFileUrl(a.file) === url) return a.key;
+    return "";
+  }
+
   private applyMode(zone: ZoneKey | null): void {
     this.currentZone = zone;
     if (zone) {
@@ -986,6 +1066,22 @@ export class SceneRenderer {
   private static readonly ROOM_ZONES: ReadonlySet<ZoneKey> = new Set<ZoneKey>([
     "treehouse_hideaway",
   ]);
+
+  /**
+   * Zones reached by a guided JOURNEY rather than straight from the map.
+   *
+   * Exactly one, deliberately: the brief is explicit that navigation is not to
+   * be scaled to the other eight destinations in this slice. Everything not
+   * listed here keeps the existing guide-card route into its interior,
+   * untouched.
+   */
+  private static readonly TRAVEL_ZONES: ReadonlySet<ZoneKey> = new Set<ZoneKey>([
+    "treehouse_hideaway",
+  ]);
+
+  private hasJourney(zone: ZoneKey): boolean {
+    return SceneRenderer.TRAVEL_ZONES.has(zone);
+  }
 
   private isRoomZone(zone: ZoneKey | null): boolean {
     return zone !== null && SceneRenderer.ROOM_ZONES.has(zone);
@@ -1038,7 +1134,9 @@ export class SceneRenderer {
           ? "arrival"
           : this.currentZone !== null
             ? "interior"
-            : "world";
+            : this.travel?.active
+              ? "travel"
+              : "world";
     if (next === this.phase) return;
     this.phase = next;
     debugLog(`[island-scene] phase → ${next}`);
@@ -1182,6 +1280,7 @@ export class SceneRenderer {
     this.guideOverlay.resize(this.app.screen.width, this.app.screen.height);
     this.practicePlayer.resize(this.app.screen.width, this.app.screen.height);
     this.arrivalView?.resize(this.app.screen.width, this.app.screen.height);
+    this.travel?.resize(this.app.screen.width, this.app.screen.height);
     this.avatarSelect?.resize(this.app.screen.width, this.app.screen.height);
   }
 
@@ -1876,7 +1975,11 @@ export class SceneRenderer {
     // its greeting dialogue. onZoneTap is NOT fired by the tap itself — it
     // fires from the guide card's "Go Inside" pill (Q1=A: Mode 2 is the
     // practice space, entered through the guide, never around them).
-    const arrive = () => this.showGuide(zone.key);
+    // A journey zone opens its destination card instead of the guide. Olive's
+    // greeting belongs at ARRIVAL, so spending her entrance here would take it
+    // from where the approved flow puts it.
+    const arrive = () =>
+      this.hasJourney(zone.key) ? this.beginJourney(zone.key) : this.showGuide(zone.key);
     if (!this.localId) {
       arrive();
       return;
@@ -2095,7 +2198,8 @@ export class SceneRenderer {
       this.currentZone === null &&
       !this.trans &&
       this.arrival === "done" &&
-      !this.guideOverlay.active
+      !this.guideOverlay.active &&
+      !this.travel?.active
     );
   }
 
@@ -2120,6 +2224,17 @@ export class SceneRenderer {
       this.pointerMoved = false;
       this.downX = e.global.x;
       this.downY = e.global.y;
+      return;
+    }
+    // Guided travel: the journey owns every tap while it is on screen, and a
+    // held press is how a child walks (continuous travel only — the
+    // reduced-motion journey is one tap per waypoint and never holds).
+    if (this.travel?.active) {
+      this.pointerDown = true;
+      this.pointerMoved = false;
+      this.downX = e.global.x;
+      this.downY = e.global.y;
+      if (this.travel.phase === "travel" && !this.opts.reducedMotion) this.travel.setWalking(true);
       return;
     }
     // Landmark guide (Phase 2): a plain tap dismisses it; distinguish tap from
@@ -2159,7 +2274,7 @@ export class SceneRenderer {
   private onPointerMove = (e: FederatedPointerEvent): void => {
     // Practice player / guide overlay: only track whether the press turned into
     // a drag, so a stray scroll doesn't count as an advance/close tap.
-    if (this.practicePlayer.active || this.guideOverlay.active) {
+    if (this.practicePlayer.active || this.guideOverlay.active || this.travel?.active) {
       if (this.pointerDown && Math.hypot(e.global.x - this.downX, e.global.y - this.downY) > DRAG_THRESHOLD) {
         this.pointerMoved = true;
       }
@@ -2216,6 +2331,28 @@ export class SceneRenderer {
       this.pointerDown = false;
       if (wasTap && this.practicePlayer.handleTap(e.global.x, e.global.y) === "close") {
         this.practicePlayer.hide();
+      }
+      return;
+    }
+    // Guided travel: releasing stops the walk; a clean tap goes to the journey,
+    // which answers with what it wants the renderer to do.
+    if (this.travel?.active) {
+      const wasTap = this.pointerDown && !this.pointerMoved;
+      this.pointerDown = false;
+      this.travel.setWalking(false);
+      if (!wasTap) return;
+      const zone = this.travelZone;
+      const result = this.travel.handleTap(e.global.x, e.global.y);
+      if (result === "dismiss" || result === "back-to-island") {
+        debugLog(`[island-scene] journey → ${result}`);
+        this.endJourney();
+      } else if (result === "enter-room" && zone) {
+        // The journey hands over exactly where the guide card used to: the
+        // host flips currentZone and the room opens.
+        debugLog(`[island-scene] journey → arrived, onZoneTap(${zone})`);
+        this.endJourney();
+        this.followEnabled = true;
+        this.opts.onZoneTap?.(zone);
       }
       return;
     }
@@ -2342,6 +2479,7 @@ export class SceneRenderer {
     this.tickArrival(dt);
     this.reportPhase();
     this.maybeAutoGreet();
+    if (this.travel?.active) this.travel.update(dt);
     if (this.guideOverlay.active) this.guideOverlay.update(dt);
     if (this.practicePlayer.active) this.practicePlayer.update(dt);
 
@@ -2513,6 +2651,7 @@ export class SceneRenderer {
       /* ticker/listeners may not be attached */
     }
     this.textures?.destroy();
+    this.travel?.destroy();
     this.arrivalView?.destroy();
     this.avatarSelect?.destroy();
     this.audio?.destroy();
