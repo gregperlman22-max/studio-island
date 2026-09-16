@@ -1,201 +1,225 @@
 # ASSET-SPEC-S89 — Treehouse Vertical Slice
 
-Production art specification for **S-89** (board v1.3 / backlog v9), covering
-every asset family the slice needs. Delivered at the **start** of EC-1 rather
-than the end, so art and engineering run in parallel.
+Production art specification for **S-89** (board v1.3 / backlog v9).
 
-Companion to `ASSET-SPEC.md` (free-build item sprites). Same house rules, same
-delivery discipline.
+Companion to `ASSET-SPEC.md` (free-build item sprites).
 
----
-
-## Standing rules (all families)
-
-**Style.** The island's register is Wind Waker-adjacent cel / warm painterly
-storybook. Reference the shipped landmark art (`src/assets/landmarks/*.webp`),
-the six core friends (`public/avatars/core/*.webp`) and the Treehouse room
-(`src/assets/interiors/treehouse-hideaway.webp`). Flat vivid fills, soft
-top-edge highlight, minimal shading, **bold dark ink outline `#23201c`**.
-
-**Characters are ANIMALS only.** No human attributes anywhere — no skin tones,
-no hair, no gender coding. This rule is absolute and predates S-89.
-
-**Format.** WebP, lossy q80+, **true RGBA cutout**, no baked background and no
-baked ground shadow (every render site draws its own contact shadow). Character
-art is matted **offline** by `tools/island-art/matte-characters.mjs`; never at
-runtime. Core-avatar-class art is optimised by
-`tools/island-art/optimize-core-avatars.mjs` from sources kept **outside**
-`public/` so they never reach a browser.
-
-**Anchoring.** Every render site measures the opaque-content bbox at load
-(`render/contentBounds.ts`) and pins the sprite by its **true feet and
-horizontal centre**, scaling by **visible content height**, not canvas height.
-So: padding is free, but ground contact must be the bottom-centre of the opaque
-content. A pose whose ground contact is *not* there (a lean, one leg extended, a
-tail hanging below the feet) needs a one-line entry in
-`render/avatarTexture.ts`'s `PIVOT_OVERRIDES` — flag it on delivery and it costs
-no layout work.
-
-**Replacement is a file drop.** Every family below is resolved by catalog key or
-glob. Dropping the file in and adding its registry line is the whole
-integration; no layout is tuned around any stand-in.
-
-**Stand-ins are not approved art.** Where EC-1 ships code-drawn scaffolding it
-says so in the file header. Nothing code-drawn in this slice is a design, and
-silence is not approval.
+> **Two things this document keeps separate.**
+>
+> **A production asset requirement** is what the slice needs in order to ship.
+> **Permission to demonstrate composition with a placeholder** is what lets
+> engineering prove staging and interaction before that art exists. EC-1 has the
+> second and not the first. Nothing code-drawn, and no stand-in casting, is
+> approved art or an approved character — including anything that has already
+> appeared in a review capture.
 
 ---
 
-## 1. Six travel poses — **blocking for EC-2**
+## Style references — there are TWO registers, not one
 
-The child's Friend walks away from camera down a receding path for the whole
-journey. Front-facing portraits do not read that way; the POC tested this
-explicitly and a back view was clearly better.
+An earlier draft of this document imposed a single "bold dark ink outline
+`#23201c`" rule on every family. That was wrong: it is the world-map register,
+and applying it to characters and interiors would flatten the painterly
+direction the Treehouse is actually built in.
+
+| Register | Shipped reference (in repo) | Used by |
+|---|---|---|
+| **Painterly storybook** — soft modelled edges, warm light, no hard ink keyline | `src/assets/interiors/treehouse-hideaway.webp`, `public/avatars/core/*.webp`, `public/guides/*.webp` | Olive, travel poses, the diorama and everything on the table, choice illustrations |
+| **Wind Waker-adjacent cel** — flat fills, bold `#23201c` keyline | `src/assets/sprites/*.webp`, `src/assets/landmarks/*.webp` | the forest travel kit (tree variants) |
+
+Match the register of the family's own reference, not the other family's.
+
+**Reference accessibility — stated plainly.** The shipped files above are in the
+repository and can be matched directly. The **approved visual concepts for
+Olive are NOT in the repository**; the direction recorded below is transcribed
+from the brief and has not been checked against those concepts. Whoever briefs
+this art should work from the approved concepts, not from this paragraph.
+
+## Standing rules
+
+**Characters are ANIMALS only.** No human attributes anywhere. Absolute, and
+predates S-89.
+
+**Format.** WebP, lossy q80+, true RGBA cutout, no baked background, no baked
+ground shadow (every render site draws its own). Character art is matted
+**offline** by `tools/island-art/matte-characters.mjs`, never at runtime.
+
+**Anchoring.** Render sites measure the opaque-content bbox at load
+(`render/contentBounds.ts`) and pin by true feet / horizontal centre, scaling by
+visible content height. Padding is free; ground contact must be the
+bottom-centre of the opaque content. A pose whose contact is elsewhere needs one
+line in `render/avatarTexture.ts`'s `PIVOT_OVERRIDES` — flag it on delivery and
+it costs no layout work.
+
+---
+
+## Integration status — what is and is not a "file drop"
+
+An earlier draft claimed every family was a file drop. That is true of exactly
+one of them today. The rest need code before art can land.
+
+| Family | Today | To accept production art |
+|---|---|---|
+| Room painting | **File drop** — build-time glob in `render/treehouseArt.ts` | nothing |
+| **Diorama** (clearing, scrub, stone stack, tray, notice mark) | `QuestTable.ts` calls `drawClearing` / `drawScrub` / `drawStoneStack` / `drawTray` / `drawNoticeMark` in `quest/dioramaArt.ts` **directly** | a texture registry for the quest art, loading through `SceneRenderer` (alongside `loadQuestCast`), and each call site swapped for a sprite placed on the same anchor |
+| **Choice illustrations** | `drawChoiceArt` / `drawCardFace` called directly, keyed by `ChoiceId` | same registry; card art keyed by beat + choice id rather than by the two EC-1 ids |
+| **Olive** | one texture, resolved from the generic nine-guide `public/guides/Owl.webp` via `guideCatalog` | a pose-aware manifest + loader, and a pose selector in `QuestTable` (`neutral` / `encouraging` / `listening`) |
+| **Travel poses** | nothing — travel is not built | a `travelPose` registry with a documented fallback order |
+| **Patches** | nothing — patches are not built | model, storage contract, and a patch board render site |
+
+**Estimate: the diorama + choice registry is the bulk of it**, and it is the
+same mechanism for both, so it should be built once.
+
+---
+
+## 1. Smallest first production-art batch
+
+The five assets that would let the **corrected EC-1 composition** be judged on
+production art rather than scaffolding, in priority order:
+
+| # | Asset | Why first |
+|---|---|---|
+| 1 | **Diorama base plate** — the miniature clearing | The weakest thing on screen. It currently reads as a flat green plate, and it is the surface everything else in the story stands on. |
+| 2 | **Olive, `neutral` pose only** | She is large at every viewport in the corrected composition and is currently a generic guide owl standing in for the character who sets the guide quality bar. |
+| 3–4 | **Two choice illustrations** — "walk over", "wave hello" | The only two cards in the beat, and the things a non-reading child has to tell apart. |
+| 5 | **The tray** | Small, but it is the piece that makes the choices read as part of the table. |
+
+Deliberately **not** in the first batch: the other two Olive poses, the four
+diorama scene states, patches, travel poses, tree variants. They belong to beats
+and journeys EC-1 does not contain.
+
+---
+
+## 2. Olive — blocking for production visual acceptance
+
+Reference: `public/guides/*.webp` for register; **the approved Olive concepts
+for the design** (not in this repository — see above).
+
+Direction as recorded in the brief: owl · warm · wise · encouraging ·
+non-judgemental · expressive · right for ages 5–12 · slightly more sophisticated
+proportions than preschool/chibi · **teal scarf** · **explorer /
+Treehouse-keeper satchel** · subtle map-and-adventure identity · richer
+painterly storybook treatment · visibly distinct from a selectable Island
+Friend.
+
+A generic owl illustration does not satisfy this.
 
 | | |
 |---|---|
-| **Count** | 6 — one per core Island Friend |
-| **Pose** | 3/4-**back**, mid-stride, walking away from camera |
-| **Canvas** | 480 × 640, content ~70–85% of height, centred |
-| **Path** | `public/avatars/travel/<key>-travel.webp` |
-| **Keys** | `otter`, `dog`, `cat`, `bunny`, `deer`, `red_panda` — the catalog keys, unchanged |
+| Poses | `neutral` (batch 1) · `encouraging` · `listening` |
+| Canvas | 480 × 640, feet at the content bbox bottom |
+| Path | `public/guides/olive/olive-<pose>.webp` |
 
-The recognisable silhouette matters more than the face: a child identifies their
-friend from behind by **shape and accessory** (Ollie's backpack, Sunny's ears).
-Keep the accessory prominent.
+Interim: falls back to `Owl.webp`, logged once.
 
-**Interim:** the front-facing core art, logged once per friend. Layout is driven
-by measured content bounds, so it is **not** baked around a front-facing
-assumption.
+## 3. Quest Table / diorama — blocking for production visual acceptance
 
-**Not required:** an arrival/turn pose. The existing front-facing core art *is*
-the arrival pose — the Friend turns to camera at the treehouse. This is
-deliberate, and it keeps the ask at six files rather than twelve.
-
----
-
-## 2. Olive, upgraded — **blocking for production visual acceptance**
-
-Olive is the first upgraded landmark guide and sets the quality bar for all
-nine. Today she resolves to `public/guides/Owl.webp`, the generic
-nine-guide cutout.
-
-**Approved direction:** owl · warm · wise · encouraging · non-judgemental ·
-expressive · right for ages 5–12 · **slightly more sophisticated proportions
-than preschool/chibi** · **teal scarf** · **explorer / Treehouse-keeper satchel**
-· subtle map-and-adventure identity · **richer painterly storybook treatment** ·
-visibly distinct from a selectable Island Friend.
-
-Do **not** substitute a generic owl illustration and call the redesign done.
+Reference: the room painting it sits on, at miniature scale.
 
 | | |
 |---|---|
-| **Count** | 3 poses |
-| **Poses** | `neutral` (standing, at rest) · `encouraging` (open gesture toward the table) · `listening` (head tilted, attending) |
-| **Canvas** | 480 × 640, feet at the content bbox bottom |
-| **Path** | `public/guides/olive/olive-<pose>.webp` |
+| Base plate | 1 painted clearing, modelled ground with a visible far edge, in the room's eye-level perspective. **768 × 384.** (batch 1) |
+| Scene states | 4 — `group-playing` · `approach` · `aftermath` · `resolution`. Dressing only; shared base plate. **512 × 256** each, transparent. |
+| Tray | 1 shallow wooden tray hanging off the table's near rim. **512 × 200.** (batch 1) |
+| Closed dressing | 1 — the Quest Table at rest, inviting a tap. **384 × 384.** |
+| Path | `src/assets/quest/diorama-<name>.webp` |
 
-**Interim:** falls back to `Owl.webp`, logged once. The Treehouse will visibly
-out-class the other eight guide zones until they follow — expected for a
-vertical slice, and worth knowing it will read as inconsistent.
+## 4. Illustrated choices — blocking for production visual acceptance
 
----
-
-## 3. Forest travel kit — tree variants — **blocking for EC-2**
-
-Routes are composed from a shared kit, not painted per journey. The repo ships
-**two** tree sprites, so a composed route currently repeats visibly. This is the
-single highest-leverage art drop in the slice.
+Reference: the room painting; legibility governs.
 
 | | |
 |---|---|
-| **Count** | 2–3 new, for 4–5 total |
-| **Wanted** | a conifer · a slender birch-like trunk · a broad low canopy |
-| **Plus** | **1 canopy-overhang piece** — a bough hanging in from off-frame. `tree-01` is currently stretched into this role and it shows. This one piece does more for the depth illusion than any other single element. |
-| **Canvas** | 512 × 768 (trees), 768 × 512 (overhang bough) |
-| **Path** | `src/assets/sprites/tree-0N.webp`, `src/assets/sprites/canopy-01.webp` |
+| Count | 2 for EC-1's beat (batch 1); ~9 across the full seven beats |
+| Canvas | 512 × 384, content ~80% |
+| Path | `src/assets/quest/choice-<beat>-<slug>.webp` |
+| Hard rule | Two cards in one beat must be tellable apart **with the sound off and the label covered**, at card size on a 390 px phone (~170 × 120 px). Test at that size, not at 512. |
 
-Match `tree-01.webp` / `tree-02.webp` exactly for scale convention and ink
-weight — they are seen side by side at every depth.
+## 5. The diorama group — TEMPORARY CASTING, UNAPPROVED
 
----
+The three characters playing the group are currently `LEGACY_AVATARS` already
+shipped in `public/avatars/` — Hedgehog, Squirrel and Penguin — chosen so EC-1
+could demonstrate the composition without commissioning character art.
 
-## 4. Quest Table / diorama — **blocking for production visual acceptance**
+- **This casting is temporary and unapproved.** It is a placeholder for
+  demonstration, **not** a production conclusion, and specifically not a finding
+  that "no new art is needed" for the group.
+- **Their production visual fit is unapproved** — whether these three characters
+  belong in this story, at miniature scale, in this register, is an open
+  question for art direction.
+- **No supporting character has been approved, and none is named.** An earlier
+  draft of the beat copy called one of them "Pip". That name has been removed
+  from the code and from this document's requirements; no name should be
+  reintroduced without approval.
 
-The miniature world that rises from the painted table. EC-1 proves the staging
-with a code-drawn stand-in (`src/quest/dioramaArt.ts`); the stand-in's flat
-green plate is the weakest element on screen and this drop replaces it.
+Production requirement, when the casting is settled: **3 miniature-scale group
+characters**, painterly register, sized to read at ~60 px tall.
 
-| | |
-|---|---|
-| **Base plate** | 1 painted clearing that sits on the table top — modelled ground with a visible far edge, seen at the room's own eye level. **768 × 384**, drawn as a shallow ellipse in the room's perspective. |
-| **Scene states** | 4 — `group-playing` · `approach` · `aftermath` · `resolution`. Dressing only (stone stack height, scattered props); the base plate is shared. **512 × 256** each, transparent, overlaid on the plate. |
-| **Closed dressing** | 1 — the Quest Table at rest on the painted table, inviting a tap. Currently a code-drawn leaf-bound book. **384 × 384**. |
-| **Path** | `src/assets/quest/diorama-<name>.webp` |
+## 6. Quest Patches — subject to production visual acceptance
 
-**Group cast: no new art needed.** The three characters the Friend wants to join
-are drawn from `LEGACY_AVATARS` — Hedgehog ("Pip"), Squirrel and Penguin —
-already shipped in `public/avatars/`, in register, and rendering nowhere else
-today.
-
----
-
-## 5. Illustrated choices — **blocking for production visual acceptance**
-
-The choice cards must be legible **with the sound off and the label covered**: a
-five-year-old who cannot read, on a device whose voice files have not been
-recorded yet, has only the picture. That is a hard requirement, not a nicety.
+Five: **Brave · Calm · Kind · Curious · Asked for Help**. A patch is what the
+child thinks helped — never a score.
 
 | | |
 |---|---|
-| **Count** | ~9 distinct illustrations across the seven beats, shared across bands where the choice is the same |
-| **Canvas** | 512 × 384, content filling ~80% |
-| **Path** | `src/assets/quest/choice-<beat>-<slug>.webp` |
-| **Rule** | Two cards in the same beat must be tellable apart **at card size on a 390 px phone** — roughly 170 × 120 px. Test at that size, not at 512. |
+| Canvas | 256 × 256, embroidered-badge form |
+| Path | `src/assets/quest/patch-<id>.webp` |
 
----
+A patch's stitched border is part of the object, so a defined edge here is the
+subject's own and not the world-map keyline. **Appearance remains subject to
+production visual acceptance** — code-drawn stand-ins are for demonstration and
+are not approved final art, whatever their simplicity might suggest.
 
-## 6. Quest Patches — non-blocking
+## 7. Six travel poses — blocking for EC-2
 
-Five patches: **Brave · Calm · Kind · Curious · Asked for Help**. A patch is what
-the child thinks helped — never a score.
-
-| | |
-|---|---|
-| **Count** | 5 |
-| **Canvas** | 256 × 256, circular or shield embroidered-badge form |
-| **Path** | `src/assets/quest/patch-<id>.webp` |
-
-Code-drawn stand-ins are more defensible here than elsewhere — patches are
-small, geometric and badge-like — but painted versions would be better, and the
-patch board is the thing that makes the room visibly change and gives a child a
-reason to come back.
-
----
-
-## 7. Voice — **blocking for the 5–7 band**
-
-Not art, but the same kind of dependency, and it is the one most likely to be
-forgotten.
-
-The machinery is **complete and shipping**: `content/audio-manifest.json` →
-`AudioService.preloadZone` → `play(id)` → `replay(id)` → mute (persisted) →
-**silent fallback on a missing file, by hard requirement**. What is missing is
-every recording — the manifest holds three WAV beep placeholders.
+Reference: `public/avatars/core/*.webp`.
 
 | | |
 |---|---|
-| **Count** | ~55–70 lines: Olive's quest lines, each beat prompt, each per-band choice label |
-| **Format** | mp3, mono, 64–96 kbps |
-| **Keying** | Stable content IDs, e.g. `treehouse_hideaway.olive.quest-approach-5-7.001`. IDs are **permanent once assigned** — never renumbered, never reused. |
-| **Script** | The dev-mode missing-audio coverage report generates the recording checklist automatically once the lines are authored. |
+| Count | 6, one per core Island Friend |
+| Pose | 3/4-**back**, mid-stride, walking away from camera |
+| Canvas | 480 × 640, content ~70–85% of height |
+| Path | `public/avatars/travel/<key>-travel.webp` |
+| Keys | `otter`, `dog`, `cat`, `bunny`, `deer`, `red_panda` |
+
+Silhouette and accessory carry recognition from behind; keep the accessory
+prominent. **No arrival/turn pose is required** — the existing front-facing core
+art is the arrival pose, which keeps this at six files rather than twelve.
+
+## 8. Forest travel kit — blocking for EC-2
+
+Reference: `src/assets/sprites/tree-01.webp` / `tree-02.webp` — **this family is
+the cel register**, matching those two exactly for scale convention and keyline
+weight.
+
+| | |
+|---|---|
+| Count | 2–3 new, for 4–5 total: a conifer · a slender birch-like trunk · a broad low canopy |
+| Plus | **1 canopy-overhang bough** hanging in from off-frame — the single highest-value piece for the depth illusion |
+| Canvas | 512 × 768 (trees), 768 × 512 (bough) |
+| Path | `src/assets/sprites/tree-0N.webp`, `src/assets/sprites/canopy-01.webp` |
+
+## 9. Voice — blocking for the 5–7 band
+
+Machinery is complete and shipping: manifest → `preloadZone` → `play` →
+`replay` → mute → **silent fallback on a missing file, by hard requirement**.
+Every recording is missing; the manifest holds three WAV beep placeholders.
+
+| | |
+|---|---|
+| Count | ~55–70 lines across the full quest (2 prompts + 4 choice labels + Olive for EC-1's beat alone) |
+| Format | mp3, mono, 64–96 kbps |
+| Keying | Stable content IDs, permanent once assigned, never renumbered |
+| Script | The dev-mode missing-audio coverage report generates the checklist once lines are authored |
 
 ---
 
 ## Delivery checklist
 
-- [ ] File at the exact path above, exact spelling
+- [ ] Exact path and spelling above
+- [ ] Correct **register for that family** (painterly vs cel — see the table at the top)
 - [ ] True RGBA, no baked background, no baked ground shadow
 - [ ] Run through `matte-characters.mjs` (character art)
-- [ ] Ground contact = bottom-centre of opaque content, **or** a `PIVOT_OVERRIDES` note supplied
+- [ ] Ground contact = bottom-centre of opaque content, or a `PIVOT_OVERRIDES` note supplied
 - [ ] Checked at 390 px width, not only at full canvas
+- [ ] Confirm the receiving code exists (see **Integration status**) — for most families art cannot land until a registry is built

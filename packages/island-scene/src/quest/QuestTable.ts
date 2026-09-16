@@ -1,12 +1,18 @@
 import { Container, Graphics, Sprite, Text, type Texture } from "pixi.js";
 import { getContentBounds } from "../render/avatarTexture";
 import type { Rect } from "../render/treehouseModel";
-import { drawCardFace, drawChoiceArt, drawClearing, drawScrub, drawStoneStack } from "./dioramaArt";
+import {
+  drawCardFace,
+  drawChoiceArt,
+  drawClearing,
+  drawNoticeMark,
+  drawScrub,
+  drawStoneStack,
+  drawTray,
+} from "./dioramaArt";
 import {
   EC1_CHOICES,
   EC1_PROMPT,
-  FRIEND_ANCHOR,
-  FRIEND_H,
   OLIVE_ANCHOR,
   OLIVE_H,
   applyChoice,
@@ -18,6 +24,7 @@ import {
   layoutChoiceCards,
   openingScene,
   promptBottom,
+  trayRect,
   type ChoiceId,
   type DioramaScene,
   type PlacedCard,
@@ -34,23 +41,24 @@ import {
  *
  *   The room is never dimmed, never scrimmed and never replaced. The Treehouse
  *   stays lit around the table the entire time. The diorama rises FROM the
- *   painted table, in the room's own perspective. Olive and the child's Friend
- *   stand on the room's floorboards, flanking the table. The choices lie on the
- *   rug in front of it.
+ *   painted table, in the room's own perspective. Olive stands on the room's
+ *   floorboards beside it. The choices sit on a wooden tray hanging off the
+ *   table's own near rim.
  *
  * If a future change adds a full-screen scrim behind this, or moves the
  * choices to a bottom sheet pinned to the viewport, the Quest Table has become
  * the generic overlay it was explicitly designed not to be. `questTable.test.ts`
- * asserts the no-scrim half of that so the regression is caught rather than
- * noticed six months later.
+ * asserts both halves of that — no scrim, and every card inside the tray — so
+ * the regression is caught rather than noticed six months later.
  *
  * Layer order, back → front:
- *   characters (Olive + Friend, room-anchored) → diorama on the table →
- *   choice cards on the rug → prompt + outcome text
+ *   Olive (room-anchored) → diorama + tray on the table → choice cards on the
+ *   tray → prompt + outcome text
  *
- * Olive and the Friend sit BEHIND the diorama deliberately: they are further
- * into the room than the table's front edge, and the table should overlap
- * their feet the way a real table would.
+ * Olive sits BEHIND the diorama deliberately: she is further into the room than
+ * the table's front edge, so the table overlaps her the way a real one would.
+ * The child's Friend appears ONLY in the miniature world — see OLIVE_ANCHOR in
+ * questTableModel for why the room-scale duplicate was removed.
  */
 
 const INK = 0x23201c;
@@ -60,6 +68,11 @@ const FONT = '"Trebuchet MS", "Segoe UI", system-ui, sans-serif';
 
 /** How long the miniature world takes to rise from the table (seconds). */
 const RISE_DUR = 0.55;
+/** Which of the three players looks up when the child waves — the one standing
+ *  nearest them. Deliberately not named: the group are temporary stand-ins
+ *  drawn from the island's existing cast and no supporting character has been
+ *  approved, so no copy in this beat names anyone. */
+const NOTICER = 2;
 
 export interface QuestTableTextures {
   /** The child's chosen Island Friend. */
@@ -74,6 +87,26 @@ export interface QuestTableTextures {
 
 /** What a tap inside the open table resolved to. */
 export type QuestTap = "choice" | "close" | "none";
+
+/**
+ * Where everything in the miniature world actually ended up on the last draw,
+ * in stage-local px.
+ *
+ * Recorded because the two outcomes are CLAIMS ABOUT A PICTURE — "the Friend
+ * stops short of the group", "the one nearest them visibly looks up" — and a
+ * test that only checks the scene's state fields would pass while the drawing
+ * overlapped, obscured the stone stack, or moved nobody. This is the drawn
+ * geometry, so those claims can be asserted rather than described.
+ */
+export interface DrawnWorld {
+  friend: { x: number; y: number; w: number };
+  group: { x: number; y: number; w: number }[];
+  stack: { x: number; w: number };
+  /** Index of the player who looks up, or -1 when nobody is. */
+  noticer: number;
+  /** Whether the "someone looked up" mark was drawn. */
+  noticeMark: boolean;
+}
 
 export class QuestTable {
   readonly container = new Container();
@@ -95,6 +128,8 @@ export class QuestTable {
   private closeRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** The choice the child has made, if any. Null = still choosing. */
   private chosen: ChoiceId | null = null;
+  /** Drawn geometry from the last frame — see DrawnWorld. */
+  private world: DrawnWorld = { friend: { x: 0, y: 0, w: 0 }, group: [], stack: { x: 0, w: 0 }, noticer: -1, noticeMark: false };
 
   constructor(private opts: { reducedMotion: boolean }) {
     this.container.addChild(this.charLayer, this.stageLayer, this.cardLayer, this.textLayer);
@@ -108,6 +143,11 @@ export class QuestTable {
   /** The choice made so far — surfaced for tests and diagnostics. */
   get choice(): ChoiceId | null {
     return this.chosen;
+  }
+
+  /** Where the miniature world was actually drawn — see DrawnWorld. */
+  get lastWorld(): DrawnWorld {
+    return this.world;
   }
 
   setTextures(tex: Partial<QuestTableTextures>): void {
@@ -225,25 +265,21 @@ export class QuestTable {
     return c;
   }
 
-  /** Olive and the Friend, standing on the room's floor either side of the table. */
+  /**
+   * Olive, standing on the room's floor beside the table.
+   *
+   * Only Olive. The child's Friend is in the miniature world and nowhere else —
+   * a second, room-scale copy of the same character made the small one (the one
+   * actually in the story) read as the lesser of the two.
+   */
   private drawCharacters(): void {
     const olivePx = OLIVE_H * this.img.h;
-    const friendPx = FRIEND_H * this.img.h;
-    const oliveAt = atImage(this.img, OLIVE_ANCHOR.ax, OLIVE_ANCHOR.ay);
-    const friendAt = atImage(this.img, FRIEND_ANCHOR.ax, FRIEND_ANCHOR.ay);
-
-    // Olive faces right, toward the table and the child's Friend.
-    const oliveNode = this.tex.olive
-      ? this.placeCharacter(this.tex.olive, olivePx, oliveAt.x, oliveAt.y, false)
+    const at = atImage(this.img, OLIVE_ANCHOR.ax, OLIVE_ANCHOR.ay);
+    const node = this.tex.olive
+      ? this.placeCharacter(this.tex.olive, olivePx, at.x, at.y, false)
       : this.placeholderCharacter(olivePx, 0x8a6a44);
-    oliveNode.position.set(oliveAt.x, oliveAt.y);
-    this.charLayer.addChild(oliveNode);
-
-    const friendNode = this.tex.friend
-      ? this.placeCharacter(this.tex.friend, friendPx, friendAt.x, friendAt.y, true)
-      : this.placeholderCharacter(friendPx, 0x6fae52);
-    friendNode.position.set(friendAt.x, friendAt.y);
-    this.charLayer.addChild(friendNode);
+    node.position.set(at.x, at.y);
+    this.charLayer.addChild(node);
   }
 
   /** The miniature world on the table top. */
@@ -274,12 +310,22 @@ export class QuestTable {
 
     // The group's game, back-left of the clearing.
     const stack = new Graphics();
-    stack.position.set(-st.rx * 0.14, -st.depth * 0.18);
+    const stackX = -st.rx * 0.14;
+    stack.position.set(stackX, -st.depth * 0.18);
     drawStoneStack(stack, this.scene.stones, unit);
     world.addChild(stack);
+    // Widest stone is ~0.92 * unit, plus the two spares out to ~1.85 * unit.
+    const drawn: DrawnWorld = {
+      friend: { x: 0, y: 0, w: 0 },
+      group: [],
+      stack: { x: stackX, w: unit * 1.84 },
+      noticer: -1,
+      noticeMark: false,
+    };
 
-    // The three island characters already playing. The one nearest the front
-    // is Pip — the one who looks up when the child waves.
+    // The three island characters already playing. Temporary stand-ins drawn
+    // from the island's existing cast; none of them is a named or approved
+    // character, and no copy in this beat names one.
     // `dy` is depth into the clearing (negative = further back), and scale
     // follows it, so the group reads as standing around a space rather than
     // side by side on a line.
@@ -290,18 +336,32 @@ export class QuestTable {
     ];
     groupSpots.forEach((spot, i) => {
       const tex = this.tex.group[i];
-      const px = st.height * 0.5 * spot.s;
-      const x = st.rx * spot.dx;
-      const y = st.depth * spot.dy;
-      const noticing = i === 2 && this.scene.group === "one-noticing";
+      // The one nearest the child's Friend is the one who looks up.
+      const noticing = i === NOTICER && this.scene.group === "one-noticing";
+      const px = st.height * 0.5 * spot.s * (noticing ? 1.12 : 1);
+      // Noticing is a MOVEMENT, not a mirror. These sprites are close to
+      // symmetric front-facing portraits, so flipping one is nearly invisible;
+      // stepping out of the circle toward the Friend, standing a little taller
+      // and carrying a notice mark is what actually reads at miniature size.
+      const x = st.rx * (spot.dx + (noticing ? 0.16 : 0));
+      const y = st.depth * (spot.dy + (noticing ? 0.22 : 0));
       const node = tex
-        ? this.placeCharacter(tex, px, x, y, !noticing)
+        ? this.placeCharacter(tex, px, x, y, false)
         : this.placeholderCharacter(px, 0x9d9384);
       if (!tex) node.position.set(x, y);
-      // Pip turns toward the child's Friend when they wave.
-      if (noticing) node.scale.x = Math.abs(node.scale.x);
       world.addChild(node);
+      // A character's drawn width is ~0.6 of its height in this art.
+      drawn.group.push({ x, y, w: px * 0.6 });
+      if (noticing) {
+        drawn.noticer = i;
+        drawn.noticeMark = true;
+        const mark = new Graphics();
+        drawNoticeMark(mark, px * 0.34);
+        mark.position.set(x + px * 0.3, y - px * 1.02);
+        world.addChild(mark);
+      }
     });
+    if (drawn.noticer < 0) drawn.noticer = NOTICER;
 
     // The child's Friend, in the miniature world. Where they stand IS the
     // outcome of the choice: at the edge, part-way across, or waving.
@@ -309,11 +369,16 @@ export class QuestTable {
     // miniature world at a glance.
     const friendPx = st.height * 0.62;
     const pose = this.scene.friend;
-    // "edge" is meant to read as APART from the group — the whole premise of
-    // the beat — so it sits well clear of them, and walking over closes that
-    // gap visibly.
-    const fx = st.rx * (pose === "approaching" ? 0.0 : 0.92);
-    const fy = st.depth * (pose === "approaching" ? -0.06 : 0.34);
+    // "edge" reads as APART from the group — the premise of the beat. Walking
+    // over closes most of that gap but STOPS SHORT of the circle: landing in
+    // among them would read as "I joined in", which is exactly what did not
+    // happen, and would cover both the nearest player and the stone stack.
+    // Walking over closes the gap and steps back INTO the clearing, but stops
+    // with a clear margin between the Friend and the nearest player — the exact
+    // margin questTable.test.ts asserts, because "stops short" is a claim about
+    // the picture, not about a state field.
+    const fx = st.rx * (pose === "approaching" ? 0.55 : 0.68);
+    const fy = st.depth * (pose === "approaching" ? 0.05 : 0.34);
     const mini = this.tex.friend
       ? this.placeCharacter(this.tex.friend, friendPx, fx, fy, true)
       : this.placeholderCharacter(friendPx, 0x6fae52);
@@ -337,9 +402,21 @@ export class QuestTable {
       world.addChild(arcs);
     }
     world.addChild(mini);
+    drawn.friend = { x: fx, y: fy, w: friendPx * 0.6 };
+    this.world = drawn;
 
     root.addChild(world);
     this.stageLayer.addChild(root);
+
+    // The tray hangs off the table's near rim, in the same layer as the table's
+    // own furniture, so the choices on it are part of the object.
+    if (!this.chosen) {
+      const tray = trayRect(this.img, this.w, this.h);
+      const g = new Graphics();
+      drawTray(g, tray.w, tray.h);
+      g.position.set(tray.x + tray.w / 2, tray.y + tray.h / 2);
+      this.stageLayer.addChild(g);
+    }
   }
 
   /** The illustrated choices, lying on the rug in front of the table. */
@@ -400,7 +477,9 @@ export class QuestTable {
     const line = chosen ? chosen.observed : EC1_PROMPT;
     const olive = chosen ? chosen.olive : null;
 
-    const maxW = Math.min(this.w - 40, this.img.w * 0.56);
+    const padX = 22;
+    const padY = 14;
+    const maxW = Math.min(this.w - 40 - padX * 2, this.img.w * 0.56);
     const size = Math.max(15, Math.min(21, this.img.h * 0.028));
 
     const body = new Text({
@@ -424,12 +503,15 @@ export class QuestTable {
       : null;
     oliveText?.anchor.set(0.5, 1);
 
-    const padX = 22;
-    const padY = 14;
     const gap = oliveText ? 8 : 0;
     const innerH = body.height + gap + (oliveText?.height ?? 0);
     const innerW = Math.max(body.width, oliveText?.width ?? 0);
-    const cx = st.cx;
+    // Centred on the table, but never off the screen. The open framing centres
+    // the required span rather than the table, so on a phone the table sits
+    // right of centre and a table-centred panel ran off the right edge with
+    // the prompt's last word cut in half.
+    const panelW = innerW + padX * 2;
+    const cx = Math.max(panelW / 2 + 12, Math.min(st.cx, this.w - panelW / 2 - 12));
     const panelH = innerH + padY * 2;
     const bottom = promptBottom(this.img, this.h, panelH, st.cy - st.height);
 

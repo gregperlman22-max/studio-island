@@ -189,7 +189,11 @@ export class ZoneView {
     if (!this.zone) return;
     this.palette = palette;
     this.cfg = cfg;
-    if (avatarTex) this.avatarTex = avatarTex;
+    // Unconditional, including undefined: `restyle` carries a selection change
+    // as well as a late-arriving texture, and ignoring an undefined texture
+    // left the PREVIOUS friend's art on screen after a switch to one whose art
+    // had not loaded — the child sees someone else as themselves.
+    this.avatarTex = avatarTex;
     const frac = this.env ? this.charX / this.env.worldWidth : 0.2;
     this.build(this.w, this.h);
     this.charX = this.targetX = frac * this.env.worldWidth;

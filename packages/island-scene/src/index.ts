@@ -10,22 +10,12 @@ export {
   type AvatarOption,
 } from "./render/avatarCatalog";
 export * from "./content/types";
-// ── Quest Table (S-89 EC-1) ──
-// The pure model only. QuestTable.ts is a renderer internal, reached through
-// the Treehouse interior, not constructed by a host.
-export {
-  EC1_CHOICES,
-  EC1_PROMPT,
-  applyChoice,
-  choiceById,
-  dioramaStage,
-  layoutChoiceCards,
-  openingScene,
-  questRoomFit,
-  type ChoiceId,
-  type DioramaScene,
-  type QuestChoice,
-} from "./quest/questTableModel";
+// NOTE: the Quest Table exports nothing publicly. Its beat data and layout
+// helpers are a TEMPORARY EC-1 proof, and publishing them would make a
+// throwaway shape part of a contract documented as breaking-until-1.0.0. The
+// review harness needs no help from the public API — the demo lives inside the
+// package and imports the geometry directly. `ScenePhase` / `onPhaseChange`
+// (exported via ./types) is the one addition a host genuinely needs.
 export { practiceCards, type PracticeCard } from "./content/practice";
 export {
   contentReport,

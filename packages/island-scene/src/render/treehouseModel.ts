@@ -148,9 +148,17 @@ export interface HotspotAnchor {
   ay: number;
 }
 
+/**
+ * S-89: `puzzle` MOVED, from (0.53, 0.80) to the framed LEAF PICTURE hanging on
+ * the trunk. Its old home was the rug under the round table — which is now the
+ * Quest Table's spot — and the pill covered the Quest Table's invitation marker
+ * completely. On a phone, where the pills stack, a child could not see the
+ * Quest Table at all. The hanging leaf picture is the room's other painted
+ * leaf, so the button still points at something that means "leaves".
+ */
 export const HOTSPOTS: readonly HotspotAnchor[] = [
   { id: "decorate", label: "Decorate", ax: 0.21, ay: 0.78 },
-  { id: "puzzle", label: "Leaf Puzzle", ax: 0.53, ay: 0.8 },
+  { id: "puzzle", label: "Leaf Puzzle", ax: 0.5, ay: 0.3 },
   { id: "story", label: "Story Nook", ax: 0.8, ay: 0.78 },
 ] as const;
 
@@ -193,6 +201,9 @@ export function layoutHotspots(
   img: Rect,
   screenW: number,
   screenH: number,
+  /** A screen rect the pills must not cover — the Quest Table's own tap target.
+   *  Optional: callers that only care about the three activities may omit it. */
+  avoid?: Rect,
 ): HotspotLayout {
   const minPillW = 124;
   const canRow = screenW >= minPillW * 3 + GAP * 2 + PAD * 2;
@@ -206,13 +217,17 @@ export function layoutHotspots(
     const top = screenH - BOTTOM_INSET - total;
     return {
       mode: "stack",
-      spots: HOTSPOTS.map((s, i) => ({
-        ...s,
-        x: PAD + w / 2,
-        y: top + h / 2 + i * (h + GAP),
-        w,
-        h,
-      })),
+      spots: clearOf(
+        HOTSPOTS.map((s, i) => ({
+          ...s,
+          x: PAD + w / 2,
+          y: top + h / 2 + i * (h + GAP),
+          w,
+          h,
+        })),
+        avoid,
+        screenH,
+      ),
     };
   }
 
@@ -241,15 +256,62 @@ export function layoutHotspots(
         Math.abs(a.y - b.y) < (a.h + b.h) / 2 + GAP,
     ),
   );
-  if (!overlapping && !drifted) return { mode: "anchored", spots: anchored };
+  if (!overlapping && !drifted) {
+    return { mode: "anchored", spots: clearOf(anchored, avoid, screenH) };
+  }
 
   const y = screenH - PAD - h / 2;
   const span = w * 3 + GAP * 2;
   const left = (screenW - span) / 2 + w / 2;
   return {
     mode: "row",
-    spots: HOTSPOTS.map((s, i) => ({ ...s, x: left + i * (w + GAP), y, w, h })),
+    spots: clearOf(
+      HOTSPOTS.map((s, i) => ({ ...s, x: left + i * (w + GAP), y, w, h })),
+      avoid,
+      screenH,
+    ),
   };
+}
+
+/**
+ * Slide the whole pill group clear of `avoid` if any of them covers it.
+ *
+ * The Quest Table's tap target is the painted table, which is large and sits
+ * mid-frame. Wherever the three activity pills end up — anchored to the art,
+ * in a bottom row, or stacked on a phone — none of them may sit on top of it,
+ * or the Quest Table's invitation is invisible and its tap target is shadowed.
+ *
+ * The group moves as one so the layout keeps its shape, and UP is preferred:
+ * the space below the table is where the Quest Table's own tray and "put it
+ * down" tab live once it is open.
+ */
+function clearOf(
+  spots: PlacedHotspot[],
+  avoid: Rect | undefined,
+  screenH: number,
+): PlacedHotspot[] {
+  if (!avoid || spots.length === 0) return spots;
+  // Test each pill INDIVIDUALLY. The group's bounding box is not a proxy for
+  // the group: with pills anchored to objects around the room it spans most of
+  // the screen and therefore always contains the table, which would shove a
+  // perfectly good layout for no reason.
+  const covers = (s: PlacedHotspot): boolean =>
+    s.x + s.w / 2 > avoid.x && s.x - s.w / 2 < avoid.x + avoid.w &&
+    s.y + s.h / 2 > avoid.y && s.y - s.h / 2 < avoid.y + avoid.h;
+  if (!spots.some(covers)) return spots;
+
+  // Something does overlap, so the whole group moves together — shifting one
+  // pill out of a layout the other two still follow would look like a mistake.
+  const top = Math.min(...spots.map((s) => s.y - s.h / 2));
+  const bottom = Math.max(...spots.map((s) => s.y + s.h / 2));
+
+  const up = bottom - (avoid.y - GAP);          // shift needed to clear above
+  const down = avoid.y + avoid.h + GAP - top;   // shift needed to clear below
+  let dy: number;
+  if (top - up >= PAD) dy = -up;                // room above — preferred
+  else if (bottom + down <= screenH - PAD) dy = down;
+  else return spots;                            // nowhere to go; leave as-is
+  return spots.map((s) => ({ ...s, y: s.y + dy }));
 }
 
 /** Back-to-Island pill, pinned top-left (the host's DOM exit sits top-right). */

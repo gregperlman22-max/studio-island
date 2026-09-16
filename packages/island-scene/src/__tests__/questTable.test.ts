@@ -67,7 +67,7 @@ vi.mock("pixi.js", () => {
 
 const {
   EC1_CHOICES,
-  FRIEND_ANCHOR,
+  EC1_PROMPT,
   MIN_CARD,
   OLIVE_ANCHOR,
   QUEST_SPAN_X,
@@ -78,7 +78,9 @@ const {
   layoutChoiceCards,
   openingScene,
   questRoomFit,
+  trayRect,
 } = await import("../quest/questTableModel");
+const { HOTSPOTS } = await import("../render/treehouseModel");
 const { TreehouseRoom } = await import("../render/TreehouseRoom");
 
 // The room and table keep private state; tests reach in deliberately.
@@ -197,15 +199,43 @@ describe("framing keeps Olive, the table and the Friend on screen", () => {
     expect(right).toBeLessThanOrEqual(size.w + 1);
   });
 
-  it.each(VIEWPORTS)("puts both characters inside the viewport at %s", (_label, size) => {
+  it.each(VIEWPORTS)("puts Olive inside the viewport, beside the table, at %s", (_label, size) => {
     const room = opened(size);
-    for (const a of [OLIVE_ANCHOR, FRIEND_ANCHOR]) {
-      const p = atImage(room.img, a.ax, a.ay);
-      expect(p.x).toBeGreaterThan(0);
-      expect(p.x).toBeLessThan(size.w);
-      expect(p.y).toBeGreaterThan(0);
-      expect(p.y).toBeLessThan(size.h);
-    }
+    const p = atImage(room.img, OLIVE_ANCHOR.ax, OLIVE_ANCHOR.ay);
+    expect(p.x).toBeGreaterThan(0);
+    expect(p.x).toBeLessThan(size.w);
+    expect(p.y).toBeGreaterThan(0);
+    expect(p.y).toBeLessThan(size.h);
+    // Beside the table, not on it.
+    expect(OLIVE_ANCHOR.ax).toBeLessThan(TABLE.cx - TABLE.halfW);
+  });
+
+  /**
+   * The phone composition is the one EC-1 was sent back over: a small framed
+   * room between large blurred bands, a ~200px table and a ~45px Friend. These
+   * numbers are the floor that failure established.
+   */
+  it.each(VIEWPORTS)("gives %s a substantial table and a readable Friend", (_label, size) => {
+    const room = opened(size);
+    const tableW = TABLE.halfW * 2 * room.img.w;
+    expect(tableW, "painted table width").toBeGreaterThan(240);
+    const st = dioramaStage(room.img);
+    // The miniature Friend is drawn at stage.height * 0.62 (QuestTable).
+    expect(st.height * 0.62, "miniature Friend height").toBeGreaterThan(60);
+    // The room has to be recognisable around it, not a letterbox sliver.
+    expect(room.img.h / size.h, "share of screen height the room uses").toBeGreaterThan(0.55);
+  });
+
+  /**
+   * The tablet regression: `roomFit` gives 768x1024 a strip using ~42% of the
+   * screen height, with the rest as blurred surround. That was fine for the
+   * closed room and much too small once the table is the subject.
+   */
+  it("uses the tablet's height instead of letterboxing the table", () => {
+    const closed = entered(TABLET);
+    const open = opened(TABLET);
+    expect(open.img.h).toBeGreaterThan(closed.img.h * 1.8);
+    expect(open.img.h).toBeGreaterThanOrEqual(TABLET.h - 1);
   });
 
   /**
@@ -278,6 +308,32 @@ describe("the diorama is staged on the painted table", () => {
 // ── Choices ─────────────────────────────────────────────────────────
 
 describe("the illustrated choices", () => {
+  it.each(VIEWPORTS)("sit on the table's tray at %s", (_label, size) => {
+    const room = opened(size);
+    const tray = trayRect(room.img, size.w, size.h);
+    const t = { cx: room.img.x + TABLE.cx * room.img.w, cy: room.img.y + TABLE.cy * room.img.h };
+    // The tray hangs off the table's near rim: centred on it, and starting
+    // below the table top rather than over it.
+    expect(tray.x + tray.w / 2).toBeCloseTo(t.cx, 4);
+    expect(tray.y).toBeGreaterThan(t.cy);
+    for (const c of room.quest.cards) {
+      expect(c.x, `${c.id} left of tray`).toBeGreaterThanOrEqual(tray.x - 0.5);
+      expect(c.x + c.w, `${c.id} right of tray`).toBeLessThanOrEqual(tray.x + tray.w + 0.5);
+      expect(c.y, `${c.id} above tray`).toBeGreaterThanOrEqual(tray.y - 0.5);
+      expect(c.y + c.h, `${c.id} below tray`).toBeLessThanOrEqual(tray.y + tray.h + 0.5);
+    }
+  });
+
+  it.each(VIEWPORTS)("never cover the table top or the miniature world at %s", (_label, size) => {
+    const room = opened(size);
+    const st = dioramaStage(room.img);
+    for (const c of room.quest.cards) {
+      // Everything on the table — the ground plate and the world standing on
+      // it — is above the tray line.
+      expect(c.y, `${c.id} covers the table top`).toBeGreaterThan(st.cy + st.ry * 0.9);
+    }
+  });
+
   it.each(VIEWPORTS)("are child-sized and fully on screen at %s", (_label, size) => {
     const room = opened(size);
     const cards = room.quest.cards;
@@ -304,14 +360,13 @@ describe("the illustrated choices", () => {
     }
   });
 
-  it("stays on screen even when the framing is extreme", () => {
-    // An ultrawide strip, where the painting runs well past both edges.
-    const img = { x: -900, y: -40, w: 3000, h: 1687 };
-    const cards = layoutChoiceCards(img, 900, 320, ["a", "b", "c"]);
+  it("keeps child-sized targets even when the framing is extreme", () => {
+    // A short ultrawide strip, where the tray has very little height to give.
+    const cards = layoutChoiceCards({ x: -900, y: -40, w: 3000, h: 1687 }, 900, 320, ["a", "b", "c"]);
+    expect(cards.length).toBe(3);
     for (const c of cards) {
-      expect(c.x).toBeGreaterThanOrEqual(0);
-      expect(c.x + c.w).toBeLessThanOrEqual(900);
-      expect(c.y + c.h).toBeLessThanOrEqual(320);
+      expect(c.w).toBeGreaterThanOrEqual(MIN_CARD);
+      expect(c.h).toBeGreaterThanOrEqual(MIN_CARD);
     }
   });
 
@@ -331,6 +386,56 @@ describe("a choice visibly changes the miniature world", () => {
     // The round carries on without them — the whole point of the beat.
     expect(after.stones).toBe(before.stones + 1);
     expect(after.group).toBe("playing");
+  });
+
+  /**
+   * "Walk over" must STOP SHORT. Landing among the group reads as "I joined
+   * in" — which is not what happened — and physically covers both the nearest
+   * player and the stone stack that shows the round carrying on.
+   */
+  it("stops the Friend short of the group, clear of them and of the stones", () => {
+    const room = opened(DESKTOP);
+    const card = room.quest.cards.find((c: { id: string }) => c.id === "walk-over");
+    room.handleTap(card.x + card.w / 2, card.y + card.h / 2);
+    const st = dioramaStage(room.img);
+    const world = room.quest.lastWorld;
+    expect(world.friend.x).toBeLessThan(st.rx * 0.92); // moved in from the edge
+    for (const g of world.group) {
+      const gap = Math.abs(world.friend.x - g.x);
+      const half = (world.friend.w + g.w) / 2;
+      expect(gap, `overlaps a group member at dx ${g.x.toFixed(0)}`).toBeGreaterThan(half);
+    }
+    const stackGap = Math.abs(world.friend.x - world.stack.x);
+    expect(stackGap, "obscures the stone stack").toBeGreaterThan(world.friend.w / 2 + world.stack.w / 2);
+  });
+
+  /**
+   * A near-symmetric front-facing sprite, mirrored, is not evidence of
+   * attention. The response has to be a movement plus a mark.
+   */
+  it("makes the responding animal visibly change when the child waves", () => {
+    const calm = opened(DESKTOP);
+    const calmWorld = calm.quest.lastWorld;
+    const room = opened(DESKTOP);
+    const card = room.quest.cards.find((c: { id: string }) => c.id === "wave");
+    room.handleTap(card.x + card.w / 2, card.y + card.h / 2);
+    const world = room.quest.lastWorld;
+    const before = calmWorld.group[calmWorld.noticer];
+    const after = world.group[world.noticer];
+    expect(world.noticer).toBeGreaterThanOrEqual(0);
+    // Steps out toward the Friend, and stands taller — both, not just a flip.
+    expect(after.x).toBeGreaterThan(before.x);
+    expect(after.w).toBeGreaterThan(before.w);
+    expect(world.noticeMark, "no notice mark drawn").toBe(true);
+    expect(calmWorld.noticeMark).toBe(false);
+  });
+
+  it("names nobody in the beat's copy", () => {
+    const words = [EC1_PROMPT, ...EC1_CHOICES.flatMap((c) => [c.label, c.observed, c.olive])]
+      .join(" ");
+    // No supporting character has been approved; temporary copy must not
+    // invent one.
+    expect(words).not.toMatch(/\bPip\b/);
   });
 
   it("turns one of the group toward the Friend when they wave", () => {
@@ -395,6 +500,150 @@ describe("a choice visibly changes the miniature world", () => {
     const r = room.tableRect;
     room.handleTap(r.x + r.w / 2, r.y + r.h / 2);
     expect(room.quest.choice).toBe(null);
+    expect(room.quest.cards.length).toBe(EC1_CHOICES.length);
+  });
+});
+
+// ── Discoverability + tap routing ───────────────────────────────────
+
+/**
+ * The EC-1 defect this suite exists to prevent recurring: the Quest Table's
+ * invitation marker sat at the painted table's centre, and the "Leaf Puzzle"
+ * pill was anchored to the same spot. On desktop the pill covered the marker;
+ * on a phone, where the pills stack, the marker was invisible.
+ *
+ * Two things had to be true and were not: the pills must not be laid on top of
+ * the table's tap target, AND a tap that lands on a visible pill must open that
+ * pill's activity even if the table's (larger, invisible) rect also contains it.
+ * These tests check the ACTUAL overlapping areas, not just target sizes.
+ */
+describe("the closed room's controls do not fight each other", () => {
+  const rects = (room: Room) => ({
+    table: room.tableRect,
+    pills: room.spots.map((s: { id: string; x: number; y: number; w: number; h: number }) => ({
+      id: s.id,
+      x: s.x - s.w / 2,
+      y: s.y - s.h / 2,
+      w: s.w,
+      h: s.h,
+    })),
+  });
+  const overlap = (a: { x: number; y: number; w: number; h: number }, b: typeof a) =>
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+  it.each(VIEWPORTS)("keeps all three pills clear of the table at %s", (_label, size) => {
+    const { table, pills } = rects(entered(size));
+    expect(pills.length).toBe(3);
+    for (const p of pills) {
+      expect(overlap(p, table), `${p.id} covers the Quest Table`).toBe(false);
+    }
+  });
+
+  it.each(VIEWPORTS)("opens each control's OWN activity at %s", (_label, size) => {
+    // Every visible pill, tapped at its centre, opens its own panel.
+    for (const id of ["decorate", "puzzle", "story"]) {
+      const room = entered(size);
+      const spot = room.spots.find((s: { id: string }) => s.id === id);
+      expect(spot, `${id} is placed at ${size.w}x${size.h}`).toBeTruthy();
+      expect(room.handleTap(spot.x, spot.y)).toBe("activity");
+      expect(room.open, `tapping ${id} opened the wrong thing`).toBe(id);
+      expect(room.questTableOpen, `tapping ${id} opened the Quest Table`).toBe(false);
+    }
+    // And the table still opens from its own marker.
+    const room = entered(size);
+    expect(room.handleTap(room.tableRect.x + room.tableRect.w / 2, room.tableRect.y + room.tableRect.h / 2))
+      .toBe("activity");
+    expect(room.questTableOpen).toBe(true);
+    expect(room.open).toBe(null);
+  });
+
+  it.each(VIEWPORTS)("gives a pill drawn over the table priority at %s", (_label, size) => {
+    // Belt-and-braces: even if a future layout change puts a pill back on the
+    // table, the VISIBLE control must still win the tap.
+    const room = entered(size);
+    const spot = room.spots[0];
+    room.tableRect = { x: 0, y: 0, w: size.w, h: size.h }; // table swallows the screen
+    expect(room.handleTap(spot.x, spot.y)).toBe("activity");
+    expect(room.open).toBe(spot.id);
+    expect(room.questTableOpen).toBe(false);
+  });
+
+  it("no longer anchors an activity to the painted table", () => {
+    const puzzle = HOTSPOTS.find((h: { id: string }) => h.id === "puzzle");
+    expect(puzzle).toBeTruthy();
+    if (!puzzle) return;
+    const onTable =
+      puzzle.ax > TABLE.cx - TABLE.halfW && puzzle.ax < TABLE.cx + TABLE.halfW &&
+      puzzle.ay > TABLE.cy - 0.09 && puzzle.ay < TABLE.cy + 0.09;
+    expect(onTable, "Leaf Puzzle is anchored on the Quest Table").toBe(false);
+  });
+});
+
+// ── Stale Friend art in the Treehouse ───────────────────────────────
+
+/**
+ * Same defect as ZoneView's, in the room that actually shows the Friend inside
+ * the story. `TreehouseRoom.enter` and `restyle` both used to guard on a truthy
+ * texture, so a child who switched friends mid-session could open the Quest
+ * Table and find the PREVIOUS friend standing in their miniature world.
+ *
+ * Every case here is on ONE instance, and includes leaving the room and coming
+ * back — a fresh page load with a different ?avatar= would pass regardless,
+ * because the bug needs a prior render to leave behind.
+ */
+describe("a change of Friend reaches the Quest Table", () => {
+  const TEX_A = { width: 480, height: 640, id: "A" };
+  const TEX_B = { width: 480, height: 640, id: "B" };
+
+  const withFriend = (tex?: unknown): Room => {
+    const room = new (TreehouseRoom as never as new (o: unknown) => unknown)({
+      reducedMotion: false,
+    }) as Room;
+    room.setBackground({ width: ART_W, height: ART_H });
+    room.enter("treehouse_hideaway", {} as never, null, DESKTOP.w, DESKTOP.h, tex);
+    return room;
+  };
+  const friendTex = (room: Room) => room.quest.tex.friend;
+
+  it("carries the chosen Friend in on entry", () => {
+    expect(friendTex(withFriend(TEX_A))).toBe(TEX_A);
+  });
+
+  it("swaps to a replacement whose art is cached", () => {
+    const room = withFriend(TEX_A);
+    room.restyle({} as never, null, TEX_B);
+    expect(friendTex(room)).toBe(TEX_B);
+  });
+
+  it("clears stale art when the replacement is unavailable", () => {
+    const room = withFriend(TEX_A);
+    room.restyle({} as never, null, undefined);
+    expect(friendTex(room), "previous friend survived the switch").toBeUndefined();
+  });
+
+  it("accepts the replacement's art when it loads late", () => {
+    const room = withFriend(TEX_A);
+    room.restyle({} as never, null, undefined);
+    room.restyle({} as never, null, TEX_B);
+    expect(friendTex(room)).toBe(TEX_B);
+  });
+
+  it("does not bring the previous Friend back on re-entry", () => {
+    const room = withFriend(TEX_A);
+    room.hide();
+    // Back to the island and in again, with the new friend's art still missing.
+    room.enter("treehouse_hideaway", {} as never, null, DESKTOP.w, DESKTOP.h, undefined);
+    expect(friendTex(room), "re-entry resurrected the previous friend").toBeUndefined();
+    const r = room.tableRect;
+    room.handleTap(r.x + r.w / 2, r.y + r.h / 2);
+    expect(room.questTableOpen).toBe(true);
+  });
+
+  it("still opens the table, with a fallback, when no art is available at all", () => {
+    const room = withFriend(undefined);
+    const r = room.tableRect;
+    expect(room.handleTap(r.x + r.w / 2, r.y + r.h / 2)).toBe("activity");
+    expect(room.questTableOpen).toBe(true);
     expect(room.quest.cards.length).toBe(EC1_CHOICES.length);
   });
 });

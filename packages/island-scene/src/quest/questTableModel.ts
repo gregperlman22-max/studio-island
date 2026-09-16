@@ -39,32 +39,37 @@ export const TABLE = {
 } as const;
 
 /**
- * Where the two characters stand, as image fractions of their FEET.
+ * Where Olive stands, as image fractions of her FEET.
  *
- * Olive to the left of the table on open floorboards, the child's Friend to
- * the right, both turned inward. Flanking the table (rather than standing
- * behind it) is what makes the table read as the thing being shared, and it
- * keeps both faces clear of the tree trunk behind.
+ * Just left of the painted table, on open floorboards, turned toward it —
+ * close enough that a phone framing can hold her and the table together.
+ *
+ * THE CHILD'S FRIEND IS NOT HERE. An earlier pass stood a room-scale Friend on
+ * the floor opposite Olive, which put the same character on screen twice and
+ * made the one that matters — the Friend IN the story, on the table — the
+ * smaller and less prominent of the two. The Friend now appears only in the
+ * miniature world. That is the character the child is playing.
  */
-export const OLIVE_ANCHOR = { ax: 0.318, ay: 0.845 } as const;
-export const FRIEND_ANCHOR = { ax: 0.742, ay: 0.862 } as const;
+export const OLIVE_ANCHOR = { ax: 0.34, ay: 0.87 } as const;
 
 /**
  * The band of the painting that MUST be on screen while the table is open:
- * Olive, the table and the Friend, plus a margin of room around them.
+ * Olive and the whole table, with a little room either side.
  *
- * This is the number that stops the composition from silently failing on a
- * phone. Plain cover-fit at 390x844 shows only the middle ~26% of the
- * painting's width — the table survives, and both characters are cropped
- * away. `questRoomFit` below uses this span to pull the framing back instead.
+ * This is the number that decides how big the table is on a phone, so it is
+ * kept as TIGHT as the composition allows. An earlier pass used 0.27-0.79 —
+ * wide enough to also hold a second, room-scale Friend on the right — and the
+ * cost was a small room floating between two large blurred bands, with a table
+ * only ~200px wide and a miniature Friend ~45px tall. Dropping the duplicate
+ * Friend let the span shrink to Olive-plus-table, which is what buys the table
+ * its size back.
  */
-export const QUEST_SPAN_X = { from: 0.27, to: 0.79 } as const;
+export const QUEST_SPAN_X = { from: 0.285, to: 0.7 } as const;
 
-/** Height of a character, as a fraction of the painting's height. Olive is
- *  deliberately a little shorter than the Friend: she is a guide standing in
- *  her own room, not a looming adult. */
-export const OLIVE_H = 0.28;
-export const FRIEND_H = 0.31;
+/** Olive's height, as a fraction of the painting's height. Deliberately modest:
+ *  she is a guide standing in her own room, not a looming adult, and the table
+ *  is the subject. */
+export const OLIVE_H = 0.3;
 
 // ── Room framing while the table is open ────────────────────────────
 
@@ -91,22 +96,34 @@ export function questRoomFit(
   screenH: number,
 ): RoomFit {
   const base = roomFit(texW, texH, screenW, screenH);
-  if (!(texW > 0) || !(texH > 0) || !(screenW > 0)) return base;
+  if (!(texW > 0) || !(texH > 0) || !(screenW > 0) || !(screenH > 0)) return base;
 
   const span = QUEST_SPAN_X.to - QUEST_SPAN_X.from;
-  // The span occupies `span * w` px. The widest the painting may be drawn and
-  // still fit all of it across the screen is therefore screenW / span.
-  const maxW = screenW / span;
-  if (base.w <= maxW) return base; // the span already fits — leave the room be.
-
-  const w = maxW;
+  // Two competing pulls, resolved in one line:
+  //
+  //   as BIG as the screen's height allows   -> screenH * (texW / texH)
+  //   never so big the span gets cropped     -> screenW / span
+  //
+  // The smaller wins. On a phone the span binds (the screen is far taller than
+  // the painting's aspect), so the room pulls back and leaves a surround band.
+  // On a tablet the HEIGHT binds — and this is the case an earlier pass got
+  // wrong by only ever capping: `roomFit` gave the tablet a letterboxed strip
+  // using ~42% of the screen, with a table barely 200px wide, while 58% of the
+  // screen sat as blurred surround. On desktop both are generous and this
+  // lands on the room's own cover fit, unchanged.
+  const w = Math.min(screenW / span, screenH * (texW / texH));
   const h = (texH / texW) * w;
   // Centre the REQUIRED SPAN, not the painting. The span sits left of the
-  // painting's centre, so centring the painting would push the Friend back off
-  // the right edge — the exact crop this function exists to prevent.
+  // painting's centre, so centring the painting would push the table's far
+  // edge off to the right — the exact crop this function exists to prevent.
   const spanCentre = (QUEST_SPAN_X.from + QUEST_SPAN_X.to) / 2;
-  const x = screenW / 2 - spanCentre * w;
-  return { x, y: (screenH - h) / 2, w, h, mode: "portrait" };
+  return {
+    x: screenW / 2 - spanCentre * w,
+    y: (screenH - h) / 2,
+    w,
+    h,
+    mode: h >= screenH - 0.5 ? "cover" : "portrait",
+  };
 }
 
 /** Resolve an image-fraction anchor to a screen point. */
@@ -115,6 +132,18 @@ export function atImage(img: Rect, ax: number, ay: number): { x: number; y: numb
 }
 
 // ── The diorama stage ───────────────────────────────────────────────
+
+/** The painted table's top surface on screen, in px. The Quest Table's own
+ *  furniture (the diorama, the tray) is measured from this, so everything
+ *  stays in proportion to the table at every framing. */
+export function tableTop(img: Rect): { cx: number; cy: number; halfW: number; ry: number } {
+  return {
+    cx: img.x + TABLE.cx * img.w,
+    cy: img.y + TABLE.cy * img.h,
+    halfW: TABLE.halfW * img.w,
+    ry: Math.max(6, TABLE.topRy * img.h * 0.9),
+  };
+}
 
 /** The miniature world's footprint on the table top, in screen px. */
 export interface DioramaStage {
@@ -143,16 +172,9 @@ export interface DioramaStage {
  * at every framing — the same rule the room's decorations already follow.
  */
 export function dioramaStage(img: Rect): DioramaStage {
-  const rx = TABLE.halfW * img.w * 0.86;
-  const ry = Math.max(6, TABLE.topRy * img.h * 0.9);
-  return {
-    cx: img.x + TABLE.cx * img.w,
-    cy: img.y + TABLE.cy * img.h,
-    rx,
-    ry,
-    depth: ry * 2.6,
-    height: rx * 0.95,
-  };
+  const t = tableTop(img);
+  const rx = t.halfW * 0.86;
+  return { cx: t.cx, cy: t.cy, rx, ry: t.ry, depth: t.ry * 2.6, height: rx * 0.95 };
 }
 
 // ── Choice cards ────────────────────────────────────────────────────
@@ -164,49 +186,65 @@ export interface PlacedCard extends Rect {
 /** Smallest comfortable child tap target — matches treehouseModel.MIN_TAP. */
 export const MIN_CARD = 56;
 
-/** Height of the "put it down" tab, and the margins around the bottom stack. */
+/** Height of the "put it down" tab, and the margin around the screen edge. */
 export const TAB_H = 56;
 const EDGE = 14;
-const STACK_GAP = 12;
 
 /**
- * Where the choices and the close tab go, given how the room is framed.
+ * The wooden tray that hangs off the table's near rim and holds the choices.
  *
- * Two cases, and the difference matters more than it sounds:
+ * The choices used to be laid on the rug in front of the table (desktop) or in
+ * the blurred surround band below the framed room (phone / tablet). Neither
+ * read as part of the table: the rug version covered the table's front edge and
+ * the characters' feet, and the surround version read as a bottom sheet that
+ * happened to be under a window.
  *
- * "surround" — the framed room does not fill the viewport (phone portrait, and
- *   tablet), so there is a band of the blurred room-coloured surround beneath
- *   it. The cards go THERE. That band was dead space, and putting the cards in
- *   it means they cover none of the miniature world. On a phone the alternative
- *   is not "slightly overlapping" — it is the cards burying the diorama almost
- *   completely, including the child's own Friend, which defeats the point of
- *   the screen.
- *
- * "inset" — the room fills the viewport (desktop), so there is no band and the
- *   cards lie on the rug in the room's own perspective, clear of the table's
- *   front edge.
+ * A tray fixes both by being a piece of the furniture. It is measured from the
+ * TABLE — not the viewport — so it scales with it, it hangs from the near rim
+ * so it never covers the table top or the miniature world, and it is drawn in
+ * the same layer as the diorama so it moves with the object rather than with
+ * the screen.
  */
-export type CardPlacement = "surround" | "inset";
-
-/** Vertical space a card row of height `ch` needs, with its tab below it. */
-function stackHeight(ch: number): number {
-  return ch + STACK_GAP + TAB_H + EDGE;
+export interface Tray extends Rect {
+  /** Inner area the cards actually sit in. */
+  pad: number;
 }
 
+/** Tray width as a multiple of the painted table's width. A little wider than
+ *  the table, so two illustrated cards fit without shrinking to thumbnails. */
+const TRAY_SPAN = 1.35;
+
+export function trayRect(img: Rect, screenW: number, screenH: number): Tray {
+  const t = tableTop(img);
+  const pad = Math.max(8, t.halfW * 0.06);
+  // The tray stays CENTRED ON THE TABLE — that is what makes it read as part
+  // of the furniture rather than a bar near it — so its width is capped by
+  // whichever side has less room. The open framing centres the required span,
+  // not the table, so on a phone the table sits right of screen centre and an
+  // uncapped tray would run off the right edge.
+  const room = Math.min(t.cx - EDGE, screenW - EDGE - t.cx) * 2;
+  const w = Math.min(t.halfW * 2 * TRAY_SPAN, screenW - EDGE * 2, Math.max(MIN_CARD * 2, room));
+  // Hang it off the near rim: just below the table top's front edge.
+  const y = t.cy + t.ry * 1.1;
+  // Cards are sized from the tray, then the tray is closed around them — but
+  // never so tall that it runs into the "put it down" tab at the screen foot.
+  const maxH = Math.max(MIN_CARD + pad * 2, screenH - TAB_H - EDGE * 2 - y);
+  const inner = w - pad * 2;
+  const cw = (inner - CARD_GAP) / 2;
+  const h = Math.min(Math.max(MIN_CARD + pad * 2, cw * 0.72 + pad * 2), maxH);
+  return { x: t.cx - w / 2, y, w, h, pad };
+}
+
+const CARD_GAP = 10;
+
 /**
- * Lay the illustrated choices out in front of the table, on the rug — nearer
- * the camera than the characters, so they overlap the cast's feet the way
- * objects in a foreground would.
+ * Lay the illustrated choices out ON the tray.
  *
- * They are allowed to overhang the table's own width: a card narrow enough to
- * fit the table top is too small to be illustrated, and an illustration is
- * what carries meaning for a five-year-old with the sound off.
- *
- * Two hard constraints, in this order: the row and the tab below it must BOTH
- * fit on screen with their margins, and no card may drop below MIN_CARD. The
- * row sits at the rug line when there is room for it, and rides up off that
- * line when there isn't — on a short viewport the clamp is what runs, which is
- * why the rug line is a preference here and not the anchor.
+ * Every card is inside the tray's inner area, so a child sees two objects
+ * sitting on a piece of the table rather than two buttons near it. Cards never
+ * drop below MIN_CARD; if the tray cannot hold `n` of them at that size the row
+ * is still returned at MIN_CARD and the tray simply overflows, because a tap
+ * target that is too small is a worse failure than a tray that looks tight.
  */
 export function layoutChoiceCards(
   img: Rect,
@@ -216,40 +254,38 @@ export function layoutChoiceCards(
 ): PlacedCard[] {
   const n = ids.length;
   if (n === 0) return [];
-  const gap = Math.max(10, img.w * 0.012);
-  // A band a little wider than the table, centred on it, but never so wide it
-  // reaches the characters standing either side.
-  const bandW = Math.min(img.w * 0.44, screenW - EDGE * 2);
-  const cw = Math.max(MIN_CARD, (bandW - gap * (n - 1)) / n);
-  const ch = Math.max(MIN_CARD, Math.min(cw * 0.72, screenH * 0.145));
-  const total = cw * n + gap * (n - 1);
-
-  let left = img.x + TABLE.cx * img.w - total / 2;
-  // Keep the whole row on screen even when the framing puts the table near an
-  // edge (ultrawide, or a very short landscape phone).
-  left = Math.max(EDGE, Math.min(left, screenW - total - EDGE));
-
-  // The foot of the viewport, with the tab's band reserved below the row.
-  const floor = screenH - EDGE - TAB_H - STACK_GAP - ch;
-  const belowRoom = img.y + img.h + STACK_GAP;
-  // Prefer the surround band under the framed room; fall back to the rug.
-  const top = cardPlacement(img, screenH, ch) === "surround" ? belowRoom : floor;
-
-  return ids.map((id, i) => ({ id, x: left + i * (cw + gap), y: top, w: cw, h: ch }));
+  const tray = trayRect(img, screenW, screenH);
+  const inner = tray.w - tray.pad * 2;
+  const cw = Math.max(MIN_CARD, (inner - CARD_GAP * (n - 1)) / n);
+  const ch = Math.max(MIN_CARD, tray.h - tray.pad * 2);
+  const total = cw * n + CARD_GAP * (n - 1);
+  const left = tray.x + (tray.w - total) / 2;
+  return ids.map((id, i) => ({
+    id,
+    x: left + i * (cw + CARD_GAP),
+    y: tray.y + (tray.h - ch) / 2,
+    w: cw,
+    h: ch,
+  }));
 }
 
-/** Whether the choices fit in the surround band beneath the framed room. */
-export function cardPlacement(img: Rect, screenH: number, ch: number): CardPlacement {
-  const below = screenH - (img.y + img.h);
-  return below >= stackHeight(ch) ? "surround" : "inset";
+/** The "put it down" tab, at the foot of the screen, clear of the tray. */
+export function closeTabRect(screenW: number, screenH: number, img: Rect): Rect {
+  const t = tableTop(img);
+  const w = Math.max(132, Math.min(200, t.halfW * 0.9));
+  return {
+    x: Math.max(EDGE, Math.min(t.cx - w / 2, screenW - w - EDGE)),
+    y: screenH - EDGE - TAB_H,
+    w,
+    h: TAB_H,
+  };
 }
 
 /**
  * Where the prompt / outcome panel's BOTTOM edge goes, for a panel `panelH`
- * tall. Same reasoning as the cards: use the surround band above the framed
- * room when there is one, so the words sit clear of the room instead of over
- * the tree trunk; otherwise float just above the miniature world, close enough
- * that they read as belonging to the table rather than to the screen.
+ * tall: in the surround band above the framed room when there is one, so the
+ * words sit clear of the room instead of over the tree trunk; otherwise just
+ * above the miniature world, close enough to read as belonging to the table.
  */
 export function promptBottom(
   img: Rect,
@@ -257,22 +293,17 @@ export function promptBottom(
   panelH: number,
   worldTopY: number,
 ): number {
-  const above = img.y;
-  if (above >= panelH + EDGE * 2) return img.y - EDGE;
   void screenH;
-  return Math.max(panelH + EDGE, worldTopY - img.h * 0.02);
+  // The surround band above the room is only usable if the panel ALSO clears
+  // the room's own chrome — "Back to Island" top-left and the host's Exit
+  // top-right both live up there, and on a phone the band is just deep enough
+  // to tempt the panel into them.
+  if (img.y >= panelH + EDGE + TOP_CHROME) return img.y - EDGE;
+  return Math.max(panelH + EDGE + TOP_CHROME, worldTopY - img.h * 0.02);
 }
 
-/** The "put it down" tab, in the band reserved below the choice row. */
-export function closeTabRect(screenW: number, screenH: number, img: Rect): Rect {
-  const w = Math.max(132, Math.min(200, img.w * 0.13));
-  return {
-    x: Math.max(EDGE, Math.min(img.x + TABLE.cx * img.w - w / 2, screenW - w - EDGE)),
-    y: screenH - EDGE - TAB_H,
-    w,
-    h: TAB_H,
-  };
-}
+/** Vertical strip at the top of the screen owned by the room's own controls. */
+const TOP_CHROME = 88;
 
 // ── The EC-1 beat ───────────────────────────────────────────────────
 
@@ -313,7 +344,7 @@ export const EC1_CHOICES: readonly QuestChoice[] = [
   {
     id: "wave",
     label: "Wave hello",
-    observed: "Pip looked up. Pip knows you're there now.",
+    observed: "One of them looks up. Now someone knows you're there.",
     olive: "They didn't say no. They didn't say yes either.",
   },
 ] as const;

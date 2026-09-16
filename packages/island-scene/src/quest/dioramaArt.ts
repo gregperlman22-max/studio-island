@@ -153,6 +153,62 @@ export function drawChoiceArt(g: Graphics, id: ChoiceId, size: number): void {
   g.circle(34 * u, -6 * u, 2.1 * u).fill(INK);
 }
 
+/**
+ * The wooden tray that hangs off the table's near rim and carries the choices.
+ *
+ * Drawn as a shallow open box seen from slightly above — a lip at the front, a
+ * darker well behind it — so the cards visibly sit IN something attached to the
+ * table rather than floating in front of it.
+ *
+ * PRODUCTION: part of the painted Quest Table dressing.
+ */
+export function drawTray(g: Graphics, w: number, h: number): void {
+  const r = Math.min(16, h * 0.16);
+  // Shadow under the rim, so the tray reads as hanging off the table.
+  g.roundRect(-w / 2 + 6, -h / 2 + 8, w - 12, h, r).fill({ color: 0x2a1a0c, alpha: 0.28 });
+  // The tray body.
+  g.roundRect(-w / 2, -h / 2, w, h, r)
+    .fill(0x8a5a2e)
+    .stroke({ width: Math.max(3, h * 0.035), color: INK });
+  // Recessed well.
+  g.roundRect(-w / 2 + h * 0.07, -h / 2 + h * 0.07, w - h * 0.14, h - h * 0.14, r * 0.8)
+    .fill(0x6e4a2a);
+  // Lit top edge, matching the room's own light.
+  g.roundRect(-w / 2 + h * 0.07, -h / 2 + h * 0.06, w - h * 0.14, h * 0.1, r * 0.4)
+    .fill({ color: 0xc08c52, alpha: 0.55 });
+  // Two small feet where it meets the table's rim.
+  for (const sx of [-0.3, 0.3]) {
+    g.roundRect(sx * w - h * 0.06, -h / 2 - h * 0.1, h * 0.12, h * 0.12, h * 0.04)
+      .fill(0x6e4a2a)
+      .stroke({ width: Math.max(2, h * 0.025), color: INK });
+  }
+}
+
+/**
+ * The "someone looked up" mark: three short rays above a character's head.
+ *
+ * Needed because the group are front-facing portraits with no turn pose, so
+ * mirroring one is nearly invisible — a near-symmetric sprite flipped is not
+ * evidence of attention. The mark, plus the step forward and the size bump
+ * QuestTable applies, is what actually reads at miniature size.
+ *
+ * PRODUCTION: a painted turn/look-up pose for the responding character makes
+ * this redundant.
+ */
+export function drawNoticeMark(g: Graphics, size: number): void {
+  const w = Math.max(1.6, size * 0.13);
+  for (const a of [-1.15, -0.62, -0.09]) {
+    const x0 = Math.cos(a) * size * 0.42;
+    const y0 = Math.sin(a) * size * 0.42;
+    g.moveTo(x0, y0)
+      .lineTo(Math.cos(a) * size, Math.sin(a) * size)
+      .stroke({ width: w, color: 0xe8a33d });
+    g.moveTo(x0, y0)
+      .lineTo(Math.cos(a) * size, Math.sin(a) * size)
+      .stroke({ width: w * 0.42, color: 0xfff1c4 });
+  }
+}
+
 /** A small painted-looking card back, used behind every choice illustration. */
 export function drawCardFace(g: Graphics, w: number, h: number, lifted: boolean): void {
   const r = Math.min(18, h * 0.18);

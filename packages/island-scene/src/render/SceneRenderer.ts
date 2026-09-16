@@ -841,7 +841,12 @@ export class SceneRenderer {
     this.avatars = avatars;
     this.reconcileAvatars();
     if (this.currentZone && this.interior.active) {
-      this.interior.restyle(this.theme.palette, this.localCfg());
+      // Pass the CURRENT texture, which may be undefined when the host has
+      // just switched to a friend whose art hasn't loaded. Interiors treat an
+      // undefined texture as "clear what you have and fall back", so a switch
+      // can never leave the previous friend on screen; `ensureAvatarTexture`
+      // (via reconcileAvatars, above) pushes the real art in when it lands.
+      this.interior.restyle(this.theme.palette, this.localCfg(), this.localAvatarTexture());
     }
   }
 

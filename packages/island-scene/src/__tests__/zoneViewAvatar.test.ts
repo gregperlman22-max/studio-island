@@ -129,3 +129,65 @@ describe("the chosen Island Friend appears in every zone interior (issue #6)", (
     expect(built).toEqual([]);
   });
 });
+
+// ── Stale art after a selection change ──────────────────────────────
+
+/**
+ * The defect these cover: `restyle` used to assign the texture only when it was
+ * truthy —
+ *
+ *     if (avatarTex) this.avatarTex = avatarTex;
+ *
+ * — which is fine for a late-arriving texture and wrong for a SELECTION CHANGE.
+ * Once friend A's art had rendered, switching to friend B whose art had not
+ * loaded left A on screen: the child sees someone else's character as
+ * themselves, which is the same trust bug issue #6 described, just arrived at
+ * from the other direction.
+ *
+ * Three transitions matter, and all three are on ONE instance — a fresh
+ * URL-seeded page load proves nothing here, because the bug needs a prior
+ * render to leave behind.
+ */
+describe("a change of Friend never leaves the previous one on screen", () => {
+  const TEX_A = { width: 480, height: 640, id: "A" };
+  const TEX_B = { width: 480, height: 640, id: "B" };
+
+  const fresh = () => {
+    built.length = 0;
+    currentZone = "campfire_circle";
+    const view = mk();
+    view.enter("campfire_circle", sproutPack.palette, { ...CFG }, 1440, 900, TEX_A);
+    expect(built.at(-1)?.kind).toBe("image");
+    return view;
+  };
+
+  it("swaps straight to a replacement whose art is already cached", () => {
+    const view = fresh();
+    view.restyle(sproutPack.palette, { ...CFG }, TEX_B);
+    expect(built.at(-1)?.kind).toBe("image");
+    expect(view.avatarTex).toBe(TEX_B);
+  });
+
+  it("falls back rather than keeping A when B's art is unavailable", () => {
+    const view = fresh();
+    view.restyle(sproutPack.palette, { ...CFG }, undefined);
+    expect(view.avatarTex, "stale texture survived the switch").toBeUndefined();
+    expect(built.at(-1)?.kind, "kept the previous friend's art").toBe("programmatic");
+  });
+
+  it("accepts B's art when it finally loads", () => {
+    const view = fresh();
+    view.restyle(sproutPack.palette, { ...CFG }, undefined);
+    expect(built.at(-1)?.kind).toBe("programmatic");
+    view.restyle(sproutPack.palette, { ...CFG }, TEX_B);   // late arrival
+    expect(built.at(-1)?.kind).toBe("image");
+    expect(view.avatarTex).toBe(TEX_B);
+  });
+
+  it("does not resurrect A on a later resize", () => {
+    const view = fresh();
+    view.restyle(sproutPack.palette, { ...CFG }, undefined);
+    view.resize(390, 844);
+    expect(built.at(-1)?.kind).toBe("programmatic");
+  });
+});

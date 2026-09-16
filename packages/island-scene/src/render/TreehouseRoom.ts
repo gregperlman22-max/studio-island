@@ -157,7 +157,11 @@ export class TreehouseRoom implements ZoneInterior {
     h: number,
     avatarTex?: Texture,
   ): void {
-    if (avatarTex) this.quest.setTextures({ friend: avatarTex });
+    // Assigned UNCONDITIONALLY, including undefined. Guarding this on a truthy
+    // texture meant a child who switched from a friend whose art had loaded to
+    // one whose art had not kept seeing the FIRST friend — the room would
+    // happily show someone else's character as theirs.
+    this.quest.setTextures({ friend: avatarTex });
     this.closeQuest();
     this.decor = loadDecor();
     this.puzzle = newPuzzle(Date.now() & 0xffff);
@@ -187,11 +191,15 @@ export class TreehouseRoom implements ZoneInterior {
     this.build(w, h);
   }
 
-  /** Theme changes don't reskin a painted room. A late-arriving avatar texture
-   *  DOES matter — it is how the chosen Friend reaches the Quest Table when
-   *  the art finished loading after the child walked in. */
+  /** Theme changes don't reskin a painted room. The avatar texture DOES matter:
+   *  this is how a late-arriving texture reaches the Quest Table, and how a
+   *  CHANGE of friend clears the previous one. */
   restyle(_palette: ThemePalette, _cfg: AvatarConfig | null, avatarTex?: Texture): void {
-    if (avatarTex) this.quest.setTextures({ friend: avatarTex });
+    // Unconditional, for the same reason as `enter`: this is the call that
+    // carries a SELECTION CHANGE as well as a late-arriving texture, so an
+    // undefined texture has to be able to clear stale art rather than be
+    // ignored.
+    this.quest.setTextures({ friend: avatarTex });
   }
 
   /** Olive's art, and the three island characters standing in as the group in
@@ -244,14 +252,20 @@ export class TreehouseRoom implements ZoneInterior {
 
     if (hitRect(this.backRect, sx, sy)) return "exit";
 
-    if (hitRect(this.tableRect, sx, sy)) {
-      this.openQuest();
-      return "activity";
-    }
-
+    // VISIBLE CONTROLS FIRST. The Quest Table's target is the whole painted
+    // table — large, and with no border of its own — so testing it before the
+    // three activity pills let it shadow anything drawn over it. A child who
+    // taps a pill must get that pill's activity, whatever is underneath.
+    // `clearOf` keeps them from overlapping in the first place; this ordering
+    // is the belt to that braces, and the two are tested together.
     const spot = this.spots.find((s) => hitPill(s, sx, sy));
     if (spot) {
       this.openPanel(spot.id);
+      return "activity";
+    }
+
+    if (hitRect(this.tableRect, sx, sy)) {
+      this.openQuest();
       return "activity";
     }
     return "move";
@@ -311,7 +325,9 @@ export class TreehouseRoom implements ZoneInterior {
     // The three activity pills step aside while the table is in use: they are
     // the room's OTHER things to do, and leaving them up would turn a shared
     // object into a screen with a toolbar.
-    const layout = layoutHotspots(this.img, w, h);
+    // The pills are laid out AROUND the Quest Table's tap target, so none of
+    // them can end up sitting on it (see clearOf in treehouseModel).
+    const layout = layoutHotspots(this.img, w, h, this.questOpen ? undefined : this.tableRect);
     this.spots = this.questOpen ? [] : layout.spots;
     this.drawHotspots();
     if (this.questOpen) this.quest.relayout(this.img, w, h);
