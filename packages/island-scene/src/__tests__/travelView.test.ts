@@ -33,8 +33,9 @@ vi.mock("pixi.js", () => {
     style: Record<string, unknown> = {}; text = "";
     constructor(arg?: unknown) {
       if (arg && typeof arg === "object" && "text" in (arg as object)) {
-        const a = arg as { text?: unknown };
+        const a = arg as { text?: unknown; style?: Record<string, unknown> };
         this.text = String(a.text ?? "");
+        if (a.style) this.style = a.style;
       }
     }
     addChild(...cs: Node[]) {
@@ -173,6 +174,47 @@ describe("the journey's own screens", () => {
     for (let i = 0; i < 10 && v.phase === "travel"; i++) v.handleTap(...centreOf(v, "keep-going"));
     expect(v.phase).toBe("arrival");
     expect(v.discoveryFound).toBe(false);
+  });
+
+  it("pins the destination on the snapshot, and only while it is in frame", () => {
+    const tex = { width: 560, height: 347 };
+    const open = (mark: { x: number; y: number }) => {
+      const v = mounted(false, 390, 844);
+      v.setMapSnapshot({ texture: tex, destination: mark });
+      start(v);
+      v.handleTap(...centreOf(v, "map-open"));
+      return v.overlay.children.length;
+    };
+    // A mark at the middle of the snapshot is always inside the panel; one far
+    // outside it has been cropped away and must NOT be drawn at the panel edge,
+    // where it would point at the wrong piece of ground.
+    expect(open({ x: 0.5, y: 0.5 })).toBe(open({ x: 8, y: 8 }) + 1);
+  });
+
+  it("does not claim a route across the island", () => {
+    const v = mounted(false, 390, 844);
+    v.setMapSnapshot({ texture: { width: 560, height: 347 }, destination: { x: 0.3, y: 0.3 } });
+    start(v);
+    v.handleTap(...centreOf(v, "map-open"));
+    // The start end of the progress track names the island the child left, not
+    // a landmark the journey never visits.
+    const labels = v.overlay.children.map((c: { text?: string }) => c.text ?? "");
+    expect(labels).toContain("Island");
+    expect(labels).toContain("Treehouse");
+    expect(labels.some((t: string) => t.includes("Welcome Dock"))).toBe(false);
+  });
+
+  it("writes the map's own labels in light ink, on the dark scrim", () => {
+    const v = mounted(false, 390, 844);
+    v.setMapSnapshot({ texture: { width: 560, height: 347 }, destination: { x: 0.5, y: 0.5 } });
+    start(v);
+    v.handleTap(...centreOf(v, "map-open"));
+    const CARD = 0xfdf3e0;
+    for (const want of ["You're on your way", "Island", "Treehouse"]) {
+      const t = v.overlay.children.find((c: { text?: string }) => c.text === want);
+      expect(t, `no "${want}" on the journey map`).toBeTruthy();
+      expect(t.style.fill, `"${want}" is dark ink on the dark scrim`).toBe(CARD);
+    }
   });
 
   it("reports the substituted travel pose rather than hiding it", () => {

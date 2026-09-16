@@ -30,10 +30,12 @@ import {
   hitRect,
   mapButtonRects,
   mapPanelRect,
+  markPoint,
   newJourney,
   openMap,
   progressMarkerX,
   progressTrackRect,
+  snapshotRect,
   stepToNextWaypoint,
   type JourneyState,
   type Rect,
@@ -61,6 +63,20 @@ const INK = 0x23201c;
 const CARD = 0xfdf3e0;
 const HONEY = 0xe8a33d;
 const FONT = '"Trebuchet MS", "Segoe UI", system-ui, sans-serif';
+
+/**
+ * The world-map snapshot the journey map shows, plus where the destination
+ * actually sits inside it.
+ *
+ * The mark is normalised (0..1) against the snapshot image rather than given in
+ * screen pixels, so it survives the cover-crop the panel applies and stays on
+ * the landmark at every viewport.
+ */
+export interface MapSnapshot {
+  texture: Texture;
+  /** Normalised position of the destination landmark inside the snapshot. */
+  destination: { x: number; y: number };
+}
 
 /** What a tap resolved to, for SceneRenderer. */
 export type TravelTap = "none" | "dismiss" | "enter-room" | "back-to-island";
@@ -94,6 +110,8 @@ export class TravelView {
   private oliveTex?: Texture;
   /** Snapshot of the real world map, taken when the journey began. */
   private mapTex?: Texture;
+  /** Where the destination sits inside that snapshot, normalised. */
+  private mapMark?: { x: number; y: number };
   private friendKey = "";
   private poseSubstituted = true;
 
@@ -148,8 +166,9 @@ export class TravelView {
     this.oliveTex = tex;
   }
   /** The world-map snapshot the journey map shows. */
-  setMapSnapshot(tex: Texture | undefined): void {
-    this.mapTex = tex;
+  setMapSnapshot(snap: MapSnapshot | undefined): void {
+    this.mapTex = snap?.texture;
+    this.mapMark = snap?.destination;
   }
 
   /** Open the destination card. The journey has not started yet. */
@@ -513,11 +532,13 @@ export class TravelView {
     this.hits.push({ id, rect: r });
   }
 
-  private body(text: string, cx: number, top: number, wrap: number, size: number, bold = false): Text {
+  private body(
+    text: string, cx: number, top: number, wrap: number, size: number, bold = false, fill = INK,
+  ): Text {
     const t = new Text({
       text,
       style: {
-        fontFamily: FONT, fontSize: size, fontWeight: bold ? "900" : "700", fill: INK,
+        fontFamily: FONT, fontSize: size, fontWeight: bold ? "900" : "700", fill,
         align: "center", wordWrap: true, wordWrapWidth: wrap, lineHeight: size * 1.35,
       },
     });
@@ -606,7 +627,9 @@ export class TravelView {
 
     // The log's own prompt, only while it is reachable and unfound.
     if (discoveryReachable(this.state, this.route)) {
-      this.hud.addChild(this.body("Something hollow in that log\u2026", this.w / 2, 58, this.w - 60, 17, true));
+      // Below the Map pill (y 14..62), not beside it — on a phone the pill and a
+      // centred line of text are the same band of screen.
+      this.hud.addChild(this.body("Something hollow in that log\u2026", this.w / 2, 72, this.w - 60, 17, true));
     }
   }
 
@@ -631,24 +654,39 @@ export class TravelView {
     this.overlay.addChild(frame);
 
     if (this.mapTex) {
+      const fit = snapshotRect(panel, this.mapTex.width || 1, this.mapTex.height || 1);
       const s = new Sprite(this.mapTex);
-      const k = Math.max(panel.w / (this.mapTex.width || 1), panel.h / (this.mapTex.height || 1));
-      s.scale.set(k);
-      s.position.set(
-        panel.x + (panel.w - (this.mapTex.width || 0) * k) / 2,
-        panel.y + (panel.h - (this.mapTex.height || 0) * k) / 2,
-      );
+      s.width = fit.w;
+      s.height = fit.h;
+      s.position.set(fit.x, fit.y);
       const mask = new Graphics();
       mask.roundRect(panel.x, panel.y, panel.w, panel.h, 12).fill(0xffffff);
       s.mask = mask;
       this.overlay.addChild(mask, s);
+      // The destination, pinned at its REAL position on the island — the one
+      // thing the map asserts about the terrain. No line is drawn to it: the
+      // route between here and there has not been pathfound and drawing one
+      // would claim a way through locked geography that nobody has verified.
+      if (this.mapMark) {
+        const at = markPoint(fit, this.mapMark);
+        if (at.x >= panel.x && at.x <= panel.x + panel.w && at.y >= panel.y && at.y <= panel.y + panel.h) {
+          const pin = new Graphics();
+          pin.circle(at.x, at.y, 13).fill({ color: HONEY, alpha: 0.35 });
+          pin.circle(at.x, at.y, 8).fill(CARD).stroke({ width: 3.5, color: INK });
+          pin.circle(at.x, at.y, 3).fill(HONEY);
+          this.overlay.addChild(pin);
+        }
+      }
     } else {
       const ph = new Graphics();
       ph.roundRect(panel.x, panel.y, panel.w, panel.h, 12).fill(0x9ec4a6);
       this.overlay.addChild(ph);
     }
 
-    this.overlay.addChild(this.body("You're on your way", this.w / 2, panel.y - 44, this.w - 60, 21, true));
+    // Light ink: this line sits on the dark scrim, not on the card.
+    this.overlay.addChild(
+      this.body("You're on your way", this.w / 2, panel.y - 44, this.w - 60, 21, true, CARD),
+    );
 
     const track = progressTrackRect(panel);
     const g = new Graphics();
@@ -660,8 +698,11 @@ export class TravelView {
       .fill(CARD).stroke({ width: 3, color: INK });
     this.overlay.addChild(g);
 
-    const start = this.body("Welcome Dock", track.x + 40, track.y + track.h + 8, 160, 13);
-    const end = this.body("Treehouse", track.x + track.w - 40, track.y + track.h + 8, 160, 13);
+    // "Island", not "Welcome Dock": the journey starts wherever the child was
+    // standing when they chose the Treehouse, and naming a landmark they may
+    // never have been to would be a claim the journey does not make.
+    const start = this.body("Island", track.x + 40, track.y + track.h + 8, 160, 13, false, CARD);
+    const end = this.body("Treehouse", track.x + track.w - 40, track.y + track.h + 8, 160, 13, false, CARD);
     this.overlay.addChild(start, end);
 
     const btns = mapButtonRects(panel, this.w, this.h);

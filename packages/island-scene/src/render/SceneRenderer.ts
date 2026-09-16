@@ -52,7 +52,8 @@ import { PracticePlayer } from "./PracticePlayer";
 import { AudioService } from "./AudioService";
 import { GUIDES, guideFileUrl, guideForZone } from "./guideCatalog";
 import { ArrivalView } from "./ArrivalView";
-import { TravelView } from "../travel/TravelView";
+import { TravelView, type MapSnapshot } from "../travel/TravelView";
+import { mapPanelRect } from "../travel/journey";
 import { travelPoseUrl } from "../travel/travelKit";
 import { LayeredIsland, type IslandLayoutOpts, type LandmarkMark } from "./LayeredIsland";
 import { buildWalkGrid } from "./walkgrid";
@@ -996,26 +997,86 @@ export class SceneRenderer {
   }
 
   /**
-   * A still of the world map exactly as the child last saw it, for the journey
-   * map to show. A snapshot (rather than a drawing of the island) is what keeps
-   * the journey map recognisably connected to the Island.
+   * A still of the REAL island for the journey map to show, plus where the
+   * destination sits inside it.
+   *
+   * Taken off the live scene graph, so it is the island with its own painted
+   * terrain and landmark art — not a drawing of one. But it is framed to the
+   * island rather than to the child's current camera: tapping the Treehouse
+   * walks the Friend to its entrance first, so "whatever was on screen" is a
+   * close-up of one tree, which is not recognisable as the Island on a phone.
+   * The camera is moved for the extract and put back in the same call.
+   *
+   * The frame is cut at the map panel's own aspect, so the panel shows the whole
+   * of what was captured instead of cropping the island out of a portrait still.
    */
-  private captureWorldMap(): Texture | undefined {
+  private captureWorldMap(): MapSnapshot | undefined {
+    const sw = this.app.screen.width;
+    const sh = this.app.screen.height;
+    const panel = mapPanelRect(sw, sh);
+    const aspect = panel.h > 0 ? panel.w / panel.h : 1;
+    let fw = sw;
+    let fh = fw / aspect;
+    if (fh > sh) { fh = sh; fw = fh * aspect; }
+    const fx = (sw - fw) / 2;
+    const fy = (sh - fh) / 2;
+
+    // Framed on the same north bound the camera pans to, not on worldBounds.minY:
+    // that is land-based, and the Treehouse's own art rises well above its
+    // footprint. Framing on the land alone crops the canopy off the top of the
+    // one landmark the map exists to point at.
+    const b = this.worldBounds;
+    const top = Math.min(b.minY, this.panNorthBound());
+    const PAD = 1.06;
+    const bw = Math.max(1, (b.maxX - b.minX) * PAD);
+    const bh = Math.max(1, (b.maxY - top) * PAD);
+    const scale = Math.min(fw / bw, fh / bh);
+    const cx = (b.minX + b.maxX) / 2;
+    const cy = (top + b.maxY) / 2;
+    const wx = fx + fw / 2 - cx * scale;
+    const wy = fy + fh / 2 - cy * scale;
+
+    const labelsWere = this.zoneLabels.visible;
     try {
-      // Extract the VISIBLE FRAME, not the world container's bounds. The world
-      // is far larger than the screen and mostly ocean, so `generateTexture` on
-      // it returns the whole island plus a sea of blue — not the view the child
-      // was just looking at, which is the whole point of a snapshot.
-      return this.app.renderer.extract.texture({
+      // The zone name labels live in SCREEN space and are placed by the
+      // per-frame update, so they do not follow a reframe done between frames —
+      // they would land on the wrong landmarks, at a size that buries the island
+      // at panel scale. The map names the destination with its own pin instead.
+      this.zoneLabels.visible = false;
+      this.world.scale.set(scale);
+      this.world.position.set(wx, wy);
+      // A container's world transform is only recomputed when the renderer
+      // renders it, so without this the extract silently captures the camera
+      // the child was on — which is the close-up the reframe exists to avoid.
+      this.app.render();
+      const texture = this.app.renderer.extract.texture({
         target: this.app.stage,
-        frame: new Rectangle(0, 0, this.app.screen.width, this.app.screen.height),
+        frame: new Rectangle(fx, fy, fw, fh),
         resolution: 1,
         antialias: false,
       });
+      return { texture, destination: this.markIn(fx, fy, fw, fh, wx, wy, scale) };
     } catch (err) {
       console.warn("[island-scene] world-map snapshot failed", err);
       return undefined;
+    } finally {
+      // Always put the child's own camera back, snapshot or no snapshot, and
+      // repaint at once so the reframed frame above is never shown.
+      this.zoneLabels.visible = labelsWere;
+      this.applyCamera();
+      this.app.render();
     }
+  }
+
+  /** The destination landmark's position inside the extracted frame, 0..1. */
+  private markIn(
+    fx: number, fy: number, fw: number, fh: number,
+    wx: number, wy: number, scale: number,
+  ): { x: number; y: number } {
+    const zone = this.zones.find((z) => z.key === this.travelZone);
+    if (!zone) return { x: 0.5, y: 0.5 };
+    const c = footprintCenter(zone.gridPosition, zone.footprint.w, zone.footprint.h);
+    return { x: (wx + c.x * scale - fx) / fw, y: (wy + c.y * scale - fy) / fh };
   }
 
   /** Catalog key of the Friend the child chose. */

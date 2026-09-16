@@ -169,3 +169,23 @@ export function mapButtonRects(panel: Rect, screenW: number, screenH: number): {
 export function hitRect(r: Rect, x: number, y: number): boolean {
   return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
+
+/**
+ * Where the world-map snapshot lands inside the map panel.
+ *
+ * The snapshot is cover-fitted, so on a viewport whose panel aspect differs
+ * from the aspect the snapshot was taken at, part of it is cropped. Anything
+ * marked ON the snapshot has to be placed through this same rect or it drifts
+ * off the landmark it is pointing at.
+ */
+export function snapshotRect(panel: Rect, texW: number, texH: number): Rect {
+  const k = Math.max(panel.w / (texW || 1), panel.h / (texH || 1));
+  const w = (texW || 0) * k;
+  const h = (texH || 0) * k;
+  return { x: panel.x + (panel.w - w) / 2, y: panel.y + (panel.h - h) / 2, w, h };
+}
+
+/** A normalised point inside the snapshot, in screen coordinates. */
+export function markPoint(rect: Rect, n: { x: number; y: number }): { x: number; y: number } {
+  return { x: rect.x + n.x * rect.w, y: rect.y + n.y * rect.h };
+}

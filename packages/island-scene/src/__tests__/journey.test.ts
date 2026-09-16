@@ -8,8 +8,8 @@ import { describe, expect, it } from "vitest";
 
 const {
   abandon, advance, beginTravel, closeMap, discoveryReachable, findDiscovery,
-  mapButtonRects, mapPanelRect, newJourney, openMap, progressMarkerX,
-  progressTrackRect, stepToNextWaypoint, WALK_RATE,
+  mapButtonRects, mapPanelRect, markPoint, newJourney, openMap, progressMarkerX,
+  progressTrackRect, snapshotRect, stepToNextWaypoint, WALK_RATE,
 } = await import("../travel/journey");
 const { TREEHOUSE_ROUTE: R } = await import("../travel/route");
 const {
@@ -214,5 +214,41 @@ describe("the projection, and the two fixes the POC earned", () => {
   it("hides the destination until the gap in the trees", () => {
     expect(R.revealAt).toBeGreaterThan(0.3);
     expect(R.revealAt).toBeLessThan(0.8);
+  });
+});
+
+describe("the journey map's snapshot", () => {
+  const VIEWS = [
+    { n: "phone", w: 390, h: 844 },
+    { n: "tablet", w: 768, h: 1024 },
+    { n: "desktop", w: 1440, h: 900 },
+  ];
+
+  it("covers the panel completely at every viewport", () => {
+    for (const v of VIEWS) {
+      const panel = mapPanelRect(v.w, v.h);
+      // A portrait still in a landscape panel, and the reverse.
+      for (const tex of [{ w: 390, h: 844 }, { w: 1440, h: 900 }, { w: 560, h: 347 }]) {
+        const fit = snapshotRect(panel, tex.w, tex.h);
+        expect(fit.x, `${v.n}: bare panel on the left`).toBeLessThanOrEqual(panel.x + 0.001);
+        expect(fit.y, `${v.n}: bare panel on the top`).toBeLessThanOrEqual(panel.y + 0.001);
+        expect(fit.x + fit.w).toBeGreaterThanOrEqual(panel.x + panel.w - 0.001);
+        expect(fit.y + fit.h).toBeGreaterThanOrEqual(panel.y + panel.h - 0.001);
+        // Aspect preserved — a squashed island is not the island.
+        expect(fit.w / fit.h).toBeCloseTo(tex.w / tex.h, 6);
+      }
+    }
+  });
+
+  it("puts a mark where the snapshot actually put it, crop and all", () => {
+    const panel = mapPanelRect(390, 844);
+    const fit = snapshotRect(panel, 560, 347);
+    // The centre of the still is the centre of the panel, whatever the crop.
+    const mid = markPoint(fit, { x: 0.5, y: 0.5 });
+    expect(mid.x).toBeCloseTo(panel.x + panel.w / 2, 6);
+    expect(mid.y).toBeCloseTo(panel.y + panel.h / 2, 6);
+    // And a mark moves with the image, not with the panel.
+    const right = markPoint(fit, { x: 1, y: 0.5 });
+    expect(right.x).toBeCloseTo(fit.x + fit.w, 6);
   });
 });
