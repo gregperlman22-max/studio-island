@@ -23,6 +23,7 @@ import {
 import {
   abandon,
   advance,
+  arrivalStage,
   beginTravel,
   closeMap,
   discoveryReachable,
@@ -323,10 +324,50 @@ export class TravelView {
     this.paintSky(view, horizonY, pal.skyTop, pal.skyBottom);
     this.paintGround(view, horizonY, cam, pal.groundFar, pal.groundNear);
     this.paintFarLine(view, horizonY, camLat, pal.farTree, pal.hazeFar);
-    this.paintPath(p, camLat, cam, view);
-    this.paintDepth(p, camLat, cam, view);
+    if (this.state.phase === "arrival") {
+      // Arrival is a composed stop, not the corridor's last frame — see
+      // arrivalStage() for why.
+      this.path.clear();
+      this.paintArrivalStage(view);
+    } else {
+      this.paintPath(p, camLat, cam, view);
+      this.paintDepth(p, camLat, cam, view);
+    }
     this.paintFraming(view, camLat);
     if (this.state.discovery === "found") this.paintFireflies(view);
+  }
+
+  /**
+   * The Treehouse at the end of the walk: base-pinned on the arrival ground
+   * line so its approach meets the ground at the characters' feet.
+   *
+   * SUBSTITUTION: the sprite is still the world-map landmark (travelKit.ts),
+   * which carries a straight rung ladder rather than the approved curved
+   * stairs. The composition is what changes here — when the approved exterior
+   * ships, the stairs land on this same ground line with nothing else to move.
+   */
+  private paintArrivalStage(view: Viewport): void {
+    if (!this.kit) return;
+    const st = arrivalStage(view);
+    const shadow = new Graphics();
+    shadow
+      .ellipse(st.treeX, st.groundY + 4, view.w * 0.4, view.h * 0.03)
+      .fill({ color: 0x2f1f10, alpha: 0.22 });
+    this.depth.addChild(shadow);
+    // Fit by width as well as height. The Treehouse art is nearly square, so on
+    // a phone a height-only fit throws its canopy a long way past both edges.
+    // The allowance is deliberately generous (1.55×) — standing at the foot of
+    // a big tree, canopy running off the sides is the point; what it prevents
+    // is the structure growing so wide that the door and stairs leave the
+    // frame. The "whole canopy in frame" rule is about the ISLAND OVERVIEW, a
+    // different view; this is a close-up.
+    const b = this.kit.bounds.get(this.kit.destination);
+    const tex = this.kit.destination;
+    const aspect =
+      ((b?.contentW ?? 1) * (tex.width || 1)) / Math.max(1, (b?.contentH ?? 1) * (tex.height || 1));
+    const h = Math.min(st.treeH, (view.w * 1.55) / Math.max(0.01, aspect));
+    this.place(this.take(this.propPool, this.depth, 0), tex, h, st.treeX, st.groundY);
+    this.trim(this.propPool, 1);
   }
 
   private paintSky(view: Viewport, horizonY: number, top: number, bottom: number): void {
@@ -719,7 +760,7 @@ export class TravelView {
    * sees who met them.
    */
   private drawArrivalGreeting(): void {
-    const groundY = this.h * 0.8;
+    const { groundY } = arrivalStage(this.view());
     const px = Math.min(this.h * 0.32, this.w * 0.3);
 
     if (this.friendTex) {

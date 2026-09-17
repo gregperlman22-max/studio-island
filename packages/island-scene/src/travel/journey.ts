@@ -189,3 +189,30 @@ export function snapshotRect(panel: Rect, texW: number, texH: number): Rect {
 export function markPoint(rect: Rect, n: { x: number; y: number }): { x: number; y: number } {
   return { x: rect.x + n.x * rect.w, y: rect.y + n.y * rect.h };
 }
+
+/**
+ * The arrival stage: where the ground is, and how big the Treehouse is drawn
+ * on it.
+ *
+ * The journey used to end by simply leaving the corridor's last frame on
+ * screen. At p = 1 the destination sits on the near plane at six frame-units,
+ * so what the child actually arrived at was a wall of trunk — no approach, no
+ * way in, and the Friend and Olive standing beside it with nothing to connect
+ * them to it.
+ *
+ * Arrival is its own composition instead: the whole structure base-pinned on
+ * the SAME ground line the two characters stand on, so the approach (the
+ * stairs, in the approved art) visibly meets the ground where their feet are.
+ * The characters sit either side of centre so neither covers the foot of it.
+ */
+export function arrivalStage(view: { w: number; h: number }): {
+  groundY: number;
+  treeX: number;
+  treeH: number;
+} {
+  const groundY = view.h * ARRIVAL_GROUND;
+  return { groundY, treeX: view.w * 0.5, treeH: Math.max(80, groundY - 10) };
+}
+
+/** Fraction of screen height where the arrival ground line sits. */
+export const ARRIVAL_GROUND = 0.8;

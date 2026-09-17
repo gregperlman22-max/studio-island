@@ -229,14 +229,23 @@ const ZONE_PAINT: Record<ZoneKey, (g: Graphics, p: ThemePalette) => void> = {
     g.ellipse(0, -72, 22, 9).fill({ color: 0xfff1a8, alpha: 0.25 });
   },
   treehouse_hideaway: (g, p) => {
-    // Biggest tree on the island with a cozy wooden cabin built into the
-    // canopy: walls, plank lines, a door, a lit window, a roof, and a rope
-    // ladder up the trunk. Canopy is drawn BEHIND the cabin so the house reads.
+    // Biggest tree on the island with a cozy cabin built into the canopy.
+    // Canopy is drawn BEHIND the cabin so the house reads.
+    //
+    // STAND-IN, NOT THE APPROVED ART. This painter only runs when the
+    // illustrated landmark texture fails to load. It carries the approved
+    // direction's read — blue-green shingled roof, leaf doorway, wrapping
+    // balcony, lookout, and a STAIR flight with frequent low risers rather
+    // than the rope ladder it used to draw — so a fallback never contradicts
+    // the approved exterior. It is not a substitute for that exterior; see
+    // ASSET-SPEC-S89.md "Treehouse exterior".
     const trunk = 0x7a5230;
     const leaf = hexNum(p.foliage);
     const leafLit = shade(p.foliage, 0.24);
     const wood = 0xb07a44;
     const woodDark = 0x6e4a2a;
+    const roof = 0x4a9fa6;      // approved blue-green shingle
+    const roofLit = 0x6ec3c6;
 
     // Trunk.
     g.poly([-11, 4, -8, -42, 8, -42, 11, 4]).fill(trunk).stroke({ width: 4, color: INK });
@@ -261,12 +270,19 @@ const ZONE_PAINT: Record<ZoneKey, (g: Graphics, p: ThemePalette) => void> = {
     g.moveTo(-18, -66).lineTo(18, -66).moveTo(-18, -57).lineTo(18, -57)
       .stroke({ width: 1.5, color: woodDark, alpha: 0.5 });
 
-    // Pitched roof, slightly overhanging.
-    g.poly([-23, -76, 23, -76, 0, -94]).fill(woodDark).stroke({ width: 4, color: INK });
-    g.poly([-23, -76, 0, -94, -6, -76]).fill({ color: hexNum(shade(woodDark, 0.18)), alpha: 0.5 });
+    // Pitched roof, slightly overhanging — blue-green shingle.
+    g.poly([-23, -76, 23, -76, 0, -94]).fill(roof).stroke({ width: 4, color: INK });
+    g.poly([-23, -76, 0, -94, -6, -76]).fill({ color: roofLit, alpha: 0.55 });
 
-    // Door + knob.
+    // Leaf flag on the ridge, and the lookout telescope off the deck rail.
+    g.moveTo(0, -94).lineTo(0, -104).stroke({ width: 2, color: woodDark });
+    g.poly([0, -104, 9, -101, 0, -98]).fill(0xfdf3e0).stroke({ width: 1.6, color: INK });
+    g.moveTo(20, -50).lineTo(30, -56).stroke({ width: 3.2, color: 0x7fa8c9 });
+    g.circle(30, -56, 1.8).fill(0xcfe3f2).stroke({ width: 1.2, color: INK });
+
+    // Door + leaf motif + knob.
     g.roundRect(-7, -60, 13, 14, 2).fill(woodDark).stroke({ width: 3, color: INK });
+    g.ellipse(-1.5, -55, 2.6, 4).fill(hexNum(leafLit)).stroke({ width: 1, color: INK, alpha: 0.8 });
     g.circle(3, -53, 1).fill(0xffe14d);
 
     // Lit window with cross bars.
@@ -274,13 +290,19 @@ const ZONE_PAINT: Record<ZoneKey, (g: Graphics, p: ThemePalette) => void> = {
     g.moveTo(12.5, -72).lineTo(12.5, -63).moveTo(8, -67.5).lineTo(17, -67.5)
       .stroke({ width: 1.2, color: INK, alpha: 0.7 });
 
-    // Rope ladder down the trunk to the ground.
-    g.moveTo(-6, -46).lineTo(-6, 2).moveTo(2, -46).lineTo(2, 2)
-      .stroke({ width: 2, color: 0xccb089 });
-    for (let i = 0; i < 6; i++) {
-      const yy = -40 + i * 8;
-      g.moveTo(-6, yy).lineTo(2, yy).stroke({ width: 2, color: woodDark });
+    // Stairs down the trunk to the ground: frequent, shallow risers curving
+    // out to the left, with a rope handrail. The approved approach — a child
+    // walks up these, they do not climb a ladder.
+    const STEPS = 11;
+    for (let i = 0; i < STEPS; i++) {
+      const t = i / (STEPS - 1);
+      const sy = -44 + t * 46;                    // ~4.2 world px per riser
+      const sx = -4 - t * t * 13;                 // curves outward as it drops
+      const sw = 9 + t * 3;
+      g.roundRect(sx - sw / 2, sy, sw, 3, 1).fill(wood).stroke({ width: 1.6, color: INK });
     }
+    g.moveTo(-1, -46).bezierCurveTo(-4, -30, -10, -14, -18, 2)
+      .stroke({ width: 1.6, color: 0xccb089 });
 
     // A couple of front leaf tufts peeking over the roof so it nestles in.
     g.circle(-23, -80, 12).fill(leaf).stroke({ width: 4, color: INK });

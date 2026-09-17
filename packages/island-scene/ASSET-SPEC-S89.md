@@ -214,6 +214,70 @@ Every recording is missing; the manifest holds three WAV beep placeholders.
 
 ---
 
+## 10. Treehouse exterior — blocking for the approved visual direction
+
+**This is the one asset the 2026-09-17 handoff makes urgent, and the one it
+cannot supply.** The approved references are in the repo at
+`tools/island-art/source/handoff-2026-09-17/` (source only — outside `public/`
+and `src/assets/`, so nothing ships them).
+
+### Why it could not be derived here
+
+| Route | Why not |
+|---|---|
+| Cut the Treehouse out of `01-approved-island-overview.png` | It occupies roughly **380 × 315 px** of a 1555 × 1012 opaque painting. The shipped landmark is 1024 × 1024 with ~810 × 859 of content — a 2.7× linear upscale, and the base is overlapped by painted foliage that would have to be repainted to knock it out. |
+| Use `02-treehouse-dock-scale-study.png` | It is the right view and the right resolution, but **its framing crops the canopy**, which the handoff explicitly forbids reusing as an overview crop — and **Doug stands on the balcony**. Removing him means repainting the doorway behind him; baking him in is forbidden outright. |
+
+So the exterior below is specified, not approximated. Nothing in this chunk
+pretends to be it.
+
+### What the world map needs
+
+| | |
+|---|---|
+| View | Same three-quarter elevated view as every other landmark — match `src/assets/landmarks/treehouse.webp` exactly for camera and eye height, so it drops in without re-tuning |
+| Register | **Wind Waker-adjacent cel**, matching the other landmarks (flat fills, bold `#23201c` keyline) — *not* the painterly register |
+| Canvas | 1024 × 1024, RGBA, whole canopy inside the canvas with transparent margin |
+| Path | `src/assets/landmarks/treehouse.webp` (replaces in place) |
+| Format | WebP q80+, true cutout, **no baked ground shadow** — the renderer draws its own |
+| Ground contact | Bottom-centre of the opaque content = where the trunk and the **foot of the stairs** meet the ground |
+
+Architecture that must survive, from the approved references:
+
+- Prominent **usable room** and a **wrapping balcony** integrated with a living trunk
+- **Blue-green shingled roof** (the current asset's roof is brown wood)
+- **Leaf doorway** — arched door with the leaf motif
+- **Sheltered lookout** with the telescope off the balcony rail
+- **Curved stair approach with frequent, low risers** and a rope handrail —
+  **not** the straight rung ladder the current asset carries
+- Hanging lanterns, leaf pennant, vines
+
+### The layer split, and why it is not optional
+
+The handoff asks that a Friend be able to move **in front of and behind**
+relevant elements. Today the landmark is one flat sprite y-sorted on its base
+(`zIndex = baseY + 0.2`), so a Friend standing north of the base is drawn behind
+the *entire* image — canopy included. Deliver **two layers on the same
+1024 × 1024 canvas and the same anchor**, so they overlay exactly:
+
+| Layer | Path | Contains | Drawn |
+|---|---|---|---|
+| back | `treehouse.webp` | canopy, cabin, trunk, balcony, the stair flight | behind the Friend |
+| front | `treehouse-front.webp` | only what a Friend should pass BEHIND: the near stair rail, the nearest root buttress, the lowest foreground leaves | in front of the Friend |
+
+The `BOAT_ART` back/front pair in `render/zones.ts` is the working precedent —
+same idea, already shipping.
+
+### Numbers the renderer will want back
+
+Anchors are measured from the delivered PNG by
+`tools/island-art/landmarks-anchors.mjs`; `LANDMARK_ART.treehouse_hideaway` in
+`render/zones.ts` then carries `scale`, `anchorX`, `anchorY`, `contentH` and
+`contentBox`. Today's values are `scale 0.74`, `anchorY 0.9`,
+`contentBox [108, 51, 918, 910]`. If the new art's proportions differ, only
+`scale` should need an eye pass — the footprint (5 × 5 tiles at grid 11,18) and
+the locked `defaultLayout.ts` coordinates do **not** move.
+
 ## Delivery checklist
 
 - [ ] Exact path and spelling above

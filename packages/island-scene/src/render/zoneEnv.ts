@@ -381,16 +381,27 @@ function treehouse(L: EnvLayers, w: number, h: number, p: ThemePalette, g: EnvGe
   tree.roundRect(-46, -96, 92, 11, 5).fill(wood).stroke({ width: 5, color: INK });
   tree.roundRect(-32, -146, 64, 52, 5).fill(wood).stroke({ width: 5, color: INK });
   tree.moveTo(-32, -130).lineTo(32, -130).moveTo(-32, -116).lineTo(32, -116).stroke({ width: 1.5, color: woodDark, alpha: 0.5 });
-  tree.poly([-40, -146, 40, -146, 0, -178]).fill(woodDark).stroke({ width: 5, color: INK });
+  // Blue-green shingled roof, per the approved exterior direction.
+  tree.poly([-40, -146, 40, -146, 0, -178]).fill("#4a9fa6").stroke({ width: 5, color: INK });
+  tree.poly([-40, -146, 0, -178, -12, -146]).fill({ color: 0x6ec3c6, alpha: 0.5 });
   // lit window
   tree.roundRect(10, -138, 14, 14, 2).fill("#ffe39a").stroke({ width: 3, color: INK });
   tree.moveTo(17, -138).lineTo(17, -124).moveTo(10, -131).lineTo(24, -131).stroke({ width: 1.4, color: INK, alpha: 0.7 });
   // glowing door (beacon)
   tree.roundRect(-22, -122, 20, 28, 3).fill("#ffcf6e").stroke({ width: 3.5, color: INK });
   tree.circle(-6, -108, 1.8).fill(INK);
-  // rope ladder down to the ground
-  tree.moveTo(-9, -94).lineTo(-9, 0).moveTo(-1, -94).lineTo(-1, 0).stroke({ width: 2, color: "#ccb089" });
-  for (let i = 0; i < 11; i++) tree.moveTo(-9, -88 + i * 8).lineTo(-1, -88 + i * 8).stroke({ width: 2, color: woodDark });
+  // Stairs down to the ground — frequent, shallow risers curving outward, with
+  // a rope handrail. STAND-IN geometry carrying the approved approach; the
+  // ladder this replaced contradicted it. See ASSET-SPEC-S89.md.
+  const STEPS = 18;
+  for (let i = 0; i < STEPS; i++) {
+    const t = i / (STEPS - 1);
+    const sy = -92 + t * 92;                 // ~5px per riser
+    const sx = -6 - t * t * 26;
+    const sw = 20 + t * 8;
+    tree.roundRect(sx - sw / 2, sy, sw, 5, 2).fill(wood).stroke({ width: 2.4, color: INK });
+  }
+  tree.moveTo(-2, -94).bezierCurveTo(-8, -60, -20, -28, -36, 0).stroke({ width: 2.4, color: "#ccb089" });
   art.addChild(tree);
   L.mid.addChild(art);
 

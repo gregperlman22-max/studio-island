@@ -217,6 +217,30 @@ describe("the journey's own screens", () => {
     }
   });
 
+  it("stands the Friend, Olive and the Treehouse on one ground line", async () => {
+    const { arrivalStage } = await import("../travel/journey");
+    for (const [w, h] of [[390, 844], [768, 1024], [1440, 900]] as const) {
+      const v = mounted(true, w, h);
+      start(v);
+      for (let i = 0; i < 10 && v.phase === "travel"; i++) v.handleTap(...centreOf(v, "keep-going"));
+      expect(v.phase).toBe("arrival");
+      const { groundY, treeH, treeX } = arrivalStage({ w, h });
+      // The destination is base-pinned on that line, whole, above it — not the
+      // corridor's last frame, where p = 1 put a wall of trunk on the screen.
+      const tree = v.depth.children.find((c: { texture?: unknown }) => c.texture);
+      expect(tree, "nothing was drawn on the arrival stage").toBeTruthy();
+      expect(tree.position.y).toBeCloseTo(groundY, 3);
+      expect(tree.position.x).toBeCloseTo(treeX, 3);
+      expect(treeH).toBeLessThanOrEqual(groundY);
+      // Both characters' feet land on the same line.
+      const feet = v.overlay.children
+        .filter((c: { texture?: unknown }) => c.texture)
+        .map((c: { position: { y: number } }) => c.position.y);
+      expect(feet.length).toBeGreaterThanOrEqual(2);
+      for (const y of feet) expect(y).toBeCloseTo(groundY, 3);
+    }
+  });
+
   it("reports the substituted travel pose rather than hiding it", () => {
     expect(mounted().usingSubstitutePose).toBe(true);
   });

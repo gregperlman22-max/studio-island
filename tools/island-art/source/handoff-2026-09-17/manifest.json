@@ -1,0 +1,26 @@
+{
+  "README.md": {
+    "bytes": 7818,
+    "sha256": "06cba40e0aa91a590994aa1dcc6092924eef758d1036e1a062cf055504a85f89"
+  },
+  "04-claude-code-handoff.txt": {
+    "bytes": 2615,
+    "sha256": "2041b89bc9f4b409f0bcb0c17890ca4a7eb80be4bcae6bc6f5972e4abb573e24"
+  },
+  "05-claude-project-note.txt": {
+    "bytes": 595,
+    "sha256": "e5b63b1dbd36a82aa4a0e7b8e6847bb9e88984f87d2c6eeba2b0d9b7795013f8"
+  },
+  "01-approved-island-overview.png": {
+    "bytes": 3019805,
+    "sha256": "e86045ec8e5fb192dc8479c30e8d87e7203d9fefc4583c29cdcc064c5ad5420c"
+  },
+  "02-treehouse-dock-scale-study.png": {
+    "bytes": 2813726,
+    "sha256": "8498b722663e6fc4442f38d3a9812f4d214a0b827645b1e104083721cb8804c5"
+  },
+  "03-campfire-arcade-scale-study.png": {
+    "bytes": 2961748,
+    "sha256": "0bf05f06ae1b14cbe3d547c344622f826ccfd4ed5add061bba02aad153a34574"
+  }
+}

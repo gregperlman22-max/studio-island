@@ -20,7 +20,7 @@ export const sproutPack: ThemePackConfig = {
   },
   zoneSkins: {
     lighthouse_point: { skinName: "Beacon Point", decorationHints: ["rock", "gull"] },
-    treehouse_hideaway: { skinName: "Treetop Hideaway", decorationHints: ["tree", "rope-ladder"] },
+    treehouse_hideaway: { skinName: "Treetop Hideaway", decorationHints: ["tree", "curved-stairs"] },
     campfire_circle: { skinName: "Marshmallow Ring", decorationHints: ["log-seat", "stone"] },
     art_hut: { skinName: "Paint Cabin", decorationHints: ["easel", "flower"] },
     arcade_cove: { skinName: "Arcade Cove", decorationHints: ["awning", "lantern"] },
