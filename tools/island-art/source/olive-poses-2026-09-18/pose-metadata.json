@@ -1,0 +1,101 @@
+{
+  "neutral": {
+    "canvas": [
+      480,
+      640
+    ],
+    "source_canvas": [
+      1086,
+      1448
+    ],
+    "source_visible_bounds_alpha_gt_32": [
+      79,
+      54,
+      951,
+      1380
+    ],
+    "export_visible_bounds_alpha_gt_32": [
+      71,
+      59,
+      409,
+      571
+    ],
+    "suggested_foot_anchor_canvas_px": [
+      245.0,
+      571
+    ],
+    "suggested_foot_anchor_canvas_normalized": [
+      0.51042,
+      0.89219
+    ],
+    "anchor_note": "Approximate midpoint of foot-region silhouette, measured from bottom 12 percent of visible content. Inspect in renderer; not a verified PIVOT_OVERRIDES entry.",
+    "format": "lossless WebP RGBA",
+    "has_transparency": true
+  },
+  "encouraging": {
+    "canvas": [
+      480,
+      640
+    ],
+    "source_canvas": [
+      1086,
+      1448
+    ],
+    "source_visible_bounds_alpha_gt_32": [
+      133,
+      241,
+      1004,
+      1264
+    ],
+    "export_visible_bounds_alpha_gt_32": [
+      22,
+      58,
+      458,
+      570
+    ],
+    "suggested_foot_anchor_canvas_px": [
+      189.0,
+      570
+    ],
+    "suggested_foot_anchor_canvas_normalized": [
+      0.39375,
+      0.89062
+    ],
+    "anchor_note": "Approximate midpoint of foot-region silhouette, measured from bottom 12 percent of visible content. Inspect in renderer; not a verified PIVOT_OVERRIDES entry.",
+    "format": "lossless WebP RGBA",
+    "has_transparency": true
+  },
+  "listening": {
+    "canvas": [
+      480,
+      640
+    ],
+    "source_canvas": [
+      1086,
+      1448
+    ],
+    "source_visible_bounds_alpha_gt_32": [
+      161,
+      136,
+      940,
+      1339
+    ],
+    "export_visible_bounds_alpha_gt_32": [
+      74,
+      59,
+      406,
+      571
+    ],
+    "suggested_foot_anchor_canvas_px": [
+      231.0,
+      571
+    ],
+    "suggested_foot_anchor_canvas_normalized": [
+      0.48125,
+      0.89219
+    ],
+    "anchor_note": "Approximate midpoint of foot-region silhouette, measured from bottom 12 percent of visible content. Inspect in renderer; not a verified PIVOT_OVERRIDES entry.",
+    "format": "lossless WebP RGBA",
+    "has_transparency": true
+  }
+}

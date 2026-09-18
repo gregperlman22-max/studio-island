@@ -1,0 +1,42 @@
+{
+  "README.md": {
+    "bytes": 4469,
+    "sha256": "c9bbb8d2e54d82e973ed3b5a8cae033ea3190abd2a941aedee6033a9048b77e4"
+  },
+  "pose-metadata.json": {
+    "bytes": 2119,
+    "sha256": "8a969d8df0ef61ebf19dcc3bcd585278885eb22cf2e05b9949b6b2b7de482ce8"
+  },
+  "preview-on-cream.png": {
+    "bytes": 915135,
+    "sha256": "2d33706fc23b5fa5d165feb92c71e0cdaa5d628023e5d54ba3f1eee9468e284f"
+  },
+  "reference/olive-approved-concept.png": {
+    "bytes": 2465921,
+    "sha256": "90bc2d87f53d3f3b5c6aa4e23f238122693cd0e5cf079bd51f8f2fcb11c82979"
+  },
+  "runtime/olive-encouraging.webp": {
+    "bytes": 222464,
+    "sha256": "f1f9d1a05de100b4e5fd783a84a86254b54fab53f1075db62713b9c89a4c4153"
+  },
+  "runtime/olive-listening.webp": {
+    "bytes": 191264,
+    "sha256": "6aaeeed97fefc02f3dba9ee1bcace8963317fe46b14ed5e454b12c93880acfdb"
+  },
+  "runtime/olive-neutral.webp": {
+    "bytes": 200800,
+    "sha256": "13b18c4d3e9980d79067c00e10b185441cafef3a5a520ad805aacff1b2af7bbe"
+  },
+  "source/olive-encouraging.png": {
+    "bytes": 1034667,
+    "sha256": "72752053d583a8f78afe73c880b9c8946cdfe748487e45b511708292b5550582"
+  },
+  "source/olive-listening.png": {
+    "bytes": 1190787,
+    "sha256": "5e4bb7249abc6e40a4d5e70bd08c0b3cce0bbd29dc9f66acceb96aa25067ddb0"
+  },
+  "source/olive-neutral.png": {
+    "bytes": 1477954,
+    "sha256": "12ec84e4391dd47e6b3613c62ec6d103f5e2a82699818df283def8e2132d44d5"
+  }
+}

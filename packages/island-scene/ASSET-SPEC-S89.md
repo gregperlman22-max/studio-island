@@ -112,6 +112,21 @@ A generic owl illustration does not satisfy this.
 
 Interim: falls back to `Owl.webp`, logged once.
 
+**Candidates received 2026-09-18 — not integrated, not accepted.** Three poses
+derived from the approved concept are retained at
+`tools/island-art/source/olive-poses-2026-09-18/` (source only; nothing ships,
+nothing imports them, the `Owl.webp` fallback is untouched). They match this
+section's canvas exactly: 480 × 640 RGBA, 512 px of content, feet at the content
+bbox bottom. All ten files verify against the pack's own SHA-256 manifest.
+
+One measured integration note, because it decides whether Olive stands still
+when her pose changes: the three exports share a bbox centre of **0.5000**, so
+anchoring on `contentBounds.centerX` aligns the boxes and moves the bird — the
+encouraging pose's feet sit **56 px (10.9% of her height) left** of the others'.
+`render/avatarTexture.ts`'s `PIVOT_OVERRIDES` exists for exactly this; the three
+entries are written out in that folder's `RETAINED.md`. In-game scale, contrast
+over the room painting, wing clipping and every device check remain unverified.
+
 ## 3. Quest Table / diorama — blocking for production visual acceptance
 
 Reference: the room painting it sits on, at miniature scale.
@@ -185,6 +200,17 @@ Reference: `public/avatars/core/*.webp`.
 Silhouette and accessory carry recognition from behind; keep the accessory
 prominent. **No arrival/turn pose is required** — the existing front-facing core
 art is the arrival pose, which keeps this at six files rather than twelve.
+
+**Requirement update, 2026-09-18.** Greg approved the *direction* of Doug's
+back-view walking prototype. A single travel pose is no longer sufficient:
+**final travel art needs an actual walk cycle — legs, arms and body moving
+together**, not one still frame. **Doug first**; polish and in-game validation
+on him are outstanding, and the other five Friends follow only once he is
+validated. So the table above is the floor, not the deliverable: treat
+`<key>-travel.webp` as the resting/reference frame and expect the shipped form
+to be a frame sequence or sheet whose per-frame canvas and anchor match it. The
+frame count, timing and delivery format are not settled here and should be
+agreed with whoever animates Doug before the other five are commissioned.
 
 ## 8. Forest travel kit — blocking for EC-2
 
