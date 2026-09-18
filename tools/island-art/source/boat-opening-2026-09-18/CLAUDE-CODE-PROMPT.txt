@@ -1,0 +1,9 @@
+Retain the attached Engage-Island-Boat-Opening-Concepts.zip as source art-direction reference, outside runtime asset paths. Read its README and inspect all three concept PNGs. Preserve the originals.
+
+Greg approved this boat-opening direction: approach the recognizable sun-emblem Welcome Dock, slow alongside, then show the selected Friend on the landing with Captain Pete aboard behind. Doug is the concept example only; the actual selected Friend must remain dynamic. The arrival image is the corrected upright two-foot version.
+
+Complete the already-authorized Olive integration checkpoint first. This package is a queued visual direction, not an instruction to begin boat implementation or interrupt the current work. At the existing handoff, simply acknowledge retention and flag any concrete asset dependency you noticed; do not open a new planning or audit stage.
+
+For future boat work, preserve calm turquoise water, warm painterly materials, readable character scale and spatial continuity into the Island. The three flattened keyframes are not animation-ready or registered; runtime will require separate scenery/boat/character layers and one consistent camera and dock geometry. Never bake Doug into the environment or use frame morphs as a walking/arrival implementation. Existing skip and reduced-motion behavior must survive.
+
+Keep the current candidate history and cadence. No new S-ID, EC-3 expansion, other-guide rollout, push, merge or deployment. The approved layered Treehouse exterior and Doug-first walk cycle remain outstanding.
