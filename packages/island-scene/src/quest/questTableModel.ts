@@ -334,6 +334,18 @@ export interface QuestChoice {
 
 export const EC1_PROMPT = "They're already playing. How do you get closer?";
 
+/**
+ * Olive's pose for a state of the beat. Discrete gestures, chosen by what she
+ * is doing — never tweened.
+ *   choosing → "listening": the question is open and she is waiting on the
+ *              child, head tilted, beak closed.
+ *   chosen   → "encouraging": she has something to say about what happened.
+ */
+export type OlivePoseKey = "neutral" | "encouraging" | "listening";
+export function olivePoseFor(chosen: ChoiceId | null): OlivePoseKey {
+  return chosen ? "encouraging" : "listening";
+}
+
 export const EC1_CHOICES: readonly QuestChoice[] = [
   {
     id: "walk-over",

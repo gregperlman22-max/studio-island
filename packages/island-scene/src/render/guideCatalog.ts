@@ -91,7 +91,9 @@ export function guideFileUrl(file: string): string {
   // default; the deploy base on GitHub Pages). encodeURIComponent keeps the
   // helper robust even though the guide filenames contain no spaces today.
   const base = import.meta.env.BASE_URL;
-  return `${base}guides/${encodeURIComponent(file)}`;
+  // A path may carry one folder (guides/olive/olive-neutral.webp); encode each
+  // segment on its own so the separator survives.
+  return `${base}guides/${file.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 /** Look up the guide for a zone (every zone has one). */

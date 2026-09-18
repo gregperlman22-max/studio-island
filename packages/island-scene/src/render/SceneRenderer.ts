@@ -51,6 +51,7 @@ import type { MiniPractice } from "../content/types";
 import { PracticePlayer } from "./PracticePlayer";
 import { AudioService } from "./AudioService";
 import { GUIDES, guideFileUrl, guideForZone } from "./guideCatalog";
+import { OLIVE_POSES, olivePoseUrl, type OlivePose } from "./oliveCatalog";
 import { ArrivalView } from "./ArrivalView";
 import { TravelView, type MapSnapshot } from "../travel/TravelView";
 import type { JourneyPhase } from "../travel/journey";
@@ -200,6 +201,9 @@ export class SceneRenderer {
   private audio!: AudioService;
   /** Preloaded guide art (RGBA cutouts), keyed by zone. */
   private guideTextures = new Map<ZoneKey, Texture>();
+  /** Olive's discrete poses (render/oliveCatalog.ts), loaded with the guides.
+   *  A pose that failed to load is simply absent; olivePose() falls back. */
+  private oliveTextures = new Map<OlivePose, Texture>();
   /** Lazy guide-art preload (kicked off in init, never awaited there). */
   private guidesReady: Promise<void> = Promise.resolve();
   /** First-paint asset progress (see bumpProgress). */
@@ -628,10 +632,13 @@ export class SceneRenderer {
     if (this.destroyed) return;
     await this.guidesReady;
     if (this.destroyed) return;
-    this.treehouseRoom.setQuestCast(
-      this.guideTextures.get("treehouse_hideaway"),
-      group.filter(Boolean),
-    );
+    // Resting texture (the fallback) plus whichever poses actually loaded.
+    const poses: Partial<Record<OlivePose, Texture>> = {};
+    for (const pose of OLIVE_POSES) {
+      const tex = this.oliveTextures.get(pose);
+      if (tex) poses[pose] = tex;
+    }
+    this.treehouseRoom.setQuestCast(this.olivePose("neutral"), group.filter(Boolean), poses);
   }
 
   /**
@@ -678,8 +685,8 @@ export class SceneRenderer {
    *  (guides aren't needed for first paint) — showGuide waits on the returned
    *  promise if a guide is requested early. */
   private async loadGuides(): Promise<void> {
-    await Promise.all(
-      (Object.keys(GUIDES) as ZoneKey[]).map(async (zone) => {
+    await Promise.all([
+      ...(Object.keys(GUIDES) as ZoneKey[]).map(async (zone) => {
         const url = guideFileUrl(GUIDES[zone].file);
         try {
           const tex = await loadAvatarTexture(url);
@@ -688,7 +695,23 @@ export class SceneRenderer {
           console.warn(`[island-scene] guide art failed to load: ${GUIDES[zone].file}`, err);
         }
       }),
-    );
+      // Olive's poses ride the same loader, so their measured content bounds
+      // (and the PIVOT_OVERRIDES that keep her feet still) are registered.
+      ...OLIVE_POSES.map(async (pose) => {
+        try {
+          const tex = await loadAvatarTexture(olivePoseUrl(pose));
+          if (!this.destroyed) this.oliveTextures.set(pose, tex);
+        } catch (err) {
+          console.warn(`[island-scene] Olive pose failed to load, falling back to the guide owl: ${pose}`, err);
+        }
+      }),
+    ]);
+  }
+
+  /** Olive in `pose`, or the generic guide owl if that pose never loaded —
+   *  the behaviour every Olive render site had before the pose pack. */
+  private olivePose(pose: OlivePose): Texture | undefined {
+    return this.oliveTextures.get(pose) ?? this.guideTextures.get("treehouse_hideaway");
   }
 
   /** Show the landmark guide for `zone`: the guide pops in over the world map
@@ -980,7 +1003,8 @@ export class SceneRenderer {
       );
     }
     view.setFriend(this.localAvatarTexture(), key, pose.substituted);
-    view.setOlive(this.guideTextures.get(zone));
+    // Olive greets — her encouraging pose, if it loaded.
+    view.setOlive(zone === "treehouse_hideaway" ? this.olivePose("encouraging") : this.guideTextures.get(zone));
     view.setMapSnapshot(this.captureWorldMap());
     void view.load().then(() => {
       if (this.destroyed || this.travelZone !== zone) return;

@@ -34,7 +34,18 @@ const BOUNDS = new WeakMap<Texture, ContentBounds>();
  *
  *   "Squirrel.webp": { centerX: 0.52, feetY: 0.90 },
  */
-const PIVOT_OVERRIDES: Record<string, { centerX?: number; feetY?: number }> = {};
+export const PIVOT_OVERRIDES: Record<string, { centerX?: number; feetY?: number }> = {
+  // Olive's three poses (public/guides/olive/). The exporter centred each
+  // cutout's bbox on the canvas, so all three measure centerX 0.5000 — and
+  // pinning on that would line up the BOXES and move the BIRD, because the
+  // outstretched wing pads one side only. These are the feet: the horizontal
+  // centre of the bottom 12% of opaque content, measured at alpha > 16 from
+  // the shipped files (tools/island-art/source/olive-poses-2026-09-18/
+  // RETAINED.md). With them, every pose lands on the same spot.
+  "olive-neutral.webp": { centerX: 0.5104 },
+  "olive-encouraging.webp": { centerX: 0.3948 },
+  "olive-listening.webp": { centerX: 0.4813 },
+};
 
 /** Measured (+ optionally overridden) content bounds for a character texture,
  *  or undefined when the measurement was unavailable (SSR / tainted canvas /

@@ -123,20 +123,29 @@ A generic owl illustration does not satisfy this.
 
 Interim: falls back to `Owl.webp`, logged once.
 
-**Candidates received 2026-09-18 — not integrated, not accepted.** Three poses
-derived from the approved concept are retained at
-`tools/island-art/source/olive-poses-2026-09-18/` (source only; nothing ships,
-nothing imports them, the `Owl.webp` fallback is untouched). They match this
-section's canvas exactly: 480 × 640 RGBA, 512 px of content, feet at the content
-bbox bottom. All ten files verify against the pack's own SHA-256 manifest.
+**Candidates integrated 2026-09-18 — under review, not accepted.** The three
+poses derived from the approved concept now ship at
+`public/guides/olive/olive-<pose>.webp` and load through `render/oliveCatalog.ts`
+alongside the guides. The source pack stays at
+`tools/island-art/source/olive-poses-2026-09-18/`. They match this section's
+canvas exactly: 480 × 640 RGBA, 512 px of content, feet at the content bbox
+bottom. All ten files verify against the pack's own SHA-256 manifest.
+
+Where each pose is used — only where the established interaction calls for it:
+`listening` at the Quest Table while the question is open; `encouraging` once
+the child has chosen, and at the arrival greeting. `neutral` is loaded and
+registered as the resting texture and the first fallback, but no current beat
+shows Olive at rest. Any pose that fails to load falls back to the generic
+`Owl.webp` guide exactly as before — the render sites never lost that path.
 
 One measured integration note, because it decides whether Olive stands still
 when her pose changes: the three exports share a bbox centre of **0.5000**, so
 anchoring on `contentBounds.centerX` aligns the boxes and moves the bird — the
 encouraging pose's feet sit **56 px (10.9% of her height) left** of the others'.
-`render/avatarTexture.ts`'s `PIVOT_OVERRIDES` exists for exactly this; the three
-entries are written out in that folder's `RETAINED.md`. In-game scale, contrast
-over the room painting, wing clipping and every device check remain unverified.
+`render/avatarTexture.ts`'s `PIVOT_OVERRIDES` now carries the three entries
+(measured at the repo's own alpha threshold of 16: 0.5104 / 0.3948 / 0.4813), so
+every pose lands on the same feet. Real-device checks remain unverified; the
+simulated-viewport captures are in the integration checkpoint packet.
 
 ## 3. Quest Table / diorama — blocking for production visual acceptance
 

@@ -1,12 +1,12 @@
-# Retained on 2026-09-18 — candidates, NOT integrated
+# Retained on 2026-09-18 — candidates; integrated later the same day (under review)
 
 The Olive pose pack exactly as received, unmodified. All ten files verify
 against the pack's own `manifest.json` (SHA-256 and byte count, 0 mismatches).
 
-**Nothing here ships.** This folder is outside `public/` and outside
-`src/assets/`, nothing imports it, and no runtime code was changed to receive
-it. Olive still falls back to the generic `Owl.webp` at runtime, logged once, as
-before. These are candidates for the next art-integration turn.
+**This folder does not ship.** It is the source pack. The three runtime WebPs
+were copied unmodified to `packages/island-scene/public/guides/olive/` in the
+Olive integration checkpoint and load through `render/oliveCatalog.ts`; the
+generic `Owl.webp` remains the fallback for any pose that fails to load.
 
 ## What was measured here (independently, not taken on trust)
 
@@ -44,10 +44,9 @@ const PIVOT_OVERRIDES: Record<string, { centerX?: number; feetY?: number }> = {
 };
 ```
 
-Not applied: applying it means wiring pose selection, which is the next turn's
-work, and an override on a texture nothing loads yet would be dead code. The
-numbers are recorded here so that turn starts from measurement rather than from
-eyeballing.
+Applied in the integration checkpoint — re-measured at the repo's own alpha
+threshold (16) rather than the pack's 32, which moved `encouraging` by one
+thousandth (0.3937 → 0.3948); the others were unchanged to four places.
 
 ## Still unverified — nothing below was checked
 

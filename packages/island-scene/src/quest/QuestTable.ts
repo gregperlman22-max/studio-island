@@ -28,6 +28,8 @@ import {
   type ChoiceId,
   type DioramaScene,
   type PlacedCard,
+  olivePoseFor,
+  type OlivePoseKey,
 } from "./questTableModel";
 
 /**
@@ -77,9 +79,12 @@ const NOTICER = 2;
 export interface QuestTableTextures {
   /** The child's chosen Island Friend. */
   friend?: Texture;
-  /** Olive. EC-1 falls back to the existing generic guide owl — see
-   *  ASSET-SPEC-S89.md; the upgraded Olive is an acceptance dependency. */
+  /** Olive, resting. Also the fallback for any pose below that is missing —
+   *  the generic guide owl when the pose pack has not loaded. */
   olive?: Texture;
+  /** Olive's discrete poses (render/oliveCatalog.ts). A missing pose falls
+   *  back to `olive`. Chosen per beat state by questTableModel.olivePoseFor. */
+  olivePoses?: Partial<Record<OlivePoseKey, Texture>>;
   /** Three of the island's existing characters, standing in as the group the
    *  Friend wants to join. Real shipped art, no new asset required. */
   group: Texture[];
@@ -275,8 +280,12 @@ export class QuestTable {
   private drawCharacters(): void {
     const olivePx = OLIVE_H * this.img.h;
     const at = atImage(this.img, OLIVE_ANCHOR.ax, OLIVE_ANCHOR.ay);
-    const node = this.tex.olive
-      ? this.placeCharacter(this.tex.olive, olivePx, at.x, at.y, false)
+    // The pose for this beat, or the resting texture, or the generic owl —
+    // whichever is the first that actually loaded. Same anchor, same content
+    // height, so a pose change never moves her or resizes her.
+    const olive = this.tex.olivePoses?.[olivePoseFor(this.chosen)] ?? this.tex.olive;
+    const node = olive
+      ? this.placeCharacter(olive, olivePx, at.x, at.y, false)
       : this.placeholderCharacter(olivePx, 0x8a6a44);
     node.position.set(at.x, at.y);
     this.charLayer.addChild(node);

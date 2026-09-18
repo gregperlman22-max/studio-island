@@ -37,12 +37,16 @@ vi.mock("pixi.js", () => {
     tint = 0xffffff;
     style: Record<string, unknown> = {};
     text = "";
+    texture: unknown = null;
     constructor(arg?: unknown) {
       if (arg && typeof arg === "object" && "text" in (arg as object)) {
         const a = arg as { text?: unknown; style?: Record<string, unknown> };
         this.text = String(a.text ?? "");
         this.style = a.style ?? {};
       }
+      // new Sprite(texture): keep the texture, so a test can see WHICH art a
+      // character was drawn with.
+      else if (arg && typeof arg === "object") this.texture = arg;
     }
     addChild(...cs: Node[]) { this.children.push(...cs); return cs[0]; }
     removeChildren() { const c = this.children; this.children = []; return c; }
@@ -82,6 +86,7 @@ const {
 } = await import("../quest/questTableModel");
 const { HOTSPOTS } = await import("../render/treehouseModel");
 const { TreehouseRoom } = await import("../render/TreehouseRoom");
+const { QuestTable } = await import("../quest/QuestTable");
 
 // The room and table keep private state; tests reach in deliberately.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -645,5 +650,44 @@ describe("a change of Friend reaches the Quest Table", () => {
     expect(room.handleTap(r.x + r.w / 2, r.y + r.h / 2)).toBe("activity");
     expect(room.questTableOpen).toBe(true);
     expect(room.quest.cards.length).toBe(EC1_CHOICES.length);
+  });
+});
+
+describe("Olive's pose at the table (2026-09-18 candidates)", () => {
+  const T = (tag: string) => ({ tag, width: 480, height: 640 });
+  const poses = { neutral: T("neutral"), encouraging: T("encouraging"), listening: T("listening") };
+  const olive = (q: any) => q.charLayer.children[0]?.children?.find((c: any) => c.texture) ?? q.charLayer.children[0];
+
+  function opened(tex: Record<string, unknown>) {
+    const q: any = new (QuestTable as any)({ reducedMotion: true });
+    q.setTextures({ olive: T("fallback"), group: [], ...tex });
+    q.open({ x: 0, y: 0, w: 1440, h: 810 }, 1440, 900);
+    return q;
+  }
+
+  it("listens while the child is choosing, encourages once they have chosen", () => {
+    const q = opened({ olivePoses: poses });
+    expect(olive(q).texture.tag).toBe("listening");
+    q.handleTap(q.cards[0].x + 2, q.cards[0].y + 2);
+    expect(q.choice).not.toBeNull();
+    expect(olive(q).texture.tag).toBe("encouraging");
+  });
+
+  it("falls back to the resting/guide texture for any pose that did not load", () => {
+    const q = opened({ olivePoses: { neutral: poses.neutral } }); // listening + encouraging missing
+    expect(olive(q).texture.tag).toBe("fallback");
+    q.handleTap(q.cards[0].x + 2, q.cards[0].y + 2);
+    expect(olive(q).texture.tag).toBe("fallback");
+  });
+
+  it("keeps her on the same spot and the same size across poses", () => {
+    const q = opened({ olivePoses: poses });
+    const before = { x: q.charLayer.children[0].position.x, y: q.charLayer.children[0].position.y };
+    q.handleTap(q.cards[0].x + 2, q.cards[0].y + 2);
+    const after = { x: q.charLayer.children[0].position.x, y: q.charLayer.children[0].position.y };
+    // The pose changed…
+    expect(olive(q).texture.tag).toBe("encouraging");
+    // …the anchor point did not.
+    expect(after).toEqual(before);
   });
 });

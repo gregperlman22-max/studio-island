@@ -5,6 +5,7 @@ import { getZoneDialogue } from "../content/loader";
 import { debugLog } from "./debug";
 import { drawDecor, drawHotspotIcon, drawLeaf, drawLeafTick } from "./treehouseDecorArt";
 import { QuestTable } from "../quest/QuestTable";
+import type { OlivePoseKey } from "../quest/questTableModel";
 import { TABLE, questRoomFit } from "../quest/questTableModel";
 import {
   ART_EDGE_TOP,
@@ -205,8 +206,12 @@ export class TreehouseRoom implements ZoneInterior {
   /** Olive's art, and the three island characters standing in as the group in
    *  the miniature story. Supplied by the renderer, which owns every texture
    *  cache; safe before or after `enter`. */
-  setQuestCast(olive: Texture | undefined, group: Texture[]): void {
-    this.quest.setTextures({ olive, group });
+  setQuestCast(
+    olive: Texture | undefined,
+    group: Texture[],
+    olivePoses?: Partial<Record<OlivePoseKey, Texture>>,
+  ): void {
+    this.quest.setTextures({ olive, group, olivePoses });
   }
 
   /**
