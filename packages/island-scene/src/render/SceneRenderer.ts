@@ -53,6 +53,7 @@ import { AudioService } from "./AudioService";
 import { GUIDES, guideFileUrl, guideForZone } from "./guideCatalog";
 import { ArrivalView } from "./ArrivalView";
 import { TravelView, type MapSnapshot } from "../travel/TravelView";
+import type { JourneyPhase } from "../travel/journey";
 import { mapPanelRect } from "../travel/journey";
 import { travelPoseUrl } from "../travel/travelKit";
 import { LayeredIsland, type IslandLayoutOpts, type LandmarkMark } from "./LayeredIsland";
@@ -238,6 +239,14 @@ export class SceneRenderer {
   private travel?: TravelView;
   /** The zone the journey is heading to, while one is running. */
   private travelZone: ZoneKey | null = null;
+  /**
+   * The journey phase the current press began in. A press is a gesture in
+   * ONE phase: a hold that walks the Friend to the Treehouse must not become,
+   * on release, a tap on the "Go inside" pill that arrival put under the
+   * finger. If the phase has changed by release the gesture is consumed and
+   * entering the room takes a fresh press.
+   */
+  private travelPressPhase: JourneyPhase | null = null;
   /** One-shot guard: Captain Pete's welcome auto-opens exactly once, the first
    *  time the scene is on the island map and fully ready (see maybeAutoGreet). */
   private greeted = false;
@@ -2295,6 +2304,7 @@ export class SceneRenderer {
       this.pointerMoved = false;
       this.downX = e.global.x;
       this.downY = e.global.y;
+      this.travelPressPhase = this.travel.phase;
       if (this.travel.phase === "travel" && !this.opts.reducedMotion) this.travel.setWalking(true);
       return;
     }
@@ -2398,7 +2408,12 @@ export class SceneRenderer {
     // Guided travel: releasing stops the walk; a clean tap goes to the journey,
     // which answers with what it wants the renderer to do.
     if (this.travel?.active) {
-      const wasTap = this.pointerDown && !this.pointerMoved;
+      // A tap is a press and release in the SAME phase (see travelPressPhase).
+      // A hold that carried the journey into arrival ends here as a consumed
+      // gesture: the walk stops, and nothing arrival drew is activated.
+      const pressPhase = this.travelPressPhase;
+      this.travelPressPhase = null;
+      const wasTap = this.pointerDown && !this.pointerMoved && this.travel.phase === pressPhase;
       this.pointerDown = false;
       this.travel.setWalking(false);
       if (!wasTap) return;

@@ -25,15 +25,26 @@ direction the Treehouse is actually built in.
 | Register | Shipped reference (in repo) | Used by |
 |---|---|---|
 | **Painterly storybook** — soft modelled edges, warm light, no hard ink keyline | `src/assets/interiors/treehouse-hideaway.webp`, `public/avatars/core/*.webp`, `public/guides/*.webp` | Olive, travel poses, the diorama and everything on the table, choice illustrations |
-| **Wind Waker-adjacent cel** — flat fills, bold `#23201c` keyline | `src/assets/sprites/*.webp`, `src/assets/landmarks/*.webp` | the forest travel kit (tree variants) |
+| **Placeholder cel** — flat fills, bold `#23201c` keyline | `src/assets/sprites/*.webp`, `src/assets/landmarks/*.webp` | **nothing new.** This is the register the current placeholder landmarks and trees happen to be in. They remain the reference for *camera, scale and placement* so new art drops in without re-tuning; they are **not** authority for the finish |
 
-Match the register of the family's own reference, not the other family's.
+**Corrected 2026-09-18 (review item 3).** An earlier revision of this document
+told the Treehouse exterior and the forest kit to match the placeholder cel
+register. That was wrong: the approved island and Treehouse concepts
+(`tools/island-art/source/handoff-2026-09-17/`) are **warm painterly** — modelled
+forms, dimensional light, controlled soft edges, no hard ink keyline. The
+production direction for every new environment asset is that register.
+Existing placeholder art is a compatibility reference for framing, never a
+reason to downgrade the approved finish. This is a documentation correction;
+it authorises no island-wide asset replacement.
 
 **Reference accessibility — stated plainly.** The shipped files above are in the
-repository and can be matched directly. The **approved visual concepts for
-Olive are NOT in the repository**; the direction recorded below is transcribed
-from the brief and has not been checked against those concepts. Whoever briefs
-this art should work from the approved concepts, not from this paragraph.
+repository and can be matched directly. **Olive's approved concept sheet is also
+in the repository now**, retained unmodified at
+`tools/island-art/source/olive-poses-2026-09-18/reference/olive-approved-concept.png`
+(source only — nothing ships it), together with the three pose candidates
+derived from it. Whoever briefs Olive art should work from that sheet. The
+approved island and Treehouse concepts are at
+`tools/island-art/source/handoff-2026-09-17/`.
 
 ## Standing rules
 
@@ -64,7 +75,7 @@ one of them today. The rest need code before art can land.
 | **Diorama** (clearing, scrub, stone stack, tray, notice mark) | `QuestTable.ts` calls `drawClearing` / `drawScrub` / `drawStoneStack` / `drawTray` / `drawNoticeMark` in `quest/dioramaArt.ts` **directly** | a texture registry for the quest art, loading through `SceneRenderer` (alongside `loadQuestCast`), and each call site swapped for a sprite placed on the same anchor |
 | **Choice illustrations** | `drawChoiceArt` / `drawCardFace` called directly, keyed by `ChoiceId` | same registry; card art keyed by beat + choice id rather than by the two EC-1 ids |
 | **Olive** | one texture, resolved from the generic nine-guide `public/guides/Owl.webp` via `guideCatalog` | a pose-aware manifest + loader, and a pose selector in `QuestTable` (`neutral` / `encouraging` / `listening`) |
-| **Travel poses** | nothing — travel is not built | a `travelPose` registry with a documented fallback order |
+| **Travel poses** | travel **is built** (EC-2, `src/travel/`). `travelKit.travelPoseUrl()` resolves a pose and reports the substitution, but `SceneRenderer.beginJourney()` still supplies the front-facing core texture directly — the resolved URL is not yet loaded or consumed | wire actual loading of the resolved art into `beginJourney()`, and frame selection for the walk cycle (§7) — not merely populating `TRAVEL_POSES` |
 | **Patches** | nothing — patches are not built | model, storage contract, and a patch board render site |
 
 **Estimate: the diorama + choice registry is the bulk of it**, and it is the
@@ -92,8 +103,8 @@ and journeys EC-1 does not contain.
 
 ## 2. Olive — blocking for production visual acceptance
 
-Reference: `public/guides/*.webp` for register; **the approved Olive concepts
-for the design** (not in this repository — see above).
+Reference: `public/guides/*.webp` for register; **the approved Olive concept
+sheet for the design**, retained in the repository — see above.
 
 Direction as recorded in the brief: owl · warm · wise · encouraging ·
 non-judgemental · expressive · right for ages 5–12 · slightly more sophisticated
@@ -185,7 +196,12 @@ subject's own and not the world-map keyline. **Appearance remains subject to
 production visual acceptance** — code-drawn stand-ins are for demonstration and
 are not approved final art, whatever their simplicity might suggest.
 
-## 7. Six travel poses — blocking for EC-2
+## 7. Travel art — blocking for production visual acceptance
+
+*(Formerly "blocking for EC-2". EC-2 was demonstrated with an identified
+stand-in — the front-facing core art — and that was the right call; missing
+production travel art blocks production **visual acceptance**, not the
+demonstration of the journey.)*
 
 Reference: `public/avatars/core/*.webp`.
 
@@ -212,11 +228,16 @@ to be a frame sequence or sheet whose per-frame canvas and anchor match it. The
 frame count, timing and delivery format are not settled here and should be
 agreed with whoever animates Doug before the other five are commissioned.
 
-## 8. Forest travel kit — blocking for EC-2
+## 8. Forest travel kit — blocking for production visual acceptance
 
-Reference: `src/assets/sprites/tree-01.webp` / `tree-02.webp` — **this family is
-the cel register**, matching those two exactly for scale convention and keyline
-weight.
+*(Formerly "blocking for EC-2" — same correction as §7: EC-2 ran on the two
+shipped trees as an identified stand-in.)*
+
+Reference: `src/assets/sprites/tree-01.webp` / `tree-02.webp` for **scale
+convention and placement only**. The finish is the approved **painterly**
+register of the island concepts (`tools/island-art/source/handoff-2026-09-17/`),
+not those two placeholders' flat-fill cel look. New trees and the bough should
+sit *with* the approved Treehouse exterior, which they will frame.
 
 | | |
 |---|---|
@@ -262,7 +283,7 @@ pretends to be it.
 | | |
 |---|---|
 | View | Same three-quarter elevated view as every other landmark — match `src/assets/landmarks/treehouse.webp` exactly for camera and eye height, so it drops in without re-tuning |
-| Register | **Wind Waker-adjacent cel**, matching the other landmarks (flat fills, bold `#23201c` keyline) — *not* the painterly register |
+| Register | **Warm painterly**, matching the approved concepts: modelled forms, dimensional light, controlled soft edges, no hard ink keyline. The current placeholder landmarks' flat-fill cel look is *not* the target — they are a camera/placement reference only (see "Style references") |
 | Canvas | 1024 × 1024, RGBA, whole canopy inside the canvas with transparent margin |
 | Path | `src/assets/landmarks/treehouse.webp` (replaces in place) |
 | Format | WebP q80+, true cutout, **no baked ground shadow** — the renderer draws its own |

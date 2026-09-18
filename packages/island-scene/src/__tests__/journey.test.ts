@@ -252,3 +252,29 @@ describe("the journey map's snapshot", () => {
     expect(right.x).toBeCloseTo(fit.x + fit.w, 6);
   });
 });
+
+describe("the map isolates the discovery (review item 1)", () => {
+  const atLog = () => {
+    let s = beginTravel(newJourney(true));
+    while (Math.abs(s.p - discoveryWaypoint(R)) > 1e-6) s = stepToNextWaypoint(s, R);
+    return s;
+  };
+
+  it("is reachable at the log's stop with the map closed, and not with it open", () => {
+    const s = atLog();
+    expect(discoveryReachable(s, R)).toBe(true);
+    expect(discoveryReachable(openMap(s), R)).toBe(false);
+    expect(discoveryReachable(closeMap(openMap(s)), R)).toBe(true);
+  });
+
+  it("refuses to be found through the map", () => {
+    const s = openMap(atLog());
+    expect(findDiscovery(s).discovery).toBe("unseen");
+    // …and still can be, deliberately, once the map is closed.
+    expect(findDiscovery(closeMap(s)).discovery).toBe("found");
+  });
+
+  it("refuses to be found outside travel", () => {
+    expect(findDiscovery(newJourney(false)).discovery).toBe("unseen");
+  });
+});

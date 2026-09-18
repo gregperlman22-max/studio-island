@@ -305,6 +305,13 @@ export class TravelView {
     if (showWorld) this.paintWorld();
     else this.paintCardBackdrop();
 
+    // An overlay owns EVERY tap while it is up. The corridor is still painted
+    // underneath the map (it is what the map is over), and painting it
+    // registers the log's hit rect; that rect is discarded here so nothing
+    // under the map, the card or the greeting can be reached through it. A tap
+    // on the scrim beside the map's buttons is a tap on nothing.
+    if (this.state.phase !== "travel" || this.state.mapOpen) this.hits = [];
+
     if (this.state.phase === "card") this.drawDestinationCard();
     else if (this.state.phase === "arrival") this.drawArrivalGreeting();
     else if (this.state.mapOpen) this.drawJourneyMap();

@@ -168,6 +168,43 @@ describe("the journey's own screens", () => {
     expect(v.hits.some((x: { id: string }) => x.id === "log")).toBe(false);
   });
 
+  it("does not let a tap on the map collect the log underneath it", () => {
+    // Review item 1, reproduced exactly: reduced motion, two stops along to the
+    // log's waypoint, open the map, tap where the log's rect WAS.
+    for (const [w, h] of [[390, 844], [768, 1024], [1440, 900]] as const) {
+      const v = mounted(true, w, h);
+      start(v);
+      v.handleTap(...centreOf(v, "keep-going"));
+      v.handleTap(...centreOf(v, "keep-going"));
+      const logAt = centreOf(v, "log");          // reachable: the map is closed
+      v.handleTap(...centreOf(v, "map-open"));
+      expect(v.hits.map((x: { id: string }) => x.id).sort()).toEqual(["back-to-island", "map-close"]);
+      expect(v.handleTap(...logAt)).toBe("none");
+      expect(v.discoveryFound, `${w}x${h}: the map let a tap through to the log`).toBe(false);
+      expect(v.state.mapOpen).toBe(true);
+      // The scrim beside the buttons is a tap on nothing, too.
+      expect(v.handleTap(4, 4)).toBe("none");
+      expect(v.state.mapOpen).toBe(true);
+      // Both map buttons still work…
+      v.handleTap(...centreOf(v, "map-close"));
+      expect(v.state.mapOpen).toBe(false);
+      // …and closing the map restores deliberate log interaction.
+      expect(v.hits.some((x: { id: string }) => x.id === "log")).toBe(true);
+      v.handleTap(...centreOf(v, "log"));
+      expect(v.discoveryFound).toBe(true);
+    }
+  });
+
+  it("still offers Back to Island from the map at the log's stop", () => {
+    const v = mounted(true);
+    start(v);
+    v.handleTap(...centreOf(v, "keep-going"));
+    v.handleTap(...centreOf(v, "keep-going"));
+    v.handleTap(...centreOf(v, "map-open"));
+    expect(v.handleTap(...centreOf(v, "back-to-island"))).toBe("back-to-island");
+    expect(v.discoveryFound).toBe(false);
+  });
+
   it("can be walked past without ever investigating the log", () => {
     const v = mounted(true);
     start(v);

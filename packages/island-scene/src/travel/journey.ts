@@ -83,12 +83,23 @@ export function stepToNextWaypoint(s: JourneyState, route: RouteDef): JourneySta
  */
 export function discoveryReachable(s: JourneyState, route: RouteDef): boolean {
   if (s.phase !== "travel" || s.discovery === "found") return false;
+  // The map covers the corridor. Nothing under it is reachable while it is up.
+  if (s.mapOpen) return false;
   if (s.reducedMotion) return Math.abs(s.p - discoveryWaypoint(route)) < 1e-6;
   return Math.abs(s.p - route.discovery.t) < 0.13;
 }
 
-/** Tap the hollow log. Steering is never required: tapping it IS the action. */
+/**
+ * Tap the hollow log. Steering is never required: tapping it IS the action.
+ *
+ * Refused while the map is open or outside travel: the discovery is a
+ * deliberate, optional choice, and a tap on the map that happens to land where
+ * the log sits underneath must never collect it. The view discards the
+ * corridor's hit rects under an overlay as well; this guard is the model's own
+ * promise, so it holds even for a caller that never went through the view.
+ */
 export function findDiscovery(s: JourneyState): JourneyState {
+  if (s.phase !== "travel" || s.mapOpen) return s;
   return { ...s, discovery: "found" };
 }
 
