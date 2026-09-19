@@ -147,6 +147,19 @@ describe("the Treehouse layer pair", () => {
     expect(view.container.zIndex).toBeLessThan(front.zIndex);
   });
 
+  it("tells the island to pin its forest behind the back layer's row", async () => {
+    // The treehouse forest is composed behind the treehouse by intent. With the
+    // back layer sorting on the trunk row, a forest tree whose base lands south
+    // of that row would otherwise draw over the trunk and the stairs.
+    const r = await renderer({ x: 16, y: 21 });
+    const c = footprintCenter(TH.gridPosition, TH.footprint.w, TH.footprint.h);
+    const mark = r.landmarkMarks().find((m: { key: string }) => m.key === "treehouse_hideaway");
+    expect(mark.depthKey).toBeCloseTo(c.y - cfg.backInset! * cfg.scale + 0.05, 3);
+    expect(mark.depthKey).toBeLessThan(mark.y);
+    // No other landmark carries one — the pin is local to the treehouse.
+    for (const m of r.landmarkMarks()) if (m.key !== "treehouse_hideaway") expect(m.depthKey).toBeUndefined();
+  });
+
   it("sorts a Friend south of the base in front of both, and north of the trunk behind both", async () => {
     const c = footprintCenter(TH.gridPosition, TH.footprint.w, TH.footprint.h);
     const inset = cfg.backInset! * cfg.scale;

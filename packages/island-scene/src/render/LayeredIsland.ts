@@ -39,6 +39,10 @@ export interface IslandTextures {
 }
 
 export interface LandmarkMark {
+  /** The row the landmark's (back) sprite sorts on, when it differs from its
+   *  base `y` — a landmark with a front layer sorts its back layer on the row
+   *  where the trunk meets the ground. Props composed behind it pin below this. */
+  depthKey?: number;
   key: string;
   x: number;
   y: number;
@@ -289,7 +293,7 @@ export class LayeredIsland {
   }
 
   /** Stamp a base-anchored prop into the shared y-sort layer (snapped to sand). */
-  private stamp(tex: Texture, x: number, y: number, scale: number, rot = 0, deep = false): void {
+  private stamp(tex: Texture, x: number, y: number, scale: number, rot = 0, deep = false, zCap?: number): void {
     [x, y] = this.snapToSand(x, y, deep);
     const s = new Sprite(tex);
     s.anchor.set(0.5, 1);
@@ -297,7 +301,10 @@ export class LayeredIsland {
     s.scale.set(scale);
     s.rotation = rot;
     s.eventMode = "none";
-    s.zIndex = y; // y-sort across all nature + landmarks
+    // y-sort across all nature + landmarks. `zCap` pins a prop BEHIND a
+    // landmark it is composed behind (the treehouse forest) whatever row its
+    // base lands on — see scatterTrees.
+    s.zIndex = zCap === undefined ? y : Math.min(y, zCap);
     this.propLayer.addChild(s);
     this.propSprites.push(s);
   }
@@ -432,9 +439,17 @@ export class LayeredIsland {
     cx: number, cy: number, shx: number, shy: number, marks: readonly LandmarkMark[],
   ): void {
     const r = rng(0x9e3d);
+    // The treehouse forest is composed BEHIND the treehouse by intent (it is
+    // exempt from the keep-out for exactly that reason). Its trees' bases can
+    // land on rows south of the trunk's ground contact, which is where the
+    // treehouse's back layer sorts now that it has a front layer — so they are
+    // pinned just behind that key rather than left to the row they stand on.
+    // Every other tree keeps its own row.
+    const treehouse = marks.find((m) => m.key === "treehouse_hideaway");
+    const behindTreehouse = treehouse?.depthKey !== undefined ? treehouse.depthKey - 1 : undefined;
     const place = (nx: number, ny: number, tex: Texture, scale: number, skipKey?: string): void => {
       const [x, y] = this.keepOff(cx + nx * shx, cy + ny * shy, marks, skipKey);
-      this.stamp(tex, x, y, scale);
+      this.stamp(tex, x, y, scale, 0, false, skipKey === "treehouse_hideaway" ? behindTreehouse : undefined);
     };
     for (const [nx, ny, texNum, scale] of TREE_DEFS) {
       place(nx, ny, texNum === 1 ? this.tex.tree01 : this.tex.tree02, scale);

@@ -1531,10 +1531,13 @@ export class SceneRenderer {
     };
     return this.zones.map((z) => {
       const c = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
+      const cfg = LANDMARK_ART[z.key];
+      const inset = cfg.frontUrl && cfg.backInset ? cfg.backInset * cfg.scale : 0;
       return {
         key: z.key,
         x: c.x,
         y: c.y,
+        depthKey: inset ? c.y - inset + 0.05 : undefined,
         w: z.footprint.w,
         clear: clearById[z.key] ?? 110,
         ground: sandKeys.has(z.key) ? "sand" : "grass",
