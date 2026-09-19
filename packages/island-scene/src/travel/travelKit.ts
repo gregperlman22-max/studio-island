@@ -48,10 +48,15 @@ export const KIT_URLS: Record<PropKind, string> = {
   grass: spriteUrl("grass-01"),
 };
 
+/** The destination's BACK layer — the master with the front pieces cut out.
+ *  Only ever drawn together with DESTINATION_FRONT_URL; see render/zones.ts. */
 export const DESTINATION_URL = landmarkUrl("treehouse");
 /** The destination's front layer (near rail, nearest root) — same canvas,
- *  same anchor and scale as DESTINATION_URL; see render/zones.ts. */
+ *  same anchor and scale as DESTINATION_URL. */
 export const DESTINATION_FRONT_URL = landmarkUrl("treehouse-front");
+/** The COMPLETE master, same canvas/anchor/scale: what the corridor and the
+ *  arrival stage draw, alone, when either half of the pair fails to load. */
+export const DESTINATION_FULL_URL = landmarkUrl("treehouse-full");
 
 /**
  * The Friend's travelling sprite.
@@ -78,10 +83,12 @@ export const TRAVEL_POSES: ReadonlySet<string> = new Set<string>();
 
 export interface KitTextures {
   props: Record<PropKind, Texture>;
+  /** A COMPLETE destination: the back layer when `destinationFront` is set,
+   *  otherwise the full master. Never the cut back layer on its own. */
   destination: Texture;
-  /** Front layer of the destination, if it loaded. Registered in `bounds`
-   *  with the BACK layer's measured bounds, never its own, so both place
-   *  identically — the pair was cut from one canvas. */
+  /** Front layer of the destination, present ONLY when the whole pair loaded.
+   *  Registered in `bounds` with the BACK layer's measured bounds, never its
+   *  own, so both place identically — the pair was cut from one canvas. */
   destinationFront?: Texture;
   bounds: WeakMap<Texture, ContentBounds>;
 }
@@ -97,31 +104,49 @@ export interface KitTextures {
 export async function loadKit(): Promise<KitTextures> {
   const bounds = new WeakMap<Texture, ContentBounds>();
   const entries = Object.entries(KIT_URLS) as [PropKind, string][];
-  const [propTex, destination, destinationFront] = await Promise.all([
+  const [propTex, dest] = await Promise.all([
     Promise.all(entries.map(async ([kind, url]) => [kind, await load(url, bounds)] as const)),
-    load(DESTINATION_URL, bounds),
-    loadFront(DESTINATION_FRONT_URL),
+    loadDestination(bounds),
   ]);
-  // Same canvas, same anchor: the front layer takes the back layer's bounds.
-  const db = bounds.get(destination);
-  if (destinationFront && db) bounds.set(destinationFront, db);
   return {
     props: Object.fromEntries(propTex) as Record<PropKind, Texture>,
-    destination,
-    destinationFront,
+    ...dest,
     bounds,
   };
 }
 
-/** Optional layer: a missing or failed front simply leaves the destination a
- *  single sprite, as it was before the layer existed. */
-async function loadFront(url: string): Promise<Texture | undefined> {
-  try {
-    return Texture.from(await loadImage(url));
-  } catch (err) {
-    console.warn("[island-scene] destination front layer failed to load", err);
-    return undefined;
+/**
+ * The destination: the whole back/front pair, or else the whole master.
+ *
+ * The back layer has the front pieces cut out of it, so it is only usable
+ * with the front. If either half fails, the complete master is loaded and
+ * drawn alone — the corridor and the arrival stage then show one sprite, no
+ * front, and nothing is double-drawn. If the master fails too this throws,
+ * and beginJourney falls back to greeting at the landmark.
+ */
+async function loadDestination(
+  bounds: WeakMap<Texture, ContentBounds>,
+): Promise<{ destination: Texture; destinationFront?: Texture }> {
+  const attempt = async <T>(p: Promise<T>, what: string): Promise<T | undefined> => {
+    try {
+      return await p;
+    } catch (err) {
+      console.warn(`[island-scene] destination ${what} failed to load`, err);
+      return undefined;
+    }
+  };
+  const [back, front] = await Promise.all([
+    attempt(load(DESTINATION_URL, bounds), "back layer"),
+    attempt(loadImage(DESTINATION_FRONT_URL).then((img) => Texture.from(img)), "front layer"),
+  ]);
+  if (back && front) {
+    // Same canvas, same anchor: the front layer takes the back layer's bounds.
+    const db = bounds.get(back);
+    if (db) bounds.set(front, db);
+    return { destination: back, destinationFront: front };
   }
+  console.warn("[island-scene] destination pair incomplete, using the complete master");
+  return { destination: await load(DESTINATION_FULL_URL, bounds) };
 }
 
 async function load(url: string, bounds: WeakMap<Texture, ContentBounds>): Promise<Texture> {

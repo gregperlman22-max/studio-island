@@ -88,13 +88,16 @@ walk-grid line up.
 ## Treehouse exterior — back/front layer pair (`treehouse-layers.mjs`)
 
 Cuts `source/treehouse-master-2026-09-19/candidate/treehouse-master-1024.png`
-into `packages/island-scene/src/assets/landmarks/treehouse.webp` (back) and
-`treehouse-front.webp` (front) with the traced ownership mask in
+into `packages/island-scene/src/assets/landmarks/treehouse.webp` (back),
+`treehouse-front.webp` (front) and `treehouse-full.webp` (the uncut master —
+the runtime fallback when either half fails to load) with the traced ownership mask in
 `treehouse-front-mask.json` (master pixel coordinates; polygons, stroked
 polylines, circles; rasterised crispEdges so each pixel has one owner). Pixels,
 canvas and geometry are preserved; the script verifies that front-over-back
-reproduces the master exactly — in memory and after the lossless WebP round
-trip — and refuses to write otherwise. `node treehouse-layers.mjs --preview`
+reproduces the master exactly in memory, then writes temporary files,
+re-reads and re-verifies them, and only then replaces the finals — a saved
+mismatch is a non-zero exit with the finals untouched
+(`TREEHOUSE_LAYERS_INJECT_FAULT=1` exercises that branch). `node treehouse-layers.mjs --preview`
 also writes review overlays (front alone, mask boundary at 2×, recomposition).
 Both layers share the master's anchor and scale; the front layer is never
 trimmed, centred or measured on its own.

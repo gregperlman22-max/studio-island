@@ -519,7 +519,8 @@ export class TravelView {
         draw: (alloc) => {
           // Back layer, then the front layer at the SAME size and point —
           // nothing walks between them in the corridor, so together they are
-          // simply the master again.
+          // simply the master again. Without a front, `destination` IS the
+          // complete master (travelKit.loadDestination), drawn once.
           const tint = lerp(0xffffff, this.route.palette.hazeFar, hazeMix);
           this.place(
             this.take(this.propPool, this.depth, alloc()), this.kit!.destination, dest.px,

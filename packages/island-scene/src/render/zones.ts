@@ -46,10 +46,18 @@ const landmarkUrl = (name: string): string =>
  *              (a near stair rail, the nearest root). Cut from the same
  *              canvas as `url` with the same anchor and scale, so it overlays
  *              exactly; drawn as a second sprite with its own depth key.
+ *              With a front layer, `url` is the BACK layer — the master with
+ *              the front pieces cut out — and is only ever drawn WITH it.
+ *   fullUrl   — with a front layer: the COMPLETE master, same canvas, anchor
+ *              and scale. The runtime's fallback when either half of the pair
+ *              fails to load: shown alone, never with a front. If it fails
+ *              too, the code-drawn structure draws, as for any landmark.
  *   backInset — with a front layer: how far (art px) above the bbox bottom
  *              the BACK layer's ground contact sits (the trunk base), so its
  *              depth key is that row rather than the front pieces' row. A
- *              Friend between the two rows draws between the layers.
+ *              Friend between the two rows draws between the layers. Applies
+ *              only when the pair actually loaded; the full fallback sorts on
+ *              its base like a single sprite.
  * Anchors/contentH were derived from each cleaned PNG's opaque bounding box
  * (tools/island-art/landmarks-anchors.mjs) so every sprite sits BY ITS BASE on
  * the clearing — tall objects rise upward, low objects sit flat. Relative
@@ -67,6 +75,7 @@ export const LANDMARK_ART: Record<
     /** Opaque-pixel bbox [x0, y0, x1, y1] in art px (tools/island-art bbox pass). */
     contentBox: [number, number, number, number];
     frontUrl?: string;
+    fullUrl?: string;
     backInset?: number;
   }
 > = {
@@ -87,9 +96,11 @@ export const LANDMARK_ART: Record<
   // master's bbox bottom-centre, contentBox measured at alpha > 16 — both
   // layers share them by construction. Scale kept from the previous art
   // (visible height 853 → 861 art px, +1%). backInset 80: the trunk meets the
-  // ground ~80 art px above the stair foot / root tips.
+  // ground ~80 art px above the stair foot / root tips. treehouse-full is the
+  // uncut master, the fallback if either half of the pair fails to load.
   treehouse_hideaway: {
-    url: landmarkUrl("treehouse"), frontUrl: landmarkUrl("treehouse-front"), backInset: 80,
+    url: landmarkUrl("treehouse"), frontUrl: landmarkUrl("treehouse-front"),
+    fullUrl: landmarkUrl("treehouse-full"), backInset: 80,
     scale: 0.74, anchorX: 0.5039, anchorY: 0.8984, contentH: 861, contentBox: [110, 59, 922, 920],
   },
   art_hut: { url: landmarkUrl("art-hut"), scale: 0.29, anchorX: 0.5181, anchorY: 0.7236, contentH: 638, contentBox: [175, 102, 886, 742] },
@@ -171,7 +182,9 @@ export function buildZoneScene(
 
     // Front layer: the SAME anchor and scale as the back sprite — it was cut
     // from the same canvas — in its own container so the renderer can give it
-    // its own depth key. Never measured or centred on its own.
+    // its own depth key. Never measured or centred on its own. When no front
+    // is given, `texture` is a COMPLETE image (the renderer substitutes the
+    // full master when the pair did not load), never the cut back layer.
     if (frontTexture && cfg.frontUrl) {
       front = new Container();
       frontArt = new Container();

@@ -119,7 +119,9 @@ describe("the Treehouse layer pair", () => {
     expect(fs.anchor).toEqual(bs.anchor);
     expect(fs.scale).toEqual(bs.scale);
     expect(fs.texture).toBe(front);
-    // No front texture → no front container, exactly the single-sprite landmark of before.
+    // No front texture → no front container. (The renderer only ever passes a
+    // COMPLETE texture here without a front — the full master — never the cut
+    // back layer; see treehouseFallback.test.ts.)
     expect(buildZoneScene(TH, sproutPack, back as Any).front).toBeUndefined();
   });
 

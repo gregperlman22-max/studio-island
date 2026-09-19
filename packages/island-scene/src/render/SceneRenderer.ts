@@ -314,8 +314,12 @@ export class SceneRenderer {
     scatterLayouts: 0,
   };
   /** Finished illustrated landmark sprites, preloaded by zone key. */
+  /** A COMPLETE image per landmark: the single sprite, or — for a landmark
+   *  that ships a pair — the back layer when its front is in
+   *  `landmarkFrontTextures`, otherwise the full master. Never a cut back
+   *  layer on its own; see loadLandmarks. */
   private landmarkTextures = new Map<ZoneKey, Texture>();
-  /** Front layers for landmarks that ship one (LANDMARK_ART.frontUrl). */
+  /** Front layers, present ONLY when the whole pair loaded. */
   private landmarkFrontTextures = new Map<ZoneKey, Texture>();
 
   // ── Camera (zoom + eased follow + drag pan, clamped to world) ──
@@ -710,6 +714,55 @@ export class SceneRenderer {
     ]);
   }
 
+  /**
+   * One landmark's art: the single sprite, or — for a landmark that ships a
+   * back/front pair — the WHOLE pair, or else the WHOLE master.
+   *
+   * The back layer is the master with the front pieces cut out of it, so it is
+   * only ever shown together with the front. If either half fails, the
+   * complete master (`fullUrl`) stands in alone: same canvas, anchor and
+   * scale, one sprite, no front — never the back with holes in it, never a
+   * front fragment by itself. If the master fails as well, nothing is set and
+   * the zone draws its code-drawn structure, as any landmark does.
+   */
+  private async loadLandmark(key: ZoneKey): Promise<void> {
+    const cfg = LANDMARK_ART[key];
+    const tryLoad = async (url: string, what: string): Promise<Texture | undefined> => {
+      try {
+        return (await Assets.load(url)) as Texture;
+      } catch (err) {
+        console.warn(`[island-scene] ${what} failed to load: ${key}`, err);
+        return undefined;
+      }
+    };
+    if (!cfg.frontUrl) {
+      const tex = await tryLoad(cfg.url, "landmark art");
+      if (tex && !this.destroyed) this.landmarkTextures.set(key, tex);
+      return;
+    }
+    const [back, front] = await Promise.all([
+      tryLoad(cfg.url, "landmark back layer"),
+      tryLoad(cfg.frontUrl, "landmark front layer"),
+    ]);
+    if (this.destroyed) return;
+    if (back && front) {
+      this.landmarkTextures.set(key, back);
+      this.landmarkFrontTextures.set(key, front);
+      return;
+    }
+    console.warn(`[island-scene] landmark pair incomplete, using the complete master: ${key}`);
+    const full = cfg.fullUrl ? await tryLoad(cfg.fullUrl, "landmark full master") : undefined;
+    if (full && !this.destroyed) this.landmarkTextures.set(key, full);
+    // else: no entry at all → buildZoneScene's code-drawn fallback.
+  }
+
+  /** Whether `key` is drawn as its back/front pair right now. Depth metadata
+   *  keys off THIS, so the forest pin and the back layer's row always agree
+   *  with the art actually on screen. */
+  private landmarkIsPair(key: ZoneKey): boolean {
+    return this.landmarkFrontTextures.has(key);
+  }
+
   /** Olive in `pose`, or the generic guide owl if that pose never loaded —
    *  the behaviour every Olive render site had before the pose pack. */
   private olivePose(pose: OlivePose): Texture | undefined {
@@ -1008,10 +1061,18 @@ export class SceneRenderer {
     // Olive greets — her encouraging pose, if it loaded.
     view.setOlive(zone === "treehouse_hideaway" ? this.olivePose("encouraging") : this.guideTextures.get(zone));
     view.setMapSnapshot(this.captureWorldMap());
-    void view.load().then(() => {
+    view.load().then(() => {
       if (this.destroyed || this.travelZone !== zone) return;
       view.begin(this.app.screen.width, this.app.screen.height);
       this.reportPhase();
+    }).catch((err) => {
+      // The kit could not be assembled at all (destination art and its
+      // fallback both failed): no journey. The zone's guide greets instead —
+      // the path every other zone tap takes — rather than a half-built scene.
+      console.warn("[island-scene] journey art failed to load; greeting at the landmark instead", err);
+      if (this.destroyed || this.travelZone !== zone) return;
+      this.endJourney();
+      this.showGuide(zone);
     });
   }
 
@@ -1532,7 +1593,9 @@ export class SceneRenderer {
     return this.zones.map((z) => {
       const c = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
       const cfg = LANDMARK_ART[z.key];
-      const inset = cfg.frontUrl && cfg.backInset ? cfg.backInset * cfg.scale : 0;
+      // From the art actually loaded, not the config: with the full-master
+      // fallback there is no lowered back row to pin the forest behind.
+      const inset = this.landmarkIsPair(z.key) && cfg.backInset ? cfg.backInset * cfg.scale : 0;
       return {
         key: z.key,
         x: c.x,
@@ -1582,22 +1645,9 @@ export class SceneRenderer {
     await Promise.all([
       ...(Object.keys(LANDMARK_ART) as ZoneKey[]).map(async (key) => {
         try {
-          const tex = (await Assets.load(LANDMARK_ART[key].url)) as Texture;
-          if (!this.destroyed) this.landmarkTextures.set(key, tex);
-        } catch (err) {
-          console.warn(`[island-scene] landmark art failed to load: ${key}`, err);
+          await this.loadLandmark(key);
         } finally {
           this.bumpProgress();
-        }
-        // The front layer is optional at runtime: without it the landmark is
-        // simply a single sprite again, exactly as before it existed.
-        const frontUrl = LANDMARK_ART[key].frontUrl;
-        if (!frontUrl) return;
-        try {
-          const tex = (await Assets.load(frontUrl)) as Texture;
-          if (!this.destroyed) this.landmarkFrontTextures.set(key, tex);
-        } catch (err) {
-          console.warn(`[island-scene] landmark front layer failed to load: ${key}`, err);
         }
       }),
       (async () => {
@@ -1781,6 +1831,8 @@ export class SceneRenderer {
     // rows draws between the layers — in front of the trunk, behind the rail
     // and the near root. Nothing is made globally topmost.
     const cfg = LANDMARK_ART[z.key];
+    // `scene.front` exists iff the pair loaded — the same fact landmarkMarks
+    // keys off, so the two depth decisions cannot disagree.
     const inset = scene.front && cfg.backInset ? cfg.backInset * cfg.scale : 0;
     scene.container.zIndex = center.y - inset + 0.05;
     this.entities.addChild(scene.container);

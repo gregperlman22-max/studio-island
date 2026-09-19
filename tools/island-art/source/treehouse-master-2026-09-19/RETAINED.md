@@ -6,13 +6,18 @@ The package exactly as received; all eight files verify against its
 **What was cut from it, and how.** `tools/island-art/treehouse-layers.mjs`
 splits `candidate/treehouse-master-1024.png` into the runtime pair
 `packages/island-scene/src/assets/landmarks/treehouse.webp` (back) and
-`treehouse-front.webp` (front) using the traced ownership mask in
+`treehouse-front.webp` (front) — plus `treehouse-full.webp`, the uncut master
+on the same canvas, which is the runtime's fallback when either half of the
+pair fails to load (the back alone would be the master with holes) — using the traced ownership mask in
 `tools/island-art/treehouse-front-mask.json` — polygons, stroked polylines and
 circles in master pixel coordinates, rasterised with `shape-rendering=
 "crispEdges"` so every pixel has one owner. Original pixels, canvas and
 geometry are preserved; the script verifies front-over-back reproduces the
-master in alpha and RGB (0 mismatches) both in memory and after the lossless
-WebP round trip, and refuses to write otherwise. Re-run it to regenerate the
+master in alpha and RGB (0 mismatches) in memory, then writes all three
+outputs to temporary files, re-reads them and checks again — a saved-file
+mismatch exits non-zero and leaves the previous finals untouched
+(`TREEHOUSE_LAYERS_INJECT_FAULT=1` proves that branch). libvips' decode cache
+is off in the script so the re-read is a real read. Re-run it to regenerate the
 pair; `--preview` writes the overlays used for review.
 
 **`reference/foreground-intent-UNREGISTERED.png` was not used** for any pixel
