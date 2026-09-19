@@ -46,7 +46,6 @@ import {
  *   ?zone=treehouse_hideaway      open straight into that interior
  *   ?panel=0                      hide the dev-tools button
  *   ?rm=1                         start in reduced motion (same as the toggle)
- *   ?at=13,18                     start the Island Friend on that grid tile
  *   window.__walk(x, y)           walk the Island Friend to a tile (same call
  *                                 the dev panel's "Walk → dock" button makes)
  *
@@ -91,12 +90,6 @@ function installCaptureHook() {
   };
 }
 installCaptureHook();
-
-/** `?at=x,y` places the Friend on a tile for a capture; otherwise the spawn point. */
-function startTile(): { x: number; y: number } {
-  const m = /^(-?\d+),(-?\d+)$/.exec(REVIEW.get("at") ?? "");
-  return m ? { x: Number(m[1]), y: Number(m[2]) } : sampleLayout.spawnPoint;
-}
 
 const DINGHY_ID = "dinghy-to-build-island";
 const layoutWithDinghy = {
@@ -169,7 +162,7 @@ export function DemoApp() {
       {
         id: "local",
         isLocal: true,
-        position: startTile(),
+        position: sampleLayout.spawnPoint,
         label: "Maple Ranger",
         config: avatarCfg,
       },
