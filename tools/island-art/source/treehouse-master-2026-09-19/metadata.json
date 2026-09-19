@@ -1,0 +1,33 @@
+{
+  "canvas": [
+    1024,
+    1024
+  ],
+  "alpha_threshold": 16,
+  "content_box_exclusive": [
+    110,
+    59,
+    922,
+    920
+  ],
+  "content_height": 0.8408203125,
+  "bbox_anchor_suggestion": [
+    0.50390625,
+    0.8984375
+  ],
+  "export": {
+    "source_canvas": [
+      1254,
+      1254
+    ],
+    "scaled_canvas": [
+      900,
+      900
+    ],
+    "padding_offset": [
+      62,
+      40
+    ]
+  },
+  "layer_status": "Master only. No aligned back/front pair supplied. Foreground study is unregistered reference, not a runtime layer."
+}

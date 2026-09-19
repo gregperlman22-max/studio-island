@@ -270,7 +270,21 @@ Every recording is missing; the manifest holds three WAV beep placeholders.
 
 ---
 
-## 10. Treehouse exterior — blocking for the approved visual direction
+## 10. Treehouse exterior — integrated 2026-09-19, awaiting in-context visual review
+
+**Status.** A complete, character-free, transparent painterly master arrived on
+2026-09-19 (retained at `tools/island-art/source/treehouse-master-2026-09-19/`).
+It was split into the back/front pair this section asks for by a deterministic,
+pixel-preserving mask cut (`tools/island-art/treehouse-layers.mjs` +
+`treehouse-front-mask.json`; recomposition verified exact) and integrated on the
+map, in the travel corridor and at arrival. The requirements below stand as
+written; the delivered master meets the architecture list with one noted
+difference — **the telescope sits on an open section of the balcony rather
+than under the approved sheltered lookout**. Not silently accepted; flagged
+for the in-context review. Final visual acceptance is that review's call.
+
+*(The text that follows is the specification the master was delivered
+against, kept for the record.)*
 
 **This is the one asset the 2026-09-17 handoff makes urgent, and the one it
 cannot supply.** The approved references are in the repo at

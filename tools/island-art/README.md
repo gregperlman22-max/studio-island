@@ -84,3 +84,17 @@ M2 samples `home-island.png` opacity and maps it back through `screenToTile`
 matches the painted coastline. M4 pins this PNG into the `world` container with
 that **same** origin + scale, guaranteeing the painted shore and the invisible
 walk-grid line up.
+
+## Treehouse exterior — back/front layer pair (`treehouse-layers.mjs`)
+
+Cuts `source/treehouse-master-2026-09-19/candidate/treehouse-master-1024.png`
+into `packages/island-scene/src/assets/landmarks/treehouse.webp` (back) and
+`treehouse-front.webp` (front) with the traced ownership mask in
+`treehouse-front-mask.json` (master pixel coordinates; polygons, stroked
+polylines, circles; rasterised crispEdges so each pixel has one owner). Pixels,
+canvas and geometry are preserved; the script verifies that front-over-back
+reproduces the master exactly — in memory and after the lossless WebP round
+trip — and refuses to write otherwise. `node treehouse-layers.mjs --preview`
+also writes review overlays (front alone, mask boundary at 2×, recomposition).
+Both layers share the master's anchor and scale; the front layer is never
+trimmed, centred or measured on its own.

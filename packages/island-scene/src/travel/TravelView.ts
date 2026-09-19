@@ -374,7 +374,15 @@ export class TravelView {
       ((b?.contentW ?? 1) * (tex.width || 1)) / Math.max(1, (b?.contentH ?? 1) * (tex.height || 1));
     const h = Math.min(st.treeH, (view.w * 1.55) / Math.max(0.01, aspect));
     this.place(this.take(this.propPool, this.depth, 0), tex, h, st.treeX, st.groundY);
-    this.trim(this.propPool, 1);
+    // The front layer too. It draws BEHIND the Friend and Olive here on
+    // purpose: both stand on the arrival ground line, which is the stair foot
+    // and root tips' own row, so they are in front of those pieces. The layer
+    // earns its keep on the map, where a Friend can be between the rows.
+    let used = 1;
+    if (this.kit.destinationFront) {
+      this.place(this.take(this.propPool, this.depth, used++), this.kit.destinationFront, h, st.treeX, st.groundY);
+    }
+    this.trim(this.propPool, used);
   }
 
   private paintSky(view: Viewport, horizonY: number, top: number, bottom: number): void {
@@ -508,10 +516,22 @@ export class TravelView {
       const hazeMix = Math.min(0.5, Math.max(0, (dest.at.z - 5) / 26));
       items.push({
         z: dest.at.z,
-        draw: (alloc) => this.place(
-          this.take(this.propPool, this.depth, alloc()), this.kit!.destination, dest.px,
-          dest.at.x, dest.at.y, false, lerp(0xffffff, this.route.palette.hazeFar, hazeMix), dest.reveal,
-        ),
+        draw: (alloc) => {
+          // Back layer, then the front layer at the SAME size and point —
+          // nothing walks between them in the corridor, so together they are
+          // simply the master again.
+          const tint = lerp(0xffffff, this.route.palette.hazeFar, hazeMix);
+          this.place(
+            this.take(this.propPool, this.depth, alloc()), this.kit!.destination, dest.px,
+            dest.at.x, dest.at.y, false, tint, dest.reveal,
+          );
+          if (this.kit!.destinationFront) {
+            this.place(
+              this.take(this.propPool, this.depth, alloc()), this.kit!.destinationFront, dest.px,
+              dest.at.x, dest.at.y, false, tint, dest.reveal,
+            );
+          }
+        },
       });
     }
 

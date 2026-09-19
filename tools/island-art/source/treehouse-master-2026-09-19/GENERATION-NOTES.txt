@@ -1,0 +1,3 @@
+Created with the built-in image-generation tool using the approved island overview and Treehouse/dock architecture study as references. Primary instruction: isolated whole-canopy warm painterly Treehouse, blue-green roof, leaf door, wrapping balcony, lookout telescope, shallow curved stair approach, no characters/background/shadow, true alpha. Subsequent foreground-only image edits requested exact source registration, but visibly changed geometry and are not accepted as production extraction.
+
+Mechanical export only: ffmpeg scale=900:900:flags=lanczos,pad=1024:1024:62:40:color=black@0,format=rgba; then libwebp lossless. The master artwork was not repainted during export.

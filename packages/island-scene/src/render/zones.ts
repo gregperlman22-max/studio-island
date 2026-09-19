@@ -15,6 +15,9 @@ import { buildLandmarkFx } from "./landmarkFx";
  */
 export interface ZoneScene {
   container: Container;
+  /** The landmark's front layer, when it has one — placed and sorted by the
+   *  renderer on its own depth key (see LANDMARK_ART.frontUrl). */
+  front?: Container;
   setHover: (hovered: boolean) => void;
   /** Gentle idle animation (called each frame with elapsed seconds). */
   animate?: (t: number) => void;
@@ -39,6 +42,14 @@ const landmarkUrl = (name: string): string =>
  *   contentBox — opaque-pixel bounding box [x0, y0, x1, y1] in art px
  *              (alpha ≥ 16). Tap hit-testing uses THIS, not the texture
  *              bounds, so transparent padding never swallows a walk tap.
+ *   frontUrl  — optional FRONT layer: the pieces a Friend should pass BEHIND
+ *              (a near stair rail, the nearest root). Cut from the same
+ *              canvas as `url` with the same anchor and scale, so it overlays
+ *              exactly; drawn as a second sprite with its own depth key.
+ *   backInset — with a front layer: how far (art px) above the bbox bottom
+ *              the BACK layer's ground contact sits (the trunk base), so its
+ *              depth key is that row rather than the front pieces' row. A
+ *              Friend between the two rows draws between the layers.
  * Anchors/contentH were derived from each cleaned PNG's opaque bounding box
  * (tools/island-art/landmarks-anchors.mjs) so every sprite sits BY ITS BASE on
  * the clearing — tall objects rise upward, low objects sit flat. Relative
@@ -55,6 +66,8 @@ export const LANDMARK_ART: Record<
     contentH: number;
     /** Opaque-pixel bbox [x0, y0, x1, y1] in art px (tools/island-art bbox pass). */
     contentBox: [number, number, number, number];
+    frontUrl?: string;
+    backInset?: number;
   }
 > = {
   // Scales normalized by door/entrance size so every structure reads at the
@@ -66,7 +79,19 @@ export const LANDMARK_ART: Record<
   // Hero landmark: scaled up large and (in defaultLayout) nudged SOUTH so it
   // sits clearly IN FRONT of its forest cluster — the trees frame it from
   // behind instead of burying the cabin.
-  treehouse_hideaway: { url: landmarkUrl("treehouse"), scale: 0.74, anchorX: 0.501, anchorY: 0.9, contentH: 853, contentBox: [108, 51, 918, 910] },
+  //
+  // 2026-09-19: the approved painterly exterior, as a BACK/FRONT pair cut from
+  // one 1024 master by tools/island-art/treehouse-layers.mjs (mask in
+  // treehouse-front-mask.json; source retained under
+  // tools/island-art/source/treehouse-master-2026-09-19/). Anchor = the
+  // master's bbox bottom-centre, contentBox measured at alpha > 16 — both
+  // layers share them by construction. Scale kept from the previous art
+  // (visible height 853 → 861 art px, +1%). backInset 80: the trunk meets the
+  // ground ~80 art px above the stair foot / root tips.
+  treehouse_hideaway: {
+    url: landmarkUrl("treehouse"), frontUrl: landmarkUrl("treehouse-front"), backInset: 80,
+    scale: 0.74, anchorX: 0.5039, anchorY: 0.8984, contentH: 861, contentBox: [110, 59, 922, 920],
+  },
   art_hut: { url: landmarkUrl("art-hut"), scale: 0.29, anchorX: 0.5181, anchorY: 0.7236, contentH: 638, contentBox: [175, 102, 886, 742] },
   arcade_cove: { url: landmarkUrl("arcade"), scale: 0.21, anchorX: 0.5103, anchorY: 0.8457, contentH: 734, contentBox: [131, 132, 914, 868] },
   campfire_circle: { url: landmarkUrl("campfire"), scale: 0.31, anchorX: 0.499, anchorY: 0.75, contentH: 641, contentBox: [161, 124, 864, 779] },
@@ -121,12 +146,15 @@ export function buildZoneScene(
   zone: ZoneInstance,
   theme: ThemePackConfig,
   texture?: Texture,
+  frontTexture?: Texture,
 ): ZoneScene {
   const { palette } = theme;
   const container = new Container();
 
   const art = new Container();
   container.addChild(art);
+  let front: Container | undefined;
+  let frontArt: Container | undefined;
 
   const cfg = LANDMARK_ART[zone.key];
   // Gentle per-zone idle details (all disabled under reduced motion upstream).
@@ -140,6 +168,19 @@ export function buildZoneScene(
     sprite.anchor.set(cfg.anchorX, cfg.anchorY);
     sprite.scale.set(cfg.scale);
     art.addChild(sprite);
+
+    // Front layer: the SAME anchor and scale as the back sprite — it was cut
+    // from the same canvas — in its own container so the renderer can give it
+    // its own depth key. Never measured or centred on its own.
+    if (frontTexture && cfg.frontUrl) {
+      front = new Container();
+      frontArt = new Container();
+      front.addChild(frontArt);
+      const fs = new Sprite(frontTexture);
+      fs.anchor.set(cfg.anchorX, cfg.anchorY);
+      fs.scale.set(cfg.scale);
+      frontArt.addChild(fs);
+    }
 
     // Ambient "living landmark" effects (soft warm glow, chimney smoke, rotating
     // beam, screen/marquee, water ripples, drifting leaves, gentle sways …),
@@ -169,7 +210,11 @@ export function buildZoneScene(
 
   return {
     container,
-    setHover: (hovered: boolean) => art.scale.set(hovered ? 1.05 : 1),
+    front,
+    setHover: (hovered: boolean) => {
+      art.scale.set(hovered ? 1.05 : 1);
+      frontArt?.scale.set(hovered ? 1.05 : 1);
+    },
     animate: fxFns.length ? (t: number) => { for (const f of fxFns) f(t); } : undefined,
   };
 }

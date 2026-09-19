@@ -278,6 +278,26 @@ describe("the journey's own screens", () => {
     }
   });
 
+  it("draws the destination's front layer exactly where its back layer is", () => {
+    const v = mounted(true, 390, 844);
+    // Same canvas as the back layer — the pair is cut from one master.
+    const front = { width: v.kit.destination.width, height: v.kit.destination.height };
+    v.kit.destinationFront = front;
+    start(v);
+    for (let i = 0; i < 10 && v.phase === "travel"; i++) v.handleTap(...centreOf(v, "keep-going"));
+    expect(v.phase).toBe("arrival");
+    const sprites = v.depth.children.filter((c: { texture?: unknown }) => c.texture);
+    const back = sprites.find((s: { texture: unknown }) => s.texture === v.kit.destination);
+    const fr = sprites.find((s: { texture: unknown }) => s.texture === front);
+    expect(back).toBeTruthy();
+    expect(fr, "front layer not drawn at arrival").toBeTruthy();
+    expect(fr.position).toEqual(back.position);
+    expect(fr.scale).toEqual(back.scale);
+    expect(fr.anchor).toEqual(back.anchor);
+    // Drawn after the back layer, and both stay BEHIND the characters (overlay).
+    expect(v.depth.children.indexOf(fr)).toBeGreaterThan(v.depth.children.indexOf(back));
+  });
+
   it("reports the substituted travel pose rather than hiding it", () => {
     expect(mounted().usingSubstitutePose).toBe(true);
   });

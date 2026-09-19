@@ -315,6 +315,8 @@ export class SceneRenderer {
   };
   /** Finished illustrated landmark sprites, preloaded by zone key. */
   private landmarkTextures = new Map<ZoneKey, Texture>();
+  /** Front layers for landmarks that ship one (LANDMARK_ART.frontUrl). */
+  private landmarkFrontTextures = new Map<ZoneKey, Texture>();
 
   // ── Camera (zoom + eased follow + drag pan, clamped to world) ──
   private camScale = 1;
@@ -1584,6 +1586,16 @@ export class SceneRenderer {
         } finally {
           this.bumpProgress();
         }
+        // The front layer is optional at runtime: without it the landmark is
+        // simply a single sprite again, exactly as before it existed.
+        const frontUrl = LANDMARK_ART[key].frontUrl;
+        if (!frontUrl) return;
+        try {
+          const tex = (await Assets.load(frontUrl)) as Texture;
+          if (!this.destroyed) this.landmarkFrontTextures.set(key, tex);
+        } catch (err) {
+          console.warn(`[island-scene] landmark front layer failed to load: ${key}`, err);
+        }
       }),
       (async () => {
         try {
@@ -1750,7 +1762,7 @@ export class SceneRenderer {
     const containers: Container[] = [];
     const animators: ((t: number) => void)[] = [];
 
-    const scene = buildZoneScene(z, this.theme, this.landmarkTextures.get(z.key));
+    const scene = buildZoneScene(z, this.theme, this.landmarkTextures.get(z.key), this.landmarkFrontTextures.get(z.key));
     if (scene.animate) animators.push(scene.animate);
     const center = footprintCenter(z.gridPosition, z.footprint.w, z.footprint.h);
     scene.container.position.set(center.x, center.y);
@@ -1758,9 +1770,24 @@ export class SceneRenderer {
     // nature props, so a tree in front (lower on screen) occludes the building
     // and a tree behind does not. The +0.05 keeps a landmark just ahead of a
     // prop on the exact same row.
-    scene.container.zIndex = center.y + 0.05;
+    //
+    // With a FRONT layer the depth is local to this landmark and stays inside
+    // the same y-sort: the back layer's key is the row where its trunk meets
+    // the ground (backInset art px above the sprite base), the front layer's
+    // key is the base row itself. A Friend whose feet are between those two
+    // rows draws between the layers — in front of the trunk, behind the rail
+    // and the near root. Nothing is made globally topmost.
+    const cfg = LANDMARK_ART[z.key];
+    const inset = scene.front && cfg.backInset ? cfg.backInset * cfg.scale : 0;
+    scene.container.zIndex = center.y - inset + 0.05;
     this.entities.addChild(scene.container);
     containers.push(scene.container);
+    if (scene.front) {
+      scene.front.position.set(center.x, center.y);
+      scene.front.zIndex = center.y + 0.05;
+      this.entities.addChild(scene.front);
+      containers.push(scene.front);
+    }
 
     // Parent-level ambient overlays. These live in `entities` — NOT inside the
     // zone container — so they y-sort independently and render ABOVE the

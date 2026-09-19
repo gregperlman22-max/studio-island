@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FreeBuildScene,
   IslandScene,
@@ -46,6 +46,9 @@ import {
  *   ?zone=treehouse_hideaway      open straight into that interior
  *   ?panel=0                      hide the dev-tools button
  *   ?rm=1                         start in reduced motion (same as the toggle)
+ *   ?at=13,18                     start the Island Friend on that grid tile
+ *   window.__walk(x, y)           walk the Island Friend to a tile (same call
+ *                                 the dev panel's "Walk → dock" button makes)
  *
  * and `window.__ec1` reports where the Quest Table's affordances actually are,
  * computed with the SAME pure model the renderer draws from — so if the layout
@@ -88,6 +91,12 @@ function installCaptureHook() {
   };
 }
 installCaptureHook();
+
+/** `?at=x,y` places the Friend on a tile for a capture; otherwise the spawn point. */
+function startTile(): { x: number; y: number } {
+  const m = /^(-?\d+),(-?\d+)$/.exec(REVIEW.get("at") ?? "");
+  return m ? { x: Number(m[1]), y: Number(m[2]) } : sampleLayout.spawnPoint;
+}
 
 const DINGHY_ID = "dinghy-to-build-island";
 const layoutWithDinghy = {
@@ -138,6 +147,10 @@ export function DemoApp() {
 
   const [log, setLog] = useState<string[]>([]);
   const sceneRef = useRef<IslandSceneHandle>(null);
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).__walk = (x: number, y: number) =>
+      sceneRef.current?.walkLocalAvatarTo({ x, y });
+  }, []);
 
   const themePack = themePacks[themeKey];
 
@@ -156,7 +169,7 @@ export function DemoApp() {
       {
         id: "local",
         isLocal: true,
-        position: sampleLayout.spawnPoint,
+        position: startTile(),
         label: "Maple Ranger",
         config: avatarCfg,
       },

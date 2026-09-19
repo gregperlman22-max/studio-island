@@ -49,6 +49,9 @@ export const KIT_URLS: Record<PropKind, string> = {
 };
 
 export const DESTINATION_URL = landmarkUrl("treehouse");
+/** The destination's front layer (near rail, nearest root) — same canvas,
+ *  same anchor and scale as DESTINATION_URL; see render/zones.ts. */
+export const DESTINATION_FRONT_URL = landmarkUrl("treehouse-front");
 
 /**
  * The Friend's travelling sprite.
@@ -76,6 +79,10 @@ export const TRAVEL_POSES: ReadonlySet<string> = new Set<string>();
 export interface KitTextures {
   props: Record<PropKind, Texture>;
   destination: Texture;
+  /** Front layer of the destination, if it loaded. Registered in `bounds`
+   *  with the BACK layer's measured bounds, never its own, so both place
+   *  identically — the pair was cut from one canvas. */
+  destinationFront?: Texture;
   bounds: WeakMap<Texture, ContentBounds>;
 }
 
@@ -90,15 +97,31 @@ export interface KitTextures {
 export async function loadKit(): Promise<KitTextures> {
   const bounds = new WeakMap<Texture, ContentBounds>();
   const entries = Object.entries(KIT_URLS) as [PropKind, string][];
-  const [propTex, destination] = await Promise.all([
+  const [propTex, destination, destinationFront] = await Promise.all([
     Promise.all(entries.map(async ([kind, url]) => [kind, await load(url, bounds)] as const)),
     load(DESTINATION_URL, bounds),
+    loadFront(DESTINATION_FRONT_URL),
   ]);
+  // Same canvas, same anchor: the front layer takes the back layer's bounds.
+  const db = bounds.get(destination);
+  if (destinationFront && db) bounds.set(destinationFront, db);
   return {
     props: Object.fromEntries(propTex) as Record<PropKind, Texture>,
     destination,
+    destinationFront,
     bounds,
   };
+}
+
+/** Optional layer: a missing or failed front simply leaves the destination a
+ *  single sprite, as it was before the layer existed. */
+async function loadFront(url: string): Promise<Texture | undefined> {
+  try {
+    return Texture.from(await loadImage(url));
+  } catch (err) {
+    console.warn("[island-scene] destination front layer failed to load", err);
+    return undefined;
+  }
 }
 
 async function load(url: string, bounds: WeakMap<Texture, ContentBounds>): Promise<Texture> {
