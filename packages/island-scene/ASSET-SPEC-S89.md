@@ -270,9 +270,26 @@ Every recording is missing; the manifest holds three WAV beep placeholders.
 
 ---
 
-## 10. Treehouse exterior — integrated 2026-09-19, awaiting in-context visual review
+## 10. Treehouse exterior — integration ACCEPTED 2026-09-20; production visual acceptance still open
 
-**Status.** A complete, character-free, transparent painterly master arrived on
+**Acceptance record.** Integration accepted at candidate
+`78cbcb34513d84cb30c3615b2a5fcdbbf743809c` (tree `2524a894…`), reviewed base
+`73b7b08`. Both bounded corrections closed: complete-pair / complete-master
+fallback with depth following the art actually loaded, and an enforced
+saved-output verification gate in `tools/island-art/treehouse-layers.mjs`.
+Supplied validation at acceptance: 341 tests, clean typecheck, successful demo
+build — supplied results, not an independent rerun; captures were viewport
+simulation, not real devices. Lossless assets retained.
+
+**Still open for production visual acceptance** — explicit, not approved by
+the above: the open telescope balcony versus the approved sheltered lookout
+(from the supplied master); phone horizontal cropping on map and arrival;
+mask-edge / post / tread-sliver limitations of the traced cut; the broader
+island art beyond the Treehouse. EC-1, EC-2 and Olive remain accepted. Next in
+the art sequence is Doug's actual walk cycle (§7); boat concepts remain
+retained only; EC-3 is not started.
+
+**Integration history.** A complete, character-free, transparent painterly master arrived on
 2026-09-19 (retained at `tools/island-art/source/treehouse-master-2026-09-19/`).
 It was split into the back/front pair this section asks for by a deterministic,
 pixel-preserving mask cut (`tools/island-art/treehouse-layers.mjs` +
