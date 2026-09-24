@@ -1,0 +1,50 @@
+S-89 — approved boat-opening direction: bounded local integration
+
+Greg approved the new boat approach/docking visual direction, then authorized continuing with the integration batch. Implement it locally and return one meaningful experience checkpoint. Work stays within Claude and ChatGPT.
+
+MODEL
+Run on the selected Opus model (/model opus), not Fable. Select it before starting and do not switch mid-task. Include a Model row in the packet's candidate table naming the actual model identifier used for implementation, tests and captures. Report any unavailable or conflicting model information honestly; do not invent telemetry. If this session is not on Opus, resolve that before implementation.
+
+READ FIRST
+Read the root README.md, then source/README.md and source/IMPLEMENTATION-NOTES.md. Verify SHA256SUMS.txt and source/SHA256SUMS.txt; inspect the source PNGs and the preview. The source README and notes predate Greg's approval. Their statements that integration is not yet authorized are superseded by this prompt for the bounded scope below; their technical limitations still apply. The source files are preserved unchanged.
+
+STATE
+Inspect actual branch, HEAD, working tree and current arrival implementation. The last reported game HEAD was 4f281368651af3a0574406752232683e7f093272, a status-only commit; it is context, not a reset target. Preserve newer work and all accepted history. Accepted checkpoints: EC-1 5b1c5e9, EC-2 2511328, Olive 1592a98, Treehouse exterior 78cbcb3. Their existing test counts belong to those candidates, not this one. Doug's walk remains unfinished and is not an integration dependency for boat approach/docking. EC-3 has not started.
+
+SCOPE — FINISH AS ONE BATCH
+Replace the opening's approach and docking visual treatment using this approved direction: warm painterly environment, sun-marked dock, separate wooden sailboat, calm movement, the actual selected Friend aboard with Captain Pete, slowing to a stable position beside the landing.
+
+Keep the ordinary picker → opening → existing Island-entry path usable end to end. Preserve the existing transition after docking without inventing or claiming a completed walk/disembarkation. Do not strand the user at the new scene. If preserving that transition needs a small directly related adaptation, make it and report its exact behavior. If it requires new disembarkation art or a broader navigation redesign, report that concrete dependency rather than gliding a static Friend across a plank.
+
+1. Use the supplied sources faithfully.
+- source/assets/environment.png: one opaque environment/water/dock plate, 1671 x 941. The dock is baked into it. Use one consistent scene; do not morph between the older concept paintings.
+- source/assets/boat.png: full transparent 1254-square boat master. Keep the whole canvas and shared coordinate system for derived layers.
+- source/assets/captain-study.png: the Captain Pete cutout shown in the newly approved boat preview. Its use is limited to this opening; no other-guide redesign or rollout is authorized. Record it as the new opening asset, not pre-existing shipped art.
+- source/assets/doug-reference.png: reference ONLY. The live opening must load the child's actual selected Friend using the existing avatar path. Never hardcode this Doug image as every child's passenger.
+- scene.mjs and scene-layout.json: prototype geometry and timing references, not drop-in product code. Refine practical placement/framing to the real renderer while preserving the approved composition. No new illustration pass unless a concrete missing asset blocks the agreed behavior.
+
+2. Build correct occlusion and failure behavior.
+Derive boat back/front layers from the same master using a carefully traced ownership mask. The supplied near-hull polygon is a starting suggestion only; the preview redrew the full boat through a clip and did not deliver a production layer pair. Ensure the hull covers lower bodies while keeping both heads readable. Keep boat layers and passengers in one shared transform, with per-character placement based on content bounds/anchors.
+
+Verify front-over-back reproduces the master after saved-file readback, with an honest failure gate and final outputs unchanged on a failed extraction. Reuse the accepted extraction/fallback lessons; do not copy a cache-sensitive verification bug. Preserve source quality for the verified pair and report runtime bytes and loading behavior.
+
+Resolve a complete pair or a complete working fallback if an asset fails; never render a fragment, leave a hanging promise or trap entry. Prefer the existing working boat representation if an uncut master cannot preserve passenger occlusion. Verify fallback against the boat's actual draw order, not by analogy with the Treehouse alone. Retain the existing captain/avatar fallback where appropriate.
+
+The sail may remain attached to the boat for this chunk. Independent sail animation, animated water layers, a boarding plank and dock occluder extraction are not prerequisites for approach/docking; do not expand into them unless directly needed to preserve existing entry.
+
+3. Make the real experience readable and stable.
+Smooth approach/deceleration and restrained rocking; no exaggerated wake, bob or busy glitter. Choose timing in the running experience. The supplied 6.5-second export is illustrative, not an approved timing constant.
+
+Check phone portrait, tablet and desktop using actual product UI. Keep both characters and the relevant landing area readable and avoid input controls over them. Portrait may use intentional camera framing, but do not blindly copy the standalone 390x520 panel into a 390x844 product viewport. Wider scenery may crop; essential action and entry controls must remain visible.
+
+Preserve existing skip, pause if present, mute/audio, reduced-motion, replay/re-entry and input semantics. Reduced motion must reach the same usable Island entry without continuous travel. Skip during approach or loading must not leave a stale animation, duplicate completion, visible fragment or blocked input. The standalone viewer's controls do not validate product behavior.
+
+4. Verify once against concrete risks, then deliver.
+Run relevant regression tests, typecheck and demo build; lint if available. Add focused coverage only where new behavior introduces a real risk: layer failure, selected-Friend changes/re-entry, skip/completion and reduced-motion entry. Use actual renderer/input paths for interaction defects. Do not create tests that only repeat the implementation's own constants or broaden into unrelated audits.
+
+Capture the ordinary picker → opening → dock → existing Island entry path. Use Doug and at least one different selected Friend to show dynamic selection. Include phone (390x844), tablet (768x1024) and desktop captures, a short normal-motion recording, plus concise skip, reduced-motion and asset-failure evidence. Reuse representative captures instead of producing redundant files. Clearly distinguish simulated viewports/software rendering from real-device or real-time playback.
+
+Return one review ZIP under 30 MiB where practical, with a top-level README containing Model, candidate SHA/tree, actual base, diff summary, actual validation results, asset sizes, preserved entry behavior and remaining visual exceptions. Include the incremental diff, relevant logs, screenshots and a compact recording/GIF. Attach the ZIP as an actual downloadable file. Keep originals/source art outside runtime paths except for assets intentionally integrated.
+
+CADENCE AND BOUNDARIES
+Implement and resolve routine corrections without another planning approval or status-only handoff. Stop at one complete approach/docking integration checkpoint for Greg + ChatGPT review. Report material blockers precisely. No other Friends' animation work, no Doug walk-cycle workaround, no EC-3 expansion, no island-wide replacement, no new S-ID, no push, PR, merge, deployment or publication.

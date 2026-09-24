@@ -1,0 +1,95 @@
+{
+  "stage": {
+    "width": 1671,
+    "height": 941,
+    "duration": 6.5
+  },
+  "boatCanvas": [
+    1254,
+    1254
+  ],
+  "frontMask": [
+    [
+      0,
+      991
+    ],
+    [
+      56,
+      945
+    ],
+    [
+      125,
+      947
+    ],
+    [
+      170,
+      994
+    ],
+    [
+      256,
+      977
+    ],
+    [
+      333,
+      1003
+    ],
+    [
+      430,
+      1007
+    ],
+    [
+      574,
+      991
+    ],
+    [
+      733,
+      974
+    ],
+    [
+      895,
+      940
+    ],
+    [
+      1005,
+      910
+    ],
+    [
+      1087,
+      869
+    ],
+    [
+      1165,
+      803
+    ],
+    [
+      1233,
+      750
+    ],
+    [
+      1254,
+      1254
+    ],
+    [
+      0,
+      1254
+    ]
+  ],
+  "start": {
+    "p": 0,
+    "x": 10,
+    "y": 210,
+    "s": 0.585,
+    "roll": 0,
+    "bob": 0
+  },
+  "end": {
+    "p": 1,
+    "x": 210,
+    "y": 260,
+    "s": 0.49999999999999994,
+    "roll": -0.0018668597806016285,
+    "bob": 0.5832173336646593
+  },
+  "characters": "Independent reference sprites; no walk or disembarkation implemented",
+  "portrait": "390x520 preview panel, fixed vertical scale and boat-follow horizontal crop. Landing edge visible; whole sun gate not visible. Not real device/runtime validation."
+}

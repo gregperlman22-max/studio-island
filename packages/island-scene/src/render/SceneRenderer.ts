@@ -53,6 +53,8 @@ import { AudioService } from "./AudioService";
 import { GUIDES, guideFileUrl, guideForZone } from "./guideCatalog";
 import { OLIVE_POSES, olivePoseUrl, type OlivePose } from "./oliveCatalog";
 import { ArrivalView } from "./ArrivalView";
+import { BoatOpeningView, type ArrivalCinematic, type OpeningKit } from "./BoatOpeningView";
+import { OPENING_ART } from "./openingArt";
 import { TravelView, type MapSnapshot } from "../travel/TravelView";
 import type { JourneyPhase } from "../travel/journey";
 import { mapPanelRect } from "../travel/journey";
@@ -237,7 +239,7 @@ export class SceneRenderer {
   // first); "cinematic" = third-person boat-to-dock open; "fade" = cross-fading
   // that cinematic up into the world map; "done" = normal.
   private arrival: "select" | "cinematic" | "fade" | "done" = "cinematic";
-  private arrivalView?: ArrivalView;
+  private arrivalView?: ArrivalCinematic;
   /** Guided travel (EC-2). Owns the destination card, the journey and the
    *  arrival greeting — everything between the world map and the Treehouse. */
   private travel?: TravelView;
@@ -266,7 +268,11 @@ export class SceneRenderer {
   private arrivalFadeT = 0;
   /** Last phase reported to the host — so the callback fires on change only. */
   private phase: ScenePhase | null = null;
-  /** Painted full-screen stage texture for the arrival cinematic. */
+  /** The approved boat opening's art (plate, verified back/front boat pair,
+   *  Captain Pete), set only when ALL of it loaded — never a partial kit. */
+  private openingKit?: OpeningKit;
+  /** Painted full-screen stage texture: the picker's backdrop, and the stage
+   *  of the covered-boat cinematic that stands in if the opening kit fails. */
   private arrivalBgTex?: Texture;
   /** Covered-boat layers (arrival cinematic only): hull-back (cabin/Pete/sail)
    *  and hull-front (near rail), with the rider composited between them. */
@@ -533,9 +539,11 @@ export class SceneRenderer {
    *  drop the avatar straight onto the dock. The boat lives only in the cinematic
    *  now — there is no moored boat on the world map. */
   private setupArrival(): void {
-    // Missing-asset guard: without both the stage and the boat, the cinematic
-    // is seconds of blank screen — land the avatar on the dock instead.
-    if (this.arrival === "cinematic" && (!this.arrivalBgTex || !this.boatBackTex || !this.boatFrontTex)) {
+    // Missing-asset guard: with neither the opening kit nor a complete
+    // covered-boat stage, the cinematic would be seconds of blank screen —
+    // land the avatar on the dock instead.
+    const coveredBoat = !!this.arrivalBgTex && !!this.boatBackTex && !!this.boatFrontTex;
+    if (this.arrival === "cinematic" && !this.openingKit && !coveredBoat) {
       console.warn("[island-scene] arrival art missing — skipping the boat cinematic");
       this.arrival = "done";
     }
@@ -543,22 +551,34 @@ export class SceneRenderer {
       // Hide the world avatar until it disembarks; play the cinematic overlay.
       const local = this.localId ? this.avatarViews.get(this.localId) : null;
       if (local) local.container.visible = false;
-      this.arrivalView = new ArrivalView(this.opts.reducedMotion);
-      this.app.stage.addChild(this.arrivalView.container);
-      this.app.stage.setChildIndex(this.fade, this.app.stage.children.length - 1); // keep fade on top
-      // The chosen friend rides as a passenger between the boat's hull layers —
-      // the same texture the on-island avatar uses. Missing texture (art failed
-      // to load) just sails Pete alone; the guard above already covers bg/boat.
+      // The chosen friend rides as a passenger between the boat's layers — the
+      // same texture the on-island avatar uses. Missing texture (art failed to
+      // load) just sails Pete alone; the guard above covers the boat itself.
       const riderUrl = this.localImageUrl();
-      this.arrivalView.enter(
-        this.arrivalBgTex,
-        this.boatBackTex,
-        this.boatFrontTex,
-        this.app.screen.width,
-        this.app.screen.height,
-        "arrive",
-        riderUrl ? this.avatarTextures.get(riderUrl) : undefined,
-      );
+      const riderTex = riderUrl ? this.avatarTextures.get(riderUrl) : undefined;
+      const { width: w, height: h } = this.app.screen;
+      if (this.openingKit) {
+        // The approved opening: plate + boat pair + Pete + the chosen friend.
+        const view = new BoatOpeningView(this.opts.reducedMotion);
+        this.arrivalView = view;
+        this.app.stage.addChild(view.container);
+        view.enter(this.openingKit, w, h, riderTex);
+      } else {
+        // Fallback: the covered-boat cinematic (Pete baked into its hull-back).
+        const view = new ArrivalView(this.opts.reducedMotion);
+        this.arrivalView = view;
+        this.app.stage.addChild(view.container);
+        view.enter(
+          this.arrivalBgTex,
+          this.boatBackTex,
+          this.boatFrontTex,
+          w,
+          h,
+          "arrive",
+          riderTex,
+        );
+      }
+      this.app.stage.setChildIndex(this.fade, this.app.stage.children.length - 1); // keep fade on top
     } else {
       // No cinematic: place the avatar straight onto the dock.
       this.placeAvatarOnDock();
@@ -1651,18 +1671,37 @@ export class SceneRenderer {
         }
       }),
       (async () => {
+        // The boat opening counts as one first-paint asset (one bump). Its four
+        // textures are one all-or-nothing kit: the verified back/front pair is
+        // never drawn without its other half, the plate or the captain. If any
+        // of it fails, the covered-boat cinematic (its own complete pair, the
+        // passenger between its layers) stands in; if that fails too, the
+        // arrival lands the avatar on the dock (setupArrival).
         try {
-          // Both covered-boat layers count as one first-paint asset (one bump).
-          const [back, front] = (await Promise.all([
-            Assets.load(BOAT_ART.backUrl),
-            Assets.load(BOAT_ART.frontUrl),
-          ])) as [Texture, Texture];
-          if (!this.destroyed) {
-            this.boatBackTex = back;
-            this.boatFrontTex = front;
-          }
+          const [environment, boatBack, boatFront, captain] = (await Promise.all([
+            Assets.load(OPENING_ART.environmentUrl),
+            Assets.load(OPENING_ART.boatBackUrl),
+            Assets.load(OPENING_ART.boatFrontUrl),
+            Assets.load(OPENING_ART.captainUrl),
+          ])) as [Texture, Texture, Texture, Texture];
+          if (!this.destroyed) this.openingKit = { environment, boatBack, boatFront, captain };
         } catch (err) {
-          console.warn("[island-scene] boat art failed to load", err);
+          console.warn(
+            "[island-scene] boat opening art failed to load — using the covered-boat cinematic",
+            err,
+          );
+          try {
+            const [back, front] = (await Promise.all([
+              Assets.load(BOAT_ART.backUrl),
+              Assets.load(BOAT_ART.frontUrl),
+            ])) as [Texture, Texture];
+            if (!this.destroyed) {
+              this.boatBackTex = back;
+              this.boatFrontTex = front;
+            }
+          } catch (err2) {
+            console.warn("[island-scene] boat art failed to load", err2);
+          }
         } finally {
           this.bumpProgress();
         }
