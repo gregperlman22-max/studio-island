@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Engage Island preview</title>
+<style>
+  :root { color-scheme: light; --ink: #23201c; --muted: #6b6258; --card: #fffaf0; --edge: #e2d6c2; --go: #2f7d4f; }
+  body { margin: 0; background: #f4efe6; color: var(--ink); font: 17px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 24px 16px 40px; }
+  h1 { font-size: 26px; margin: 8px 0 4px; }
+  p.sub { color: var(--muted); margin: 0 0 20px; }
+  a.big { display: block; margin: 12px 0; padding: 18px 20px; border-radius: 16px; background: var(--card); border: 2px solid var(--edge); color: var(--ink); text-decoration: none; }
+  a.big strong { display: block; font-size: 21px; }
+  a.big span { color: var(--muted); font-size: 15px; }
+  a.big.primary { border-color: var(--go); }
+  a.big.primary strong { color: var(--go); }
+  h2 { font-size: 18px; margin: 28px 0 6px; }
+  ul { padding-left: 20px; margin: 6px 0; }
+  li { margin: 4px 0; }
+  code { background: #ece3d3; padding: 1px 5px; border-radius: 5px; font-size: 15px; }
+  footer { color: var(--muted); font-size: 13px; margin-top: 28px; word-break: break-all; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Engage Island — preview</h1>
+  <p class="sub">Review page for Greg. The links open the real game in this tab; use Back to return here.</p>
+
+  <a class="big primary" href="./?panel=0">
+    <strong>Start with the Friend picker</strong>
+    <span>Choose a Friend → the boat opening → the Island.</span>
+  </a>
+  <a class="big" href="./?panel=0&amp;rm=1">
+    <strong>Reduced motion</strong>
+    <span>Same start, no boat travel: straight to the Island after choosing.</span>
+  </a>
+  <a class="big" href="./?panel=0&amp;avatar=dog">
+    <strong>Replay the opening with Doug</strong>
+    <span>Skips the picker and plays the boat opening again.</span>
+  </a>
+
+  <h2>While playing</h2>
+  <ul>
+    <li>Tap anywhere during the boat opening to skip to the dock.</li>
+    <li>On the Island, close Captain Pete's card with ✕, then tap the ground to walk.</li>
+    <li>The speaker button (bottom-right) mutes sound. Mute is remembered by this browser.</li>
+    <li>To replay from the picker, reload the page — the preview does not remember a Friend between loads.</li>
+  </ul>
+
+  <h2>Please know</h2>
+  <ul>
+    <li>Sound is placeholder only: a short tone for Captain Pete's greeting. There is no voice, music or boat sound yet.</li>
+    <li>This is a local preview, not a released build. How smooth it feels on a real iPad or phone has not been checked yet — that is what your try-out is for.</li>
+  </ul>
+
+  <footer>Build: {{CANDIDATE}}</footer>
+</main>
+</body>
+</html>

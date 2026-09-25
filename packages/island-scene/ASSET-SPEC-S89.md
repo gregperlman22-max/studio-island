@@ -365,6 +365,61 @@ Anchors are measured from the delivered PNG by
 `scale` should need an eye pass — the footprint (5 × 5 tiles at grid 11,18) and
 the locked `defaultLayout.ts` coordinates do **not** move.
 
+## 11. Boat opening (approach and docking) — technical integration ACCEPTED 2026-09-25; production visual acceptance still open
+
+**Acceptance record.** The local approach-and-docking checkpoint was accepted
+technically at candidate `87c666606a398459278d37759905938c5c6ecf9e` (tree
+`4bb2ccfe904b3b91979892ff5c072060ef06ca94`), on base `4f28136`, through three
+local commits: `3bf7699` (the opening), `39543b9` (R1 failure-safe asset
+promotion, R2 bounded optional art loads, R3–R5 evidence and wording) and
+`87c6666` (R1 cleanup order: the recovery journal is retired before backups are
+deleted). R1–R5 are closed. The reviewer independently ran the extraction
+tool's ten-test suite (10/10). The latest game validation at acceptance was
+382/382 tests plus a clean typecheck and demo build at `39543b9`. Those
+results were supplied, not independently rerun. The captures were viewport
+simulation and virtual-clock footage, not real devices.
+
+**What shipped.**
+- `render/BoatOpeningView.ts` + `render/openingArt.ts`: one painted plate, a
+  verified back/front boat pair (`tools/island-art/boat-opening-layers.mjs`,
+  `boat-front-mask.json`), Captain Pete and the child's selected Friend under
+  one transform.
+- Fallbacks: the complete covered-boat cinematic, then the dock.
+- Skip, reduced motion and the existing fade into the Island are preserved.
+- Sources are retained at `tools/island-art/source/boat-opening-2026-09-24/`.
+- The 5.5 s approach and 1 s settle are the implementation's chosen timing,
+  not an approved duration.
+
+**Still open for production visual acceptance.** These are explicit, and are
+not approved by the above:
+- phone portrait presentation (revised 2026-09-25 — see below; Greg's
+  hands-on review pending);
+- the unchanged picker backdrop;
+- front-facing Friend art;
+- open water at the berth, bridged by the existing fade (no disembarkation);
+- no wake, sail animation, water layers, plank or dock occluder;
+- placeholder audio only;
+- real-device smoothness and loading, and optional-load deadlines not tuned
+  on devices.
+
+The required world/landmark/Friend loads still have no deadline; that
+predates this work. Asset promotion is still several file operations, not an
+atomic group.
+
+EC-1, EC-2, Olive and the Treehouse exterior remain accepted. Doug's walk is
+paused and unfinished. EC-3 is not started.
+
+**Phone presentation, revised after acceptance (2026-09-25; local, pending
+review).**
+- The plate is now bottom-aligned on every screen, so the painting always
+  meets the bottom edge. The blurred water/dock band under it is gone.
+- On screens taller than the plate, the sky continues upward. It is built
+  from the plate's own top row (`render/skyExtension.ts`): exact at the join,
+  sideways-smoothed above it, deepening slightly toward the zenith. This
+  replaces the stretched sky and water padding.
+- Tablet and desktop framing are unchanged.
+- No new art.
+
 ## Delivery checklist
 
 - [ ] Exact path and spelling above

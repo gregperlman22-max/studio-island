@@ -24,7 +24,7 @@ export interface SkyOptions {
 
 export const SKY_DEFAULTS: SkyOptions = {
   feather: 0.03,
-  smoothRadius: 0.06,
+  smoothRadius: 0.15,
   zenithMix: 0.16,
   zenith: [14, 108, 226],
 };
