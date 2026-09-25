@@ -36,17 +36,25 @@ const MASK_B = path.join(T, "mask-b.json");
 const mask = JSON.parse(fs.readFileSync(MASK_A, "utf8"));
 for (const p of mask.polygons) p.points = p.points.map(([x, y]) => [x, Math.max(0, y - 5)]);
 fs.writeFileSync(MASK_B, JSON.stringify(mask));
-// Injector: the Nth rename of a staged final (…webp.tmp) throws, or kills the process.
+// Injector: the Nth rename of a staged final (…webp.tmp), and/or the Nth
+// deletion of an EXISTING backup (…webp.bak, i.e. cleanup), throws or kills.
 const INJECT = path.join(T, "inject.mjs");
 fs.writeFileSync(INJECT, `import fs from "node:fs";
-const at = Number(process.env.FAIL_RENAME_AT), mode = process.env.FAIL_MODE;
-const real = fs.renameSync; let n = 0;
+const fail = (what, n, mode) => {
+  if (mode === "kill") process.kill(process.pid, "SIGKILL");
+  throw new Error("INJECTED: " + what + " " + n + " failed");
+};
+const renameAt = Number(process.env.FAIL_RENAME_AT), renameMode = process.env.FAIL_MODE;
+const realRename = fs.renameSync; let r = 0;
 fs.renameSync = function (a, b) {
-  if (String(a).endsWith(".webp.tmp") && ++n === at) {
-    if (mode === "kill") process.kill(process.pid, "SIGKILL");
-    throw new Error("INJECTED: rename " + n + " of the staged finals failed");
-  }
-  return real(a, b);
+  if (String(a).endsWith(".webp.tmp") && ++r === renameAt) fail("rename of staged final", r, renameMode);
+  return realRename(a, b);
+};
+const rmAt = Number(process.env.FAIL_BACKUP_RM_AT), rmMode = process.env.FAIL_BACKUP_RM_MODE;
+const realRm = fs.rmSync; let d = 0;
+fs.rmSync = function (p, o) {
+  if (String(p).endsWith(".webp.bak") && fs.existsSync(p) && ++d === rmAt) fail("deletion of backup", d, rmMode);
+  return realRm(p, o);
 };
 `);
 
@@ -78,7 +86,7 @@ async function installedMismatches() {
   return bad;
 }
 
-let A;
+let A, B;
 test("generation A installs and verifies", async () => {
   const r = run({ maskFile: MASK_A });
   assert.equal(r.status, 0);
@@ -127,10 +135,78 @@ test("killed mid-promotion: mixed on disk, then the next run restores A before a
 test("generation B installs when nothing fails, replacing the pair as a set", async () => {
   const r = run({ maskFile: MASK_B });
   assert.equal(r.status, 0);
-  const B = hashes();
+  B = hashes();
   assert.notEqual(B["boat-back.webp"], A["boat-back.webp"]);
   assert.notEqual(B["boat-front.webp"], A["boat-front.webp"]);
   assert.deepEqual(leftovers(), []);
   assert.equal(await installedMismatches(), 0);
+});
+
+// ── Backup CLEANUP interrupted (review follow-up to R1) ────────────────
+// dropBackups() is the one cleanup used after a verified install, after a
+// rollback and after a recovery. It must retire the journal before deleting
+// any backup, so a cleanup that fails or is killed part-way never leaves a
+// journal that orders a restore from missing backups. Each case then proves
+// an ordinary rerun succeeds with a complete valid set and no leftovers.
+const journalExists = () => fs.existsSync(path.join(OUT, ".boat-opening-promotion.json"));
+async function ordinaryRerun(maskFile, expected) {
+  const r = run({ maskFile });
+  assert.equal(r.status, 0, "an ordinary rerun must succeed");
+  assert.deepEqual(hashes(), expected);
+  assert.equal(await installedMismatches(), 0);
+  assert.deepEqual(leftovers(), []);
+}
+
+test("cleanup after a verified install fails at backup 2 → A installed, no journal; rerun succeeds", async () => {
+  // State: B installed. Install A; the 2nd backup deletion throws.
+  const r = run({ maskFile: MASK_A, inject: true, env: { FAIL_BACKUP_RM_AT: "2", FAIL_BACKUP_RM_MODE: "throw" } });
+  assert.notEqual(r.status, 0, "the injected cleanup error is reported");
+  assert.match(r.stdout + r.stderr, /INJECTED: deletion of backup 2/);
+  assert.equal(journalExists(), false, "no journal survives into cleanup");
+  assert.deepEqual(hashes(), A, "the verified install stands");
+  assert.equal(await installedMismatches(), 0);
+  await ordinaryRerun(MASK_A, A);
+});
+
+test("cleanup after a verified install is KILLED at backup 2 → B installed, no journal; rerun succeeds", async () => {
+  // State: A installed. Install B; SIGKILL on the 2nd backup deletion.
+  const r = run({ maskFile: MASK_B, inject: true, env: { FAIL_BACKUP_RM_AT: "2", FAIL_BACKUP_RM_MODE: "kill" } });
+  assert.equal(r.signal, "SIGKILL");
+  assert.equal(journalExists(), false);
+  assert.ok(leftovers().some((f) => f.endsWith(".bak")), "some backups were left behind");
+  assert.deepEqual(hashes(), B);
+  assert.equal(await installedMismatches(), 0);
+  await ordinaryRerun(MASK_B, B);
+});
+
+test("cleanup after a ROLLBACK fails at backup 1 → previous set B restored, no journal; rerun succeeds", async () => {
+  // State: B installed. Install A: rename 2 fails (rollback to B), then cleanup fails.
+  const r = run({
+    maskFile: MASK_A,
+    inject: true,
+    env: { FAIL_RENAME_AT: "2", FAIL_MODE: "throw", FAIL_BACKUP_RM_AT: "1", FAIL_BACKUP_RM_MODE: "throw" },
+  });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stdout + r.stderr, /INJECTED: deletion of backup 1/);
+  assert.equal(journalExists(), false);
+  assert.deepEqual(hashes(), B, "the rollback restored the previous complete set");
+  assert.equal(await installedMismatches(), 0);
+  await ordinaryRerun(MASK_B, B);
+});
+
+test("cleanup after a RECOVERY fails at backup 1 → restored set B, no journal; rerun succeeds", async () => {
+  // State: B installed. Killed mid-promotion of A → mixed set + journal.
+  const k = run({ maskFile: MASK_A, inject: true, env: { FAIL_RENAME_AT: "2", FAIL_MODE: "kill" } });
+  assert.equal(k.signal, "SIGKILL");
+  assert.ok(journalExists());
+  // Next run recovers B, then its cleanup fails.
+  const r = run({ maskFile: MASK_A, inject: true, env: { FAIL_BACKUP_RM_AT: "1", FAIL_BACKUP_RM_MODE: "throw" } });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stdout + r.stderr, /INJECTED: deletion of backup 1/);
+  assert.equal(journalExists(), false);
+  assert.deepEqual(hashes(), B, "recovery restored the previous complete set");
+  assert.equal(await installedMismatches(), 0);
+  // An ordinary rerun then installs A cleanly.
+  await ordinaryRerun(MASK_A, A);
   fs.copyFileSync(path.join(T, "runs.log"), process.env.RUNS_LOG ?? path.join(T, "runs-copy.log"));
 });

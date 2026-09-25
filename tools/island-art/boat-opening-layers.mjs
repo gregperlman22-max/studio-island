@@ -36,7 +36,9 @@ sharp.cache(false);
  *    Limits, stated plainly: four renames are not one atomic operation. A
  *    process killed mid-promotion leaves a mixed set on disk, with the journal
  *    and backups beside it; the next run of this script restores the previous
- *    set from them before doing anything else. A reader (e.g. a dev server)
+ *    set from them before doing anything else. Cleanup retires the journal
+ *    BEFORE deleting any backup, so a cleanup that fails or is killed never
+ *    leaves a journal pointing at missing backups. A reader (e.g. a dev server)
  *    can observe the set mid-promotion, and nothing is fsynced, so power loss
  *    guarantees nothing. `test/boat-opening-layers.test.mjs` exercises this.
  *
@@ -83,12 +85,15 @@ function restorePrevious(prior) {
   }
 }
 function dropBackups() {
-  for (const n of FINALS) fs.rmSync(bakOf(n), { force: true });
+  // Retire recovery before deleting any backup: cleanup may fail or be
+  // interrupted, and a live journal must always retain its complete backups.
   fs.rmSync(JOURNAL, { force: true });
+  for (const n of FINALS) fs.rmSync(bakOf(n), { force: true });
 }
 // An earlier run was killed mid-promotion: its journal names the complete
 // previous set; restore it before anything else. Backups without a journal
-// were never used (the finals were not yet touched): discard them.
+// are never needed — either the finals were not yet touched, or the installed
+// (or restored) set was complete when the journal was retired: discard them.
 if (fs.existsSync(JOURNAL)) {
   restorePrevious(JSON.parse(fs.readFileSync(JOURNAL, "utf8")));
   dropBackups();
