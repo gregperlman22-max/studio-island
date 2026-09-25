@@ -420,6 +420,25 @@ review).**
 - Tablet and desktop framing are unchanged.
 - No new art.
 
+**Review preview published (2026-09-25).** At Greg's explicit request, and for
+his critique only, the S-89 review candidate is live at
+https://gregperlman22-max.github.io/studio-island/.
+- Source: `d6fd33c048911fc551812cc00db06eae9f78348f` (tree
+  `173ee16768d70db1000580b69f6dfccc1edd74c9`) on `claude/s89-treehouse-slice`,
+  pushed without force and not merged into `main`.
+- Publishing: the existing Pages workflow, dispatched on that branch — run
+  36149928423. It passed typecheck, 388/388 tests and the build with
+  `DEMO_BASE=/studio-island/`; the deployment reported success with Pages
+  build version `d6fd33c`.
+- The previously live build was run 34725458086 from `main` `d2ef722`. The
+  rollback route is to dispatch `pages.yml` on `main`.
+
+This is not final visual approval or a merge. The latest phone polish still
+awaits acceptance. Doug's walk cycle remains paused. EC-3 has not started;
+Greg's playthrough notes come next. Movement, boat and phone polish stay
+frozen. Apart from this authorized preview, the general boundary stands: no
+unrelated push, merge or deployment.
+
 ## Delivery checklist
 
 - [ ] Exact path and spelling above
