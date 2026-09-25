@@ -13,6 +13,7 @@ import argparse
 import functools
 import http.server
 import os
+import signal
 import socket
 import sys
 
@@ -75,6 +76,10 @@ def main():
             print("  No Wi-Fi/LAN address found on this Mac.")
         print("  (Anyone on this Wi-Fi can open it while this window is running.)")
     print("\n  To stop: press Control-C in this window.\n")
+    # Control-C stops the server however it was started (a shell can start a
+    # process with Control-C ignored; this takes it back).
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

@@ -79,6 +79,14 @@ server.on("error", (e) => {
   process.exit(1);
 });
 
+// Control-C stops the server however it was started (a shell can start a
+// process with Control-C ignored; this handler takes it back).
+for (const sig of ["SIGINT", "SIGTERM"])
+  process.on(sig, () => {
+    console.log("\n  Stopped.");
+    process.exit(0);
+  });
+
 server.listen(port, host, () => {
   console.log("");
   console.log("  Engage Island preview is running.");
