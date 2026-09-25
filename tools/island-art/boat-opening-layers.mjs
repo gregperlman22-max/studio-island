@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import fs from "node:fs";
+import crypto from "node:crypto";
 // libvips caches decodes by path. The saved-file check re-reads files this
 // script has just (re)written, so the cache would hand back the pre-write
 // decode and pass a corrupted file. Off, so every read is a real read.
@@ -25,6 +26,23 @@ sharp.cache(false);
  *    `BOAT_LAYERS_INJECT_FAULT=1` corrupts one pixel of the saved front to
  *    prove that branch.
  *
+ * 3. PROMOTION — the four finals are one set. Every existing final is first
+ *    copied to a backup and a journal is written; only then are the staged
+ *    files renamed over the finals. If any rename fails, the backups are
+ *    copied back (finals that did not exist before are removed), so a handled
+ *    failure leaves the PREVIOUS complete set (exit 2). After a successful
+ *    promotion the INSTALLED files are verified again (pair recomposes to the
+ *    master, bytes equal to what was staged); a failure there also rolls back.
+ *    Limits, stated plainly: four renames are not one atomic operation. A
+ *    process killed mid-promotion leaves a mixed set on disk, with the journal
+ *    and backups beside it; the next run of this script restores the previous
+ *    set from them before doing anything else. A reader (e.g. a dev server)
+ *    can observe the set mid-promotion, and nothing is fsynced, so power loss
+ *    guarantees nothing. `test/boat-opening-layers.test.mjs` exercises this.
+ *
+ *    BOAT_LAYERS_OUT_DIR / BOAT_LAYERS_MASK redirect the output directory and
+ *    mask (the regression test uses temporary copies; defaults are the repo's).
+ *
  *    No uncut "full" boat is shipped: drawn whole, the master would put the
  *    passengers' legs on top of the hull. When the pair cannot load, the
  *    runtime falls back to the existing covered-boat cinematic instead (see
@@ -37,8 +55,8 @@ sharp.cache(false);
 const HERE = new URL(".", import.meta.url).pathname;
 const SRC = HERE + "source/boat-opening-2026-09-24/source/assets/";
 const MASTER = SRC + "boat.png";
-const MASK_JSON = HERE + "boat-front-mask.json";
-const OUT_DIR = HERE + "../../packages/island-scene/src/assets/opening/";
+const MASK_JSON = process.env.BOAT_LAYERS_MASK || HERE + "boat-front-mask.json";
+const OUT_DIR = (process.env.BOAT_LAYERS_OUT_DIR || HERE + "../../packages/island-scene/src/assets/opening").replace(/\/?$/, "/");
 const PREVIEW = process.argv.includes("--preview");
 const PREVIEW_DIR = process.env.PREVIEW_DIR || HERE + "preview-boat-opening/";
 
@@ -52,6 +70,33 @@ const maskRaw = await sharp(Buffer.from(svg)).ensureAlpha().raw().toBuffer(); //
 const { data: m, info } = await sharp(MASTER).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
 if (info.width !== W || info.height !== H) throw new Error("boat master is not 1254x1254");
 fs.mkdirSync(OUT_DIR, { recursive: true });
+
+const FINALS = ["boat-back.webp", "boat-front.webp", "opening-environment.webp", "captain-pete.webp"];
+const JOURNAL = OUT_DIR + ".boat-opening-promotion.json";
+const bakOf = (name) => OUT_DIR + "." + name + ".bak";
+/** Put the previous set back: copy (not move) each backup, so a restore that
+ *  is itself interrupted can simply be run again. */
+function restorePrevious(prior) {
+  for (const f of prior) {
+    if (f.had) fs.copyFileSync(bakOf(f.name), OUT_DIR + f.name);
+    else fs.rmSync(OUT_DIR + f.name, { force: true });
+  }
+}
+function dropBackups() {
+  for (const n of FINALS) fs.rmSync(bakOf(n), { force: true });
+  fs.rmSync(JOURNAL, { force: true });
+}
+// An earlier run was killed mid-promotion: its journal names the complete
+// previous set; restore it before anything else. Backups without a journal
+// were never used (the finals were not yet touched): discard them.
+if (fs.existsSync(JOURNAL)) {
+  restorePrevious(JSON.parse(fs.readFileSync(JOURNAL, "utf8")));
+  dropBackups();
+  console.log("RECOVERED: an interrupted promotion was rolled back to the previous complete set");
+} else dropBackups();
+// Staged files left by an interrupted run are never promoted: discard them.
+for (const n of FINALS) fs.rmSync(OUT_DIR + "." + n + ".tmp", { force: true });
+fs.rmSync(JOURNAL + ".tmp", { force: true });
 
 const back = Buffer.from(m), front = Buffer.from(m);
 let frontPx = 0, backPx = 0;
@@ -127,8 +172,55 @@ for (const s of singles) {
   }
 }
 
-for (const o of [...pair, ...singles]) fs.renameSync(tmpOf(o.name), OUT_DIR + o.name);
-for (const o of [...pair, ...singles]) console.log(`written: ${o.name}  ${fs.statSync(OUT_DIR + o.name).size} bytes`);
+// ── Promotion (see 3. above) ─────────────────────────────────────────
+const staged = [...pair, ...singles].map((o) => o.name);
+const hashOf = (f) => crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
+const stagedHash = Object.fromEntries(staged.map((n) => [n, hashOf(tmpOf(n))]));
+const prior = staged.map((name) => ({ name, had: fs.existsSync(OUT_DIR + name) }));
+const dropStaged = () => { for (const n of staged) fs.rmSync(tmpOf(n), { force: true }); };
+try {
+  for (const f of prior) if (f.had) fs.copyFileSync(OUT_DIR + f.name, bakOf(f.name));
+  fs.writeFileSync(JOURNAL + ".tmp", JSON.stringify(prior));
+  fs.renameSync(JOURNAL + ".tmp", JOURNAL);
+} catch (err) {
+  // Finals not touched yet.
+  dropBackups(); fs.rmSync(JOURNAL + ".tmp", { force: true }); dropStaged();
+  console.error("REJECTED: could not back up the current finals; finals left untouched —", err.message);
+  process.exit(2);
+}
+/** The installed set: the pair recomposes to the master and every file is
+ *  byte-for-byte what was verified in staging. */
+async function installedProblems() {
+  const problems = [];
+  for (const n of staged) if (hashOf(OUT_DIR + n) !== stagedHash[n]) problems.push(`${n} differs from the verified staged file`);
+  const ib = await sharp(OUT_DIR + "boat-back.webp").ensureAlpha().raw().toBuffer();
+  const iF = await sharp(OUT_DIR + "boat-front.webp").ensureAlpha().raw().toBuffer();
+  const bad = recomposeMismatches(iF, ib);
+  if (bad) problems.push(`installed pair: ${bad} pixels differ from the master`);
+  return problems;
+}
+let failure = null;
+try {
+  for (const n of staged) fs.renameSync(tmpOf(n), OUT_DIR + n);
+  const problems = await installedProblems();
+  if (problems.length) failure = problems.join("; ");
+} catch (err) {
+  failure = err.message;
+}
+if (failure) {
+  try {
+    restorePrevious(prior);
+  } catch (err) {
+    console.error(`PROMOTION FAILED (${failure}) AND RESTORE FAILED (${err.message}); journal and backups kept — rerun this script to restore the previous set`);
+    process.exit(3);
+  }
+  dropBackups(); dropStaged();
+  console.error(`REJECTED during promotion (${failure}); previous finals restored`);
+  process.exit(2);
+}
+dropBackups();
+console.log(`installed set verified: ${staged.length} files match staging; installed pair recomposes to master: YES`);
+for (const n of staged) console.log(`written: ${n}  ${fs.statSync(OUT_DIR + n).size} bytes`);
 
 if (PREVIEW) {
   fs.mkdirSync(PREVIEW_DIR, { recursive: true });

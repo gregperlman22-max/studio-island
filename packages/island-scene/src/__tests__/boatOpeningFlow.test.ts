@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sampleLayout, sampleZones } from "../defaultLayout";
 import { sproutPack } from "../theme-packs";
 import type { AvatarInstance, ZoneInstance } from "../types";
@@ -165,6 +165,17 @@ vi.mock("pixi.js", () => {
     load: async (url: string) => {
       const failing = (globalThis as Any).__failUrls as string[] | undefined;
       if (failing?.some((f) => url.includes(f))) throw new Error("blocked: " + url);
+      // Stalled: a request that stays pending until the test settles it by hand.
+      const stalling = (globalThis as Any).__stallUrls as string[] | undefined;
+      if (stalling?.some((f) => url.includes(f))) {
+        return new Promise((resolve, reject) => {
+          (globalThis as Any).__stalled.push({
+            url,
+            resolve: () => resolve({ ...texture(), url }),
+            reject: () => reject(new Error("late failure: " + url)),
+          });
+        });
+      }
       return { ...texture(), url };
     },
   };
@@ -190,6 +201,7 @@ const { SceneRenderer } = await import("../render/SceneRenderer");
 const { BoatOpeningView, APPROACH, SETTLE } = await import("../render/BoatOpeningView");
 const { ArrivalView } = await import("../render/ArrivalView");
 const { avatarImageUrl } = await import("../render/avatarCatalog");
+const { OPENING_ART } = await import("../render/openingArt");
 
 const OPENING = [
   "opening-environment.webp",
@@ -253,6 +265,8 @@ beforeAll(() => {
 });
 beforeEach(() => {
   (globalThis as Any).__failUrls = [];
+  (globalThis as Any).__stallUrls = [];
+  (globalThis as Any).__stalled = [];
 });
 
 describe("Boat opening — picker → opening → dock → Island", () => {
@@ -391,5 +405,138 @@ describe("Boat opening — a failed layer never shows a fragment or traps entry"
     expect(r.arrivalView.friend.visible).toBe(false);
     run(r, APPROACH + SETTLE + 1);
     expect(r.arrival).toBe("done");
+  });
+});
+
+describe("Boat opening — stalled requests cannot hold entry", () => {
+  const { openingMs, fallbackMs } = OPENING_ART.loadDeadline;
+  const stalled = () =>
+    (globalThis as Any).__stalled as { url: string; resolve(): void; reject(): void }[];
+  /** Start init WITHOUT awaiting it; the frame loop and timers are driven by hand. */
+  function start(stall: string[], opts: { imageUrl?: string } = {}) {
+    (globalThis as Any).__stallUrls = stall;
+    const r: Any = new SceneRenderer({
+      container: document.createElement("div"),
+      reducedMotion: false,
+      hideTextLabels: false,
+      audioEnabled: false,
+    });
+    const state = { done: false };
+    const init = r
+      .init(
+        sproutPack,
+        sampleLayout,
+        JSON.parse(JSON.stringify(sampleZones)) as ZoneInstance[],
+        [avatar(opts.imageUrl)],
+        null,
+      )
+      .then(() => {
+        state.done = true;
+      });
+    r.guideCalls = 0;
+    r.showGuide = () => {
+      r.guideCalls++;
+    };
+    return { r, init, state };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("an opening request that never settles → the covered boat after the opening deadline", async () => {
+    const { r, state } = start(["opening/boat-front.webp"]);
+    await vi.advanceTimersByTimeAsync(openingMs - 1);
+    expect(state.done, "still inside the deadline: entry waits").toBe(false);
+    expect(stalled().map((x) => x.url)).toEqual([
+      expect.stringContaining("opening/boat-front.webp"),
+    ]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(state.done, "bounded: entry proceeds at the deadline").toBe(true);
+    expect(r.openingKit).toBeUndefined();
+    expect(r.boatBackTex).toBeDefined();
+    expect(r.arrival).toBe("select");
+    r.onAvatarChosen("dog");
+    expect(r.arrivalView).toBeInstanceOf(ArrivalView);
+    tap(r);
+    frame(r);
+    run(r, 0.9);
+    expect(r.arrival).toBe("done");
+    expect(r.guideCalls).toBe(1);
+    expect(r.inputLive()).toBe(true);
+  });
+
+  it("opening AND fallback stalled → dock entry after both deadlines, no cinematic", async () => {
+    const { r, state } = start(["opening/boat-front.webp", "boat-covered-front.webp"]);
+    await vi.advanceTimersByTimeAsync(openingMs + fallbackMs - 1);
+    expect(state.done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(state.done).toBe(true);
+    expect(r.openingKit).toBeUndefined();
+    expect(r.boatFrontTex).toBeUndefined();
+    r.onAvatarChosen("dog");
+    expect(r.arrival).toBe("done");
+    expect(r.arrivalView).toBeUndefined();
+    expect(localView(r).container.visible).toBe(true);
+    frame(r);
+    expect(r.guideCalls).toBe(1);
+    expect(r.inputLive()).toBe(true);
+  });
+
+  it("a stalled arrival background is bounded too (picker falls back to its wash)", async () => {
+    const { r, state } = start(["arrival-bg"]);
+    await vi.advanceTimersByTimeAsync(openingMs + fallbackMs);
+    expect(state.done).toBe(true);
+    expect(r.arrivalBgTex).toBeUndefined();
+    expect(r.openingKit, "the opening kit does not need the old backdrop").toBeDefined();
+    expect(r.arrival).toBe("select");
+  });
+
+  it("late resolution after the deadline never revives a cinematic or a second entry", async () => {
+    const { r } = start(["opening/boat-front.webp", "boat-covered-front.webp"], {
+      imageUrl: avatarImageUrl("cat")!,
+    });
+    await vi.advanceTimersByTimeAsync(openingMs + fallbackMs);
+    // Re-entry with a saved friend: no picker, and no boat art → straight to the dock.
+    expect(r.arrival).toBe("done");
+    frame(r);
+    expect(r.guideCalls).toBe(1);
+    const dock = vi.spyOn(r, "placeAvatarOnDock");
+    for (const s of stalled()) s.resolve(); // the stalled requests finally land
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(r.openingKit).toBeUndefined();
+    expect(r.boatFrontTex).toBeUndefined();
+    run(r, 2);
+    expect(r.arrival).toBe("done");
+    expect(r.arrivalView).toBeUndefined();
+    expect(dock).not.toHaveBeenCalled();
+    expect(r.guideCalls).toBe(1);
+  });
+
+  it("destroyed while a request is stalled → nothing is built, and late results are ignored", async () => {
+    const { r, init, state } = start(["opening/boat-front.webp"]);
+    await vi.advanceTimersByTimeAsync(1000);
+    r.destroy();
+    await vi.advanceTimersByTimeAsync(openingMs + fallbackMs);
+    await init;
+    expect(state.done).toBe(true);
+    for (const s of stalled()) s.resolve();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(r.openingKit).toBeUndefined();
+    expect(r.avatarSelect, "no picker after destroy").toBeUndefined();
+    expect(r.arrivalView, "no cinematic after destroy").toBeUndefined();
+  });
+
+  it("a stalled request that later FAILS is harmless too", async () => {
+    const { r, state } = start(["opening/boat-front.webp"]);
+    await vi.advanceTimersByTimeAsync(openingMs);
+    expect(state.done).toBe(true);
+    for (const s of stalled()) s.reject();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(r.boatBackTex).toBeDefined();
+    expect(r.arrival).toBe("select");
   });
 });

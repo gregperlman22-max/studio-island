@@ -25,8 +25,10 @@ export interface OpeningKit {
   captain: Texture;
 }
 
-/** Seconds — the approved preview's timing (6.5 s): the boat decelerates into the
- * berth over 5.5 s, then rests a beat while the rocking dies away. */
+/** Seconds — this implementation's chosen timing, subject to runtime visual
+ * review: the boat decelerates into the berth over 5.5 s (the handoff preview's
+ * illustrative pace), then rests a beat while the rocking dies away. Greg
+ * approved the visual direction, not these durations. */
 export const APPROACH = 5.5;
 export const SETTLE = 1.0;
 

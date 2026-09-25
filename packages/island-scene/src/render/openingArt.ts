@@ -26,8 +26,8 @@ export const OPENING_ART = {
 
   /**
    * Boat canvas placement in stage px: top-left (x, y) and scale s. The
-   * approach eases out from `from` to `to` (decelerating into the berth), the
-   * approved composition's start and settled frames.
+   * approach eases out from `from` to `to` (decelerating into the berth): the
+   * handoff preview's start and settled poses (scene-layout.json).
    */
   from: { x: 10, y: 210, s: 0.585 },
   to: { x: 210, y: 260, s: 0.5 },
@@ -36,7 +36,7 @@ export const OPENING_ART = {
 
   /**
    * Captain Pete: the study's own foot point (image px 670, 1290) pinned at
-   * boat px (275, 1090), drawn at 0.32 — the approved preview's placement.
+   * boat px (275, 1090), drawn at 0.32 — the handoff preview's placement.
    * Standing at the stern, behind the near rail's stern cleat post.
    */
   captain: { anchorX: 670 / 1145, anchorY: 1290 / 1374, x: 275, y: 1090, scale: 0.32 },
@@ -45,7 +45,7 @@ export const OPENING_ART = {
    * The selected Friend amidships, left of the mast: content-anchored (true
    * feet / centre from the texture's measured bounds) at boat px (618, 1080),
    * scaled so the visible body is 387 boat px tall — the height the reference
-   * Doug had in the approved preview. The near hull covers the lower ~fifth.
+   * Doug had in the handoff preview. The near hull covers the lower ~fifth.
    */
   friend: { x: 618, y: 1080, contentHeight: 387 },
 
@@ -57,4 +57,13 @@ export const OPENING_ART = {
    */
   essential: { left: 245, right: 885 },
   essentialW: 640,
+
+  /**
+   * Load deadlines, ms from the start of each stage. Entry waits for this
+   * optional art, so a request that never settles must not hold it: the kit
+   * (≈1.45 MB) gets `openingMs`, then the covered-boat fallback (≈143 KB)
+   * `fallbackMs`; past both, the arrival lands on the dock. Chosen values, not
+   * measured on devices: a connection slower than ≈100 KB/s sees the fallback.
+   */
+  loadDeadline: { openingMs: 15_000, fallbackMs: 6_000 },
 } as const;

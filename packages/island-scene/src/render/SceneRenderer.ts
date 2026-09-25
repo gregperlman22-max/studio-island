@@ -64,6 +64,23 @@ import { buildWalkGrid } from "./walkgrid";
 import { debugLog } from "./debug";
 
 // Individual illustrated world-map sprites (transparent cutouts; water solid).
+/** Resolve with `p`, or reject once `ms` pass without it settling. */
+function withDeadline<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${what} still loading after ${ms} ms`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e: unknown) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
 const spriteUrl = (name: string): string =>
   new URL(`../assets/sprites/${name}.webp`, import.meta.url).href;
 
@@ -472,6 +489,9 @@ export class SceneRenderer {
     this.assetsTotal = 10 + 11 + CORE_AVATARS.length;
     this.guidesReady = this.loadGuides();
     await Promise.all([this.loadIsland(), this.loadLandmarks(), this.loadAvatars()]);
+    // Destroyed while loading (host unmounted): destroy() already tore down;
+    // build nothing and start no picker or cinematic.
+    if (this.destroyed) return;
 
     this.rebuild();
     this.drawFadeRect();
@@ -1677,13 +1697,24 @@ export class SceneRenderer {
         // of it fails, the covered-boat cinematic (its own complete pair, the
         // passenger between its layers) stands in; if that fails too, the
         // arrival lands the avatar on the dock (setupArrival).
+        //
+        // This art is OPTIONAL and init awaits it, so each stage has a
+        // deadline: a request that never settles counts as a failure. A load
+        // cannot be cancelled; one that lands after its deadline is never
+        // assigned (the awaited race has already rejected), so it cannot
+        // revive a cinematic or complete entry a second time.
+        const { openingMs, fallbackMs } = OPENING_ART.loadDeadline;
         try {
-          const [environment, boatBack, boatFront, captain] = (await Promise.all([
-            Assets.load(OPENING_ART.environmentUrl),
-            Assets.load(OPENING_ART.boatBackUrl),
-            Assets.load(OPENING_ART.boatFrontUrl),
-            Assets.load(OPENING_ART.captainUrl),
-          ])) as [Texture, Texture, Texture, Texture];
+          const [environment, boatBack, boatFront, captain] = (await withDeadline(
+            Promise.all([
+              Assets.load(OPENING_ART.environmentUrl),
+              Assets.load(OPENING_ART.boatBackUrl),
+              Assets.load(OPENING_ART.boatFrontUrl),
+              Assets.load(OPENING_ART.captainUrl),
+            ]),
+            openingMs,
+            "boat opening art",
+          )) as [Texture, Texture, Texture, Texture];
           if (!this.destroyed) this.openingKit = { environment, boatBack, boatFront, captain };
         } catch (err) {
           console.warn(
@@ -1691,10 +1722,11 @@ export class SceneRenderer {
             err,
           );
           try {
-            const [back, front] = (await Promise.all([
-              Assets.load(BOAT_ART.backUrl),
-              Assets.load(BOAT_ART.frontUrl),
-            ])) as [Texture, Texture];
+            const [back, front] = (await withDeadline(
+              Promise.all([Assets.load(BOAT_ART.backUrl), Assets.load(BOAT_ART.frontUrl)]),
+              fallbackMs,
+              "covered-boat art",
+            )) as [Texture, Texture];
             if (!this.destroyed) {
               this.boatBackTex = back;
               this.boatFrontTex = front;
@@ -1707,8 +1739,15 @@ export class SceneRenderer {
         }
       })(),
       (async () => {
+        // The picker backdrop and the fallback's stage: optional too, bounded
+        // by the same total the opening + fallback stages can take.
+        const { openingMs, fallbackMs } = OPENING_ART.loadDeadline;
         try {
-          const tex = (await Assets.load(ARRIVAL_BG_URL)) as Texture;
+          const tex = (await withDeadline(
+            Assets.load(ARRIVAL_BG_URL),
+            openingMs + fallbackMs,
+            "arrival background",
+          )) as Texture;
           if (!this.destroyed) this.arrivalBgTex = tex;
         } catch (err) {
           console.warn("[island-scene] arrival background failed to load", err);

@@ -18,7 +18,9 @@ into `packages/island-scene/src/assets/opening/`:
 `scene.mjs` and `scene-layout.json` are the preview's reference implementation
 and layout (start / end placement, 5.5 s ease-out approach, rocking). The
 runtime (`render/BoatOpeningView.ts`, `render/openingArt.ts`) takes its
-placement and timing from them; neither is product code. The layout's
+placement from them, and uses the preview's illustrative timing as its own
+chosen timing (subject to runtime review; the approval covers the visual
+direction, not durations). Neither file is product code. The layout's
 `frontMask` was a starting suggestion — the traced mask is
 `tools/island-art/boat-front-mask.json`.
 
