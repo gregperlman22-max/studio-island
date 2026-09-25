@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * BoatOpeningView contract (the approved boat opening, 2026-09-24):
@@ -64,6 +64,8 @@ vi.mock("pixi.js", () => {
   }
   class BlurFilter {
     strength = 0;
+    strengthX = 0;
+    strengthY = 0;
     destroyed = false;
     destroy() {
       this.destroyed = true;
@@ -79,6 +81,10 @@ vi.mock("pixi.js", () => {
   }
   class Texture {
     static EMPTY = new Texture();
+    /** A texture over a canvas the view painted (the portrait sky). */
+    static from(canvas: unknown) {
+      return new Texture({ source: { canvas } });
+    }
     source: unknown;
     frame: unknown;
     destroyed = false;
@@ -139,7 +145,7 @@ const expectAtBerth = (v: Any) => {
 describe("BoatOpeningView layering", () => {
   it("draws plate → boat, and inside the boat back → Pete → Friend → front", () => {
     const v = mk();
-    expect(v.stage.children).toEqual([v.padTop, v.padBottom, v.env, v.boat]);
+    expect(v.stage.children).toEqual([v.sky, v.env, v.boat]);
     expect(v.boat.children).toEqual([v.boatBack, v.captain, v.friend, v.boatFront]);
     expect(v.container.children).toEqual([v.stage]);
     expect(v.boatBack.texture).toBe((kit as Any).boatBack);
@@ -225,9 +231,9 @@ describe("BoatOpeningView passenger", () => {
   it("re-entering with another Friend swaps the passenger", () => {
     const v = mk();
     const other = { width: 300, height: 300 } as never;
-    const strip = v.padTop.texture;
+    const sky = v.sky.texture;
     v.enter(kit, 1280, 800, other);
-    expect(strip.destroyed, "the previous strip frames are released").toBe(true);
+    expect(sky.destroyed, "the previous sky texture is released").toBe(true);
     expect(v.friend.texture).toBe(other);
     expect(v.done).toBe(false);
   });
@@ -314,7 +320,7 @@ describe("BoatOpeningView framing", () => {
         expect(r.left).toBeGreaterThanOrEqual(-1e-6);
         expect(r.right).toBeLessThanOrEqual(OPENING_ART.stage.w + 1e-6);
         expect(r.bottom).toBeCloseTo(OPENING_ART.stage.h, 6); // bottom-aligned: any crop is sky
-        expect(v.padTop.visible || v.padBottom.visible).toBe(false);
+        expect(v.sky.visible).toBe(false);
         expect(r.left).toBeLessThanOrEqual(OPENING_ART.essential.left);
         expect(r.right).toBeGreaterThanOrEqual(OPENING_ART.essential.right);
       }
@@ -344,38 +350,27 @@ describe("BoatOpeningView framing", () => {
       const r = visible(v, w, h);
       expect(r.left).toBeLessThanOrEqual(OPENING_ART.essential.left + 1e-6);
       expect(r.right).toBeGreaterThanOrEqual(OPENING_ART.essential.right - 1e-6);
-      // Where the plate is shorter than the screen, a blurred mirror of its own
-      // edge rows continues it above and below, meeting it seam to seam.
+      // The painting always meets the screen's bottom edge: no water or dock
+      // band below it. Spare height (phone portrait) is sky above it only.
+      expect(r.bottom).toBeCloseTo(OPENING_ART.stage.h, 6);
       const plateH = OPENING_ART.stage.h * v.k;
       const gap = plateH < h - 0.5;
-      expect(v.padTop.visible).toBe(gap);
-      expect(v.padBottom.visible).toBe(gap);
+      expect(v.sky.visible).toBe(gap);
       if (gap) {
-        expect(v.padTop.filters).toEqual([v.blur]);
-        expect(v.padBottom.filters).toEqual([v.blur]);
-        // Strips of the plate's own edge rows: sky (top 40) and water (bottom 40).
-        expect(v.padTop.texture.frame).toMatchObject({
+        // No canvas here (jsdom): the fallback — the plate's top 2 rows (pure
+        // sky), stretched up past the screen top, blurred sideways ONLY.
+        expect(v.sky.texture.frame).toMatchObject({
           x: 0,
           y: 0,
           width: OPENING_ART.stage.w,
-          height: 40,
+          height: 2,
         });
-        expect(v.padBottom.texture.frame).toMatchObject({
-          y: OPENING_ART.stage.h - 40,
-          height: 40,
-        });
-        // Mirrored (negative y scale), tucked under the plate at the seam, and
-        // reaching past the screen's top and bottom edges.
-        expect(v.padTop.scale.y).toBeLessThan(0);
-        expect(v.padBottom.scale.y).toBeLessThan(0);
-        expect(v.padTop.position.y).toBeGreaterThan(0);
-        expect(v.padTop.position.y + v.padTop.scale.y * 40).toBeLessThan(r.top);
-        expect(v.padBottom.position.y + v.padBottom.scale.y * 40).toBeLessThan(OPENING_ART.stage.h);
-        expect(v.padBottom.position.y).toBeGreaterThan(r.bottom);
-        // More sky above than water below.
-        expect(-r.top).toBeGreaterThan(r.bottom - OPENING_ART.stage.h);
-      } else {
-        expect(r.bottom).toBeCloseTo(OPENING_ART.stage.h, 6);
+        expect(v.sky.filters).toEqual([v.blur]);
+        expect(v.blur.strengthY).toBe(0);
+        expect(v.blur.strengthX).toBeGreaterThan(0);
+        expect(v.sky.scale.y).toBeGreaterThan(0); // stretched, not mirrored
+        expect(v.sky.position.y).toBeLessThan(r.top); // reaches past the top
+        expect(v.sky.position.y + v.sky.scale.y * 2).toBeGreaterThan(0); // tucked under the plate
       }
     });
   }
@@ -393,12 +388,75 @@ describe("BoatOpeningView framing", () => {
     const v = mk(false, 390, 844);
     v.resize(400, 860); // reuses, never stacks, the filter
     const blur = v.blur;
-    expect(v.padTop.filters).toEqual([blur]);
-    const strips = [v.padTop.texture, v.padBottom.texture];
+    expect(v.sky.filters).toEqual([blur]);
+    const strip = v.sky.texture;
     v.destroy();
     expect(v.container.destroyed).toBe(true);
     expect(blur.destroyed).toBe(true);
-    // The strips are released; the plate's shared source never is.
-    for (const t of strips) expect([t.destroyed, t.sourceDestroyed]).toEqual([true, false]);
+    // The fallback strip is released; the plate's shared source never is.
+    expect([strip.destroyed, strip.sourceDestroyed]).toEqual([true, false]);
+  });
+
+  describe("with a 2D canvas: the sky painted from the plate's own top row", () => {
+    const W = OPENING_ART.stage.w;
+    let restore: () => void;
+    beforeEach(() => {
+      // A fake 2D context whose "plate top row" is a flat colour.
+      const ctx = {
+        drawImage: vi.fn(),
+        getImageData: () => ({ data: new Uint8ClampedArray(W * 4).fill(200) }),
+        putImageData: vi.fn(),
+      };
+      const spy = vi
+        .spyOn(HTMLCanvasElement.prototype, "getContext")
+        .mockImplementation(() => ctx as never);
+      const hadImageData = "ImageData" in globalThis;
+      if (!hadImageData)
+        (globalThis as Any).ImageData = class {
+          constructor(
+            public data: Uint8ClampedArray,
+            public width: number,
+            public height: number,
+          ) {}
+        };
+      restore = () => {
+        spy.mockRestore();
+        if (!hadImageData) delete (globalThis as Any).ImageData;
+      };
+    });
+    afterEach(() => restore());
+    const withImage = {
+      ...(kit as Any),
+      environment: { width: 1671, height: 941, source: { resource: {} } },
+    };
+
+    it("phone 390x844: painted sky, no blur, meets the plate edge exactly, reaches past the top", () => {
+      const v: Any = new BoatOpeningView(false);
+      v.enter(withImage, 390, 844, friendTex());
+      const r = visible(v, 390, 844);
+      expect(v.sky.visible).toBe(true);
+      expect(v.sky.texture.source.canvas).toBeInstanceOf(HTMLCanvasElement);
+      expect(v.sky.filters).toEqual([]);
+      expect(v.blur).toBeUndefined();
+      expect(v.sky.scale.x).toBe(1); // column for column with the plate
+      const bottom = v.sky.position.y + v.sky.scale.y * 64;
+      expect(bottom).toBeCloseTo(1, 6); // its edge row sits on the plate's top row
+      expect(v.sky.position.y).toBeLessThan(r.top);
+      // It owns its canvas: released with its source on destroy.
+      const t = v.sky.texture;
+      v.destroy();
+      expect([t.destroyed, t.sourceDestroyed]).toEqual([true, true]);
+    });
+
+    it("desktop and tablet: no sky at all (the plate fills the screen)", () => {
+      for (const [w, h] of [
+        [1280, 800],
+        [768, 1024],
+      ]) {
+        const v: Any = new BoatOpeningView(false);
+        v.enter(withImage, w, h, friendTex());
+        expect(v.sky.visible).toBe(false);
+      }
+    });
   });
 });

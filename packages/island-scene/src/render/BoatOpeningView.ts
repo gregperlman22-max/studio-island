@@ -2,6 +2,7 @@ import { BlurFilter, Container, Rectangle, Sprite, Texture } from "pixi.js";
 
 import { getContentBounds } from "./avatarTexture";
 import { OPENING_ART } from "./openingArt";
+import { skyExtensionPixels } from "./skyExtension";
 
 /**
  * What SceneRenderer needs from an arrival cinematic. The approved boat
@@ -32,15 +33,41 @@ export interface OpeningKit {
 export const APPROACH = 5.5;
 export const SETTLE = 1.0;
 
-/** Portrait fill. PAD_STRIP: the plate's own edge rows each pad stretches —
- *  the top 40 are sky only (the treehouse canopy starts near row 50), the
- *  bottom 40 are water and dock. PAD_BLEED: stage px each pad reaches under the
- *  plate and past the screen edge, so the blur's soft rim (it fades to
- *  transparent) never shows. PAD_SKY_SHARE: the share of the spare height
- *  given to the sky above the plate. */
-const PAD_STRIP = 40;
-const PAD_BLEED = 48;
-const PAD_SKY_SHARE = 0.62;
+/** Tall-screen sky (see skyExtension.ts). PAINTED_ROWS: height of the sky
+ *  texture built from the plate's top row, stretched to fill the spare
+ *  height. Fallback when no 2D canvas is available: SKY_ROWS of the plate's top
+ *  edge (pure sky — the treehouse canopy starts near row 50) stretched and
+ *  blurred sideways only; SKY_BLEED is how far that reaches under the plate and
+ *  past its left/right edges, so the blur's soft rim never shows. */
+const PAINTED_ROWS = 64;
+const SKY_ROWS = 2;
+const SKY_BLEED = 48;
+
+/** The sky texture built from the plate's own top row, or undefined when the
+ *  image or a 2D canvas is unavailable (then the blurred strip is used). */
+function paintSky(env: Texture): Texture | undefined {
+  try {
+    const src = (env.source as { resource?: unknown }).resource as CanvasImageSource | undefined;
+    if (!src || typeof document === "undefined") return undefined;
+    const w = OPENING_ART.stage.w;
+    const read = document.createElement("canvas");
+    read.width = w;
+    read.height = 1;
+    const rc = read.getContext("2d", { willReadFrequently: true });
+    if (!rc) return undefined;
+    rc.drawImage(src, 0, 0, w, 1, 0, 0, w, 1);
+    const pixels = skyExtensionPixels(rc.getImageData(0, 0, w, 1).data, w, PAINTED_ROWS);
+    const out = document.createElement("canvas");
+    out.width = w;
+    out.height = PAINTED_ROWS;
+    const oc = out.getContext("2d");
+    if (!oc) return undefined;
+    oc.putImageData(new ImageData(pixels, w, PAINTED_ROWS), 0, 0);
+    return Texture.from(out);
+  } catch {
+    return undefined;
+  }
+}
 
 const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
@@ -58,11 +85,12 @@ const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
  * Camera: the plate COVERS landscape screens (bottom-aligned, so any vertical
  * crop takes sky, never water or dock). In portrait it never shows less than
  * OPENING_ART.essentialW stage px across — both passengers, the whole boat and
- * the landing edge; where that leaves the plate shorter than the screen (phone
- * portrait), the painting is continued above and below by a blurred, stretched
- * MIRROR of its own edge rows — sky above, water below — so each seam meets
- * matching colour instead of a hard band. The plate sits a little low (more sky
- * than water in the fill). Narrow views follow the boat and settle on the berth.
+ * the landing edge. The plate is bottom-aligned on EVERY screen: any crop, and
+ * any spare height, is sky — never water or the dock. Where the plate is
+ * shorter than the screen (phone portrait) the sky simply continues upward:
+ * the plate's own top rows, stretched to the screen top and blurred sideways
+ * only, so every column keeps its colour and the join has no seam, streak or
+ * band. Narrow views follow the boat and settle on the berth.
  *
  * Reduced motion: the boat is placed at the berth — no travel, no rocking —
  * and the view completes after the settle beat. (SceneRenderer does not start
@@ -72,8 +100,7 @@ export class BoatOpeningView implements ArrivalCinematic {
   readonly container = new Container();
 
   private stage = new Container(); // stage px
-  private padTop = new Sprite(); // portrait fill: the sky strip, mirrored above
-  private padBottom = new Sprite(); // …and the water strip, mirrored below
+  private sky = new Sprite(); // tall screens: the plate's sky, continued upward
   private env = new Sprite();
   private boat = new Container(); // boat px, pivot on the keel
   private boatBack = new Sprite();
@@ -87,12 +114,13 @@ export class BoatOpeningView implements ArrivalCinematic {
   private _done = false;
   private k = 1; // stage px -> screen px
   private blur?: BlurFilter;
-  private strips: Texture[] = []; // the pads' frames over the plate
+  private skyTex?: Texture; // this view's own sky texture (never the plate's)
+  private skyPainted = false; // built from the plate's top row (else: strip + blur)
   private followWeight = 0;
 
   constructor(private reducedMotion: boolean) {
     this.container.addChild(this.stage);
-    this.stage.addChild(this.padTop, this.padBottom, this.env, this.boat);
+    this.stage.addChild(this.sky, this.env, this.boat);
     this.boat.addChild(this.boatBack, this.captain, this.friend, this.boatFront);
     this.boat.pivot.set(OPENING_ART.pivot.x, OPENING_ART.pivot.y);
     this.captain.anchor.set(OPENING_ART.captain.anchorX, OPENING_ART.captain.anchorY);
@@ -103,15 +131,16 @@ export class BoatOpeningView implements ArrivalCinematic {
 
   enter(kit: OpeningKit, w: number, h: number, friendTex?: Texture): void {
     this.env.texture = kit.environment;
-    this.releasePads();
-    this.strips = [0, OPENING_ART.stage.h - PAD_STRIP].map(
-      (y) =>
-        new Texture({
-          source: kit.environment.source,
-          frame: new Rectangle(0, y, OPENING_ART.stage.w, PAD_STRIP),
-        }),
-    );
-    [this.padTop.texture, this.padBottom.texture] = this.strips;
+    this.releaseSky();
+    const painted = paintSky(kit.environment);
+    this.skyPainted = !!painted;
+    this.skyTex =
+      painted ??
+      new Texture({
+        source: kit.environment.source,
+        frame: new Rectangle(0, 0, OPENING_ART.stage.w, SKY_ROWS),
+      });
+    this.sky.texture = this.skyTex;
     this.boatBack.texture = kit.boatBack;
     this.boatFront.texture = kit.boatFront;
     this.captain.texture = kit.captain;
@@ -151,20 +180,20 @@ export class BoatOpeningView implements ArrivalCinematic {
 
   destroy(): void {
     // The kit and Friend textures are shared with the asset cache: destroy the
-    // display tree and this view's own strip frames only.
-    this.releasePads();
+    // display tree and this view's own sky frame only.
+    this.releaseSky();
     this.container.destroy({ children: true });
     this.blur?.destroy();
     this.blur = undefined;
   }
 
-  /** The pads' strip textures are this view's own frames over the plate's
-   *  source: release the frames, never the shared source. */
-  private releasePads(): void {
-    for (const t of this.strips) t.destroy(false);
-    this.strips = [];
-    this.padTop.texture = Texture.EMPTY;
-    this.padBottom.texture = Texture.EMPTY;
+  /** The sky texture is this view's own frame over the plate's source:
+   *  release the frame, never the shared source. */
+  private releaseSky(): void {
+    // A painted sky owns its canvas source; the fallback strip shares the plate's.
+    this.skyTex?.destroy(this.skyPainted);
+    this.skyTex = undefined;
+    this.sky.texture = Texture.EMPTY;
   }
 
   // ── Placement ──────────────────────────────────────────────────────
@@ -200,29 +229,32 @@ export class BoatOpeningView implements ArrivalCinematic {
     this.k = k;
     this.stage.scale.set(k);
     const plateH = S.h * k;
-    // Cropping vertically takes sky (bottom-aligned); a short plate sits a
-    // little below centre, so more of the fill is sky than water.
-    this.stage.y = plateH >= h ? h - plateH : (h - plateH) * PAD_SKY_SHARE;
+    // Bottom-aligned everywhere: a crop, or spare height, is always sky.
+    this.stage.y = h - plateH;
 
     const gap = plateH < h - 0.5;
-    if (gap) {
-      this.blur ??= new BlurFilter({ strength: 4 });
-      this.blur.strength = Math.min(10, Math.max(4, w * 0.016));
-      // Each strip is mirrored about the plate edge (the edge row meets the
-      // seam) and stretched over its gap plus the bleed at both ends, in stage px.
-      const above = this.stage.y / k + 2 * PAD_BLEED;
-      const below = (h - this.stage.y - plateH) / k + 2 * PAD_BLEED;
-      // They also bleed past the plate's left and right edges, where the
-      // camera can rest at the start of the approach.
-      const sx = (S.w + 2 * PAD_BLEED) / S.w;
-      this.padTop.scale.set(sx, -above / PAD_STRIP);
-      this.padTop.position.set(-PAD_BLEED, PAD_BLEED);
-      this.padBottom.scale.set(sx, -below / PAD_STRIP);
-      this.padBottom.position.set(-PAD_BLEED, S.h - PAD_BLEED + below);
-    }
-    for (const pad of [this.padTop, this.padBottom]) {
-      pad.visible = gap;
-      pad.filters = gap && this.blur ? [this.blur] : [];
+    this.sky.visible = gap;
+    if (gap && this.skyPainted) {
+      // The painted sky's bottom row IS the plate's top row: meet it exactly
+      // (1 stage px under the edge), span the plate's width, reach past the top.
+      const tall = this.stage.y / k + 1 + SKY_BLEED;
+      this.sky.scale.set(1, tall / PAINTED_ROWS);
+      this.sky.position.set(0, 1 - tall);
+      this.sky.filters = [];
+    } else if (gap) {
+      // Fallback — sideways-only blur: smooths column-to-column grain without bleeding
+      // the extension's colour vertically into (or away from) the join.
+      this.blur ??= new BlurFilter({ strengthX: 8, strengthY: 0, quality: 4 });
+      this.blur.strengthX = Math.min(60, Math.max(24, w * 0.1));
+      this.blur.strengthY = 0;
+      // From SKY_BLEED under the plate's top edge up past the screen top, and
+      // past the plate's left/right edges (the camera can rest on either).
+      const tall = this.stage.y / k + 2 * SKY_BLEED;
+      this.sky.scale.set((S.w + 2 * SKY_BLEED) / S.w, tall / SKY_ROWS);
+      this.sky.position.set(-SKY_BLEED, SKY_BLEED - tall);
+      this.sky.filters = [this.blur];
+    } else {
+      this.sky.filters = [];
     }
     // Wide views hold the berth framing; narrow ones follow the boat.
     const visibleW = w / k;
